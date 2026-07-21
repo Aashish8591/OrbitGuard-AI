@@ -1,19 +1,18 @@
 package com.orbitguard.auth.security;
 
-import javax.crypto.SecretKey;
-import java.util.Date;
-import java.util.Map;
-import java.util.function.Function;
-
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
-
-import com.orbitguard.auth.entity.User;
-
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.stereotype.Service;
+
+import javax.crypto.SecretKey;
+import java.util.Date;
+import java.util.Map;
+import java.util.function.Function;
 
 @Service
 public class JwtService {
@@ -27,18 +26,19 @@ public class JwtService {
     /**
      * Generate JWT Token
      */
-    public String generateToken(User user) {
-        return generateToken(Map.of(), user);
+    public String generateToken(UserDetails userDetails) {
+        return generateToken(Map.of(), userDetails);
     }
 
     /**
      * Generate JWT Token with Custom Claims
      */
-    public String generateToken(Map<String, Object> extraClaims, User user) {
+    public String generateToken(Map<String, Object> extraClaims,
+                                UserDetails userDetails) {
 
         return Jwts.builder()
                 .claims(extraClaims)
-                .subject(user.getEmail())
+                .subject(userDetails.getUsername())
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + jwtExpiration))
                 .signWith(getSigningKey())
@@ -65,7 +65,7 @@ public class JwtService {
     public <T> T extractClaim(String token,
                               Function<Claims, T> claimsResolver) {
 
-        Claims claims = extractAllClaims(token);
+        final Claims claims = extractAllClaims(token);
 
         return claimsResolver.apply(claims);
     }
@@ -73,11 +73,12 @@ public class JwtService {
     /**
      * Validate JWT Token
      */
-    public boolean isTokenValid(String token, User user) {
+    public boolean isTokenValid(String token,
+                                UserDetails userDetails) {
 
-        String username = extractUsername(token);
+        final String username = extractUsername(token);
 
-        return username.equals(user.getEmail())
+        return username.equals(userDetails.getUsername())
                 && !isTokenExpired(token);
     }
 
@@ -86,8 +87,7 @@ public class JwtService {
      */
     private boolean isTokenExpired(String token) {
 
-        return extractExpiration(token)
-                .before(new Date());
+        return extractExpiration(token).before(new Date());
     }
 
     /**
