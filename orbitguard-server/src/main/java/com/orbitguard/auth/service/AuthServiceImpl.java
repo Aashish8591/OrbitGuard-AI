@@ -53,7 +53,7 @@ public class AuthServiceImpl implements AuthService {
         return AuthResponse.builder()
                 .token(token)
                 .tokenType("Bearer")
-                .message("Registration successful.")
+//                .message("Registration successful.")
                 .build();
     }
 
@@ -84,7 +84,7 @@ public class AuthServiceImpl implements AuthService {
         return AuthResponse.builder()
                 .token(token)
                 .tokenType("Bearer")
-                .message("Login successful.")
+//                .message("Login successful.")
                 .build();
     }
 }
