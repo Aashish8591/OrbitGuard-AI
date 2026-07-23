@@ -13,13 +13,19 @@ import com.orbitguard.common.response.ErrorResponse;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    /**
+     * Handle Validation Exceptions
+     */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidationException(
             MethodArgumentNotValidException ex) {
 
         String errorMessage = ex.getBindingResult()
-                .getFieldError()
-                .getDefaultMessage();
+                .getFieldErrors()
+                .stream()
+                .findFirst()
+                .map(fieldError -> fieldError.getDefaultMessage())
+                .orElse("Validation failed.");
 
         ErrorResponse response = ErrorResponse.builder()
                 .success(false)
@@ -31,20 +37,9 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(response);
     }
 
-    @ExceptionHandler(Exception.class)
-    public ResponseEntity<ErrorResponse> handleException(Exception ex) {
-
-        ErrorResponse response = ErrorResponse.builder()
-                .success(false)
-                .message(ex.getMessage())
-                .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
-                .timestamp(LocalDateTime.now())
-                .build();
-
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(response);
-    }
-
+    /**
+     * Handle Bad Request Exceptions
+     */
     @ExceptionHandler(BadRequestException.class)
     public ResponseEntity<ErrorResponse> handleBadRequestException(
             BadRequestException ex) {
@@ -59,6 +54,27 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(response);
     }
 
+    /**
+     * Handle Duplicate Resource Exceptions
+     */
+    @ExceptionHandler(DuplicateResourceException.class)
+    public ResponseEntity<ErrorResponse> handleDuplicateResourceException(
+            DuplicateResourceException ex) {
+
+        ErrorResponse response = ErrorResponse.builder()
+                .success(false)
+                .message(ex.getMessage())
+                .status(HttpStatus.CONFLICT.value())
+                .timestamp(LocalDateTime.now())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(response);
+    }
+
+    /**
+     * Handle Resource Not Found Exceptions
+     */
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleResourceNotFoundException(
             ResourceNotFoundException ex) {
@@ -74,6 +90,9 @@ public class GlobalExceptionHandler {
                 .body(response);
     }
 
+    /**
+     * Handle Unauthorized Exceptions
+     */
     @ExceptionHandler(UnauthorizedException.class)
     public ResponseEntity<ErrorResponse> handleUnauthorizedException(
             UnauthorizedException ex) {
@@ -88,4 +107,26 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .body(response);
     }
+
+    /**
+     * Handle All Unexpected Exceptions
+     */
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ErrorResponse> handleException(Exception ex) {
+
+        // In production, log the exception here.
+        // Example:
+        // log.error("Unexpected exception occurred", ex);
+
+        ErrorResponse response = ErrorResponse.builder()
+                .success(false)
+                .message("Something went wrong. Please try again later.")
+                .status(HttpStatus.INTERNAL_SERVER_ERROR.value())
+                .timestamp(LocalDateTime.now())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(response);
+    }
+
 }
