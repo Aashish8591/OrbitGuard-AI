@@ -6,6 +6,7 @@ import com.orbitguard.auth.dto.response.AuthResponse;
 import com.orbitguard.auth.entity.User;
 import com.orbitguard.auth.enums.Role;
 import com.orbitguard.common.exception.BadRequestException;
+import com.orbitguard.common.exception.DuplicateResourceException;
 import com.orbitguard.common.exception.UnauthorizedException;
 import com.orbitguard.auth.repository.UserRepository;
 import com.orbitguard.auth.security.CustomUserDetails;
@@ -35,7 +36,7 @@ public class AuthServiceImpl implements AuthService {
     public AuthResponse register(RegisterRequest request) {
 
         if (userRepository.existsByEmail(request.getEmail())) {
-            throw new BadRequestException("Email is already registered.");
+            throw new DuplicateResourceException("Email is already registered.");
         }
 
         User user = User.builder()
