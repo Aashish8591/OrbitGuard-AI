@@ -1,5 +1,6 @@
 package com.orbitguard.satellite.service;
 
+import com.orbitguard.common.response.PagedResponse;
 import com.orbitguard.satellite.dto.request.CreateSatelliteRequest;
 import com.orbitguard.satellite.dto.request.UpdateSatelliteRequest;
 import com.orbitguard.satellite.dto.response.SatelliteResponse;
@@ -12,7 +13,19 @@ public interface SatelliteService {
 
     SatelliteResponse getSatelliteById(String satelliteId);
 
-    List<SatelliteResponse> getAllSatellites();
+    PagedResponse<SatelliteResponse> getAllSatellites(
+
+            int page,
+
+            int size,
+
+            String sortBy,
+
+            String direction,
+
+            String keyword
+
+    );
 
     SatelliteResponse updateSatellite(
             String satelliteId,

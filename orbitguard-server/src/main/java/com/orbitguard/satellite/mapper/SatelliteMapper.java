@@ -32,9 +32,6 @@ public class SatelliteMapper {
                 .country(request.getCountry())
                 .purpose(request.getPurpose())
                 .description(request.getDescription())
-                .active(true)
-                .createdAt(LocalDateTime.now())
-                .updatedAt(LocalDateTime.now())
                 .build();
     }
 
@@ -86,7 +83,6 @@ public class SatelliteMapper {
         satellite.setPurpose(request.getPurpose());
         satellite.setDescription(request.getDescription());
         satellite.setMissionStatus(request.getMissionStatus());
-        satellite.setUpdatedAt(LocalDateTime.now());
     }
 
 }

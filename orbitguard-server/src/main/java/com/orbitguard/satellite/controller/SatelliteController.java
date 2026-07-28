@@ -6,6 +6,11 @@ import com.orbitguard.satellite.dto.request.CreateSatelliteRequest;
 import com.orbitguard.satellite.dto.request.UpdateSatelliteRequest;
 import com.orbitguard.satellite.dto.response.SatelliteResponse;
 import com.orbitguard.satellite.service.SatelliteService;
+import com.orbitguard.common.response.PagedResponse;
+
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import org.springframework.validation.annotation.Validated;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -23,6 +28,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
         name = "Satellite API",
         description = "Operations related to satellite management"
 )
+
+@Validated
 @RestController
 @RequestMapping("/api/satellites")
 @RequiredArgsConstructor
@@ -63,9 +70,9 @@ public class SatelliteController {
     }
 
     /**
-     * Get All Satellites
+     * Get All Satellites with Pagination, Sorting and Searching
      */
-    @Operation(summary = "Retrieve all satellites")
+    @Operation(summary = "Retrieve satellites with pagination, sorting and searching")
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(
                     responseCode = "200",
@@ -73,10 +80,35 @@ public class SatelliteController {
             )
     })
     @GetMapping
-    public ResponseEntity<ApiResponse<List<SatelliteResponse>>> getAllSatellites() {
+    public ResponseEntity<ApiResponse<PagedResponse<SatelliteResponse>>> getAllSatellites(
 
-        List<SatelliteResponse> satellites =
-                satelliteService.getAllSatellites();
+            @RequestParam(defaultValue = "0")
+            @Min(value = 0, message = "Page number cannot be negative.")
+            int page,
+
+            @RequestParam(defaultValue = "10")
+            @Min(value = 1, message = "Page size must be at least 1.")
+            @Max(value = 100, message = "Page size cannot exceed 100.")
+            int size,
+
+            @RequestParam(defaultValue = "createdAt")
+            String sortBy,
+
+            @RequestParam(defaultValue = "desc")
+            String direction,
+
+            @RequestParam(required = false)
+            String keyword
+    ) {
+
+        PagedResponse<SatelliteResponse> satellites =
+                satelliteService.getAllSatellites(
+                        page,
+                        size,
+                        sortBy,
+                        direction,
+                        keyword
+                );
 
         return ResponseEntity.ok(
                 ResponseBuilder.success(

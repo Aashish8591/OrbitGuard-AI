@@ -4,6 +4,8 @@ import com.orbitguard.satellite.entity.Satellite;
 import com.orbitguard.satellite.enums.MissionStatus;
 import com.orbitguard.satellite.enums.OrbitType;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.stereotype.Repository;
 
@@ -24,23 +26,45 @@ public interface SatelliteRepository extends MongoRepository<Satellite, String> 
     boolean existsBySatelliteCode(String satelliteCode);
 
     /**
-     * Find by mission status.
+     * Find active satellite by ID.
      */
-    List<Satellite> findByMissionStatus(MissionStatus missionStatus);
+    Optional<Satellite> findByIdAndActiveTrue(String id);
 
     /**
-     * Find by orbit type.
+     * Find active satellite by code.
      */
-    List<Satellite> findByOrbitType(OrbitType orbitType);
+    Optional<Satellite> findBySatelliteCodeAndActiveTrue(String satelliteCode);
 
     /**
-     * Search by satellite name.
-     */
-    List<Satellite> findBySatelliteNameContainingIgnoreCase(String satelliteName);
-
-    /**
-     * Find active records only.
+     * Get all active satellites.
      */
     List<Satellite> findByActiveTrue();
+
+    /**
+     * Get all active satellites with pagination.
+     */
+    Page<Satellite> findByActiveTrue(Pageable pageable);
+
+    /**
+     * Search active satellites by name.
+     */
+    Page<Satellite> findByActiveTrueAndSatelliteNameContainingIgnoreCase(
+            String keyword,
+            Pageable pageable
+    );
+
+    /**
+     * Filter active satellites by mission status.
+     */
+    List<Satellite> findByMissionStatusAndActiveTrue(
+            MissionStatus missionStatus
+    );
+
+    /**
+     * Filter active satellites by orbit type.
+     */
+    List<Satellite> findByOrbitTypeAndActiveTrue(
+            OrbitType orbitType
+    );
 
 }

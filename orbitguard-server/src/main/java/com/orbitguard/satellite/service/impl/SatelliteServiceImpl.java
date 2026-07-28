@@ -1,5 +1,6 @@
 package com.orbitguard.satellite.service.impl;
 
+import com.orbitguard.common.exception.BadRequestException;
 import com.orbitguard.common.exception.DuplicateResourceException;
 import com.orbitguard.common.exception.ResourceNotFoundException;
 import com.orbitguard.satellite.dto.request.CreateSatelliteRequest;
@@ -15,7 +16,16 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+
+import com.orbitguard.common.response.PagedResponse;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+
 import java.util.List;
+
 
 @Service
 @RequiredArgsConstructor
@@ -24,6 +34,16 @@ public class SatelliteServiceImpl implements SatelliteService {
     private final SatelliteRepository satelliteRepository;
 
     private final SatelliteMapper satelliteMapper;
+
+    private static final List<String> ALLOWED_SORT_FIELDS = List.of(
+            "satelliteName",
+            "satelliteCode",
+            "launchDate",
+            "createdAt",
+            "updatedAt",
+            "missionStatus",
+            "country"
+    );
 
     @Override
     public SatelliteResponse createSatellite(CreateSatelliteRequest request) {
@@ -42,7 +62,7 @@ public class SatelliteServiceImpl implements SatelliteService {
     @Override
     public SatelliteResponse getSatelliteById(String satelliteId) {
 
-        Satellite satellite = satelliteRepository.findById(satelliteId)
+        Satellite satellite = satelliteRepository.findByIdAndActiveTrue(satelliteId)
                 .orElseThrow(() ->
                         new ResourceNotFoundException("Satellite not found."));
 
@@ -50,12 +70,70 @@ public class SatelliteServiceImpl implements SatelliteService {
     }
 
     @Override
-    public List<SatelliteResponse> getAllSatellites() {
+    public PagedResponse<SatelliteResponse> getAllSatellites(
+            int page,
+            int size,
+            String sortBy,
+            String direction,
+            String keyword) {
 
-        return satelliteRepository.findByActiveTrue()
-                .stream()
-                .map(satelliteMapper::toResponse)
-                .toList();
+        // Validate Sort Field
+        if (!ALLOWED_SORT_FIELDS.contains(sortBy)) {
+            throw new BadRequestException(
+                    "Invalid sort field: " + sortBy
+            );
+        }
+
+        // Create Sort Direction
+        if (!direction.equalsIgnoreCase("asc")
+                && !direction.equalsIgnoreCase("desc")) {
+
+            throw new BadRequestException(
+                    "Sort direction must be 'asc' or 'desc'."
+            );
+        }
+
+        Sort.Direction sortDirection =
+                Sort.Direction.fromString(direction);
+
+        // Create Sort
+        Sort sort = Sort.by(sortDirection, sortBy);
+
+        // Create Pageable
+        Pageable pageable = PageRequest.of(page, size, sort);
+
+        // Fetch Data
+        Page<Satellite> satellitePage;
+
+        if (keyword != null && !keyword.isBlank()) {
+
+            satellitePage = satelliteRepository
+                    .findByActiveTrueAndSatelliteNameContainingIgnoreCase(
+                            keyword,
+                            pageable
+                    );
+
+        } else {
+
+            satellitePage = satelliteRepository.findByActiveTrue(pageable);
+        }
+
+        // Convert Entity -> DTO
+        List<SatelliteResponse> satelliteResponses =
+                satellitePage.getContent()
+                        .stream()
+                        .map(satelliteMapper::toResponse)
+                        .toList();
+
+        // Build Custom Response
+        return PagedResponse.<SatelliteResponse>builder()
+                .content(satelliteResponses)
+                .page(satellitePage.getNumber())
+                .size(satellitePage.getSize())
+                .totalElements(satellitePage.getTotalElements())
+                .totalPages(satellitePage.getTotalPages())
+                .last(satellitePage.isLast())
+                .build();
     }
 
     @Override
