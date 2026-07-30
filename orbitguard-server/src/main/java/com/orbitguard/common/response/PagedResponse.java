@@ -1,4 +1,5 @@
 package com.orbitguard.common.response;
+import org.springframework.data.domain.Page;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -42,4 +43,23 @@ public class PagedResponse<T> {
      * Indicates whether this is the last page.
      */
     private boolean last;
+
+    /**
+     * Converts a Spring Page into a PagedResponse.
+     *
+     * @param page Spring Data Page
+     * @param <T> response type
+     * @return paged response
+     */
+    public static <T> PagedResponse<T> from(Page<T> page) {
+
+        return PagedResponse.<T>builder()
+                .content(page.getContent())
+                .page(page.getNumber())
+                .size(page.getSize())
+                .totalElements(page.getTotalElements())
+                .totalPages(page.getTotalPages())
+                .last(page.isLast())
+                .build();
+    }
 }
