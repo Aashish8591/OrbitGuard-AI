@@ -8,4 +8,14 @@ public final class RiskApiConstants {
 
     public static final String BASE_URL = "/api/v1/risk";
 
+    public static final String ANALYZE = "/analyze";
+
+    public static final String GET_BY_ID = "/{id}";
+
+    public static final String GET_ALL = "";
+
+    public static final String UPDATE_STATUS = "/{id}/status";
+
+    public static final String DELETE = "/{id}";
+
 }
