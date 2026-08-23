@@ -2,16 +2,18 @@ package com.orbitguard.common.exception;
 
 import java.time.LocalDateTime;
 
+import com.orbitguard.ai.exception.AiServiceException;
+import com.orbitguard.common.response.ErrorResponse;
+import jakarta.validation.ConstraintViolationException;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import jakarta.validation.ConstraintViolationException;
-
-import com.orbitguard.common.response.ErrorResponse;
 
 @RestControllerAdvice
+@Slf4j
 public class GlobalExceptionHandler {
 
     /**
@@ -127,14 +129,32 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Handle AI Service Exceptions
+     */
+    @ExceptionHandler(AiServiceException.class)
+    public ResponseEntity<ErrorResponse> handleAiServiceException(
+            AiServiceException ex) {
+
+        log.error("AI service error occurred.", ex);
+
+        ErrorResponse response = ErrorResponse.builder()
+                .success(false)
+                .message(ex.getMessage())
+                .status(HttpStatus.BAD_GATEWAY.value())
+                .timestamp(LocalDateTime.now())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .body(response);
+    }
+
+    /**
      * Handle All Unexpected Exceptions
      */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleException(Exception ex) {
 
-        // In production, log the exception here.
-        // Example:
-        // log.error("Unexpected exception occurred", ex);
+        log.error("Unexpected exception occurred.", ex);
 
         ErrorResponse response = ErrorResponse.builder()
                 .success(false)
@@ -146,5 +166,4 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(response);
     }
-
 }
