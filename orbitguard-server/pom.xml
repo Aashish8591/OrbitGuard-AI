@@ -101,6 +101,12 @@
 			<artifactId>pdfbox</artifactId>
 			<version>3.0.6</version>
 		</dependency>
+
+		<dependency>
+			<groupId>com.google.genai</groupId>
+			<artifactId>google-genai</artifactId>
+			<version>1.56.0</version>
+		</dependency>
 	</dependencies>
 
 	<build>
