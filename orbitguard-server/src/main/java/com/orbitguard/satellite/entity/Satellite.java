@@ -36,6 +36,16 @@ public class Satellite {
     private String satelliteCode;
 
     /**
+     * NORAD catalog identification number.
+     * Example:
+     * 25544 = ISS (ZARYA)
+     *
+     * Used to identify and synchronize the satellite
+     * with external orbital data providers such as CelesTrak.
+     */
+    private Integer noradCatalogId;
+
+    /**
      * Example:
      * NASA
      * ISRO

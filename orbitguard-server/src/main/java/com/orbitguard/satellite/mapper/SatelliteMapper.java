@@ -24,6 +24,7 @@ public class SatelliteMapper {
         return Satellite.builder()
                 .satelliteName(request.getSatelliteName())
                 .satelliteCode(request.getSatelliteCode())
+                .noradCatalogId(request.getNoradCatalogId())
                 .operator(request.getOperator())
                 .orbitType(request.getOrbitType())
                 .altitude(request.getAltitude())

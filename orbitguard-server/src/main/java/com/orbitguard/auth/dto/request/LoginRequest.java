@@ -9,6 +9,27 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+/**
+ * ==============================================================
+ * Login Request
+ * ==============================================================
+ *
+ * Represents the request payload used for authenticating an
+ * existing OrbitGuard AI user.
+ *
+ * <p>
+ * This DTO is responsible only for transporting and validating
+ * authentication input received from the client.
+ * </p>
+ *
+ * <p>
+ * Authentication logic, password verification, and JWT generation
+ * are handled by the service and security layers.
+ * </p>
+ *
+ * @author OrbitGuard AI Team
+ * @version 1.0
+ */
 @Data
 @Builder
 @NoArgsConstructor
@@ -19,6 +40,9 @@ import lombok.NoArgsConstructor;
 )
 public class LoginRequest {
 
+    /**
+     * Registered email address of the user.
+     */
     @Schema(
             description = "Registered email address",
             example = "example21@gmail.com"
@@ -27,6 +51,14 @@ public class LoginRequest {
     @Email(message = "Please enter a valid email address")
     private String email;
 
+    /**
+     * Password supplied by the user for authentication.
+     *
+     * <p>
+     * The password must never be logged or exposed in API
+     * responses.
+     * </p>
+     */
     @Schema(
             description = "User password",
             example = "Password@123"

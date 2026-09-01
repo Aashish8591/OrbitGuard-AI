@@ -51,5 +51,9 @@ public class CreateSatelliteRequest {
     @NotBlank(message = "Purpose is required")
     private String purpose;
 
+    @NotNull(message = "NORAD catalog ID is required")
+    @Positive(message = "NORAD catalog ID must be greater than zero")
+    private Integer noradCatalogId;
+
     private String description;
 }

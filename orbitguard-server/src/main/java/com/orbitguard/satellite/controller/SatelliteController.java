@@ -5,6 +5,8 @@ import com.orbitguard.common.util.ResponseBuilder;
 import com.orbitguard.satellite.dto.request.CreateSatelliteRequest;
 import com.orbitguard.satellite.dto.request.UpdateSatelliteRequest;
 import com.orbitguard.satellite.dto.response.SatelliteResponse;
+import com.orbitguard.satellite.integration.celestrak.dto.CelesTrakOrbitalData;
+import com.orbitguard.satellite.integration.celestrak.service.CelesTrakService;
 import com.orbitguard.satellite.service.SatelliteService;
 import com.orbitguard.common.response.PagedResponse;
 
@@ -36,6 +38,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 public class SatelliteController {
 
     private final SatelliteService satelliteService;
+    private final CelesTrakService celesTrakService;
 
     /**
      * Create Satellite
@@ -207,6 +210,50 @@ public class SatelliteController {
         return ResponseEntity.ok(
                 ResponseBuilder.success(
                         "Satellite deleted successfully."
+                )
+        );
+    }
+
+
+    /**
+     * Get current orbital data from CelesTrak
+     * using the NORAD catalog ID.
+     */
+    @Operation(
+            summary = "Retrieve satellite orbital data",
+            description = "Fetches current orbital data from CelesTrak using the NORAD catalog ID."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200",
+                    description = "Orbital data retrieved successfully"
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "400",
+                    description = "Invalid NORAD catalog ID"
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "404",
+                    description = "Orbital data not found"
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "502",
+                    description = "Unable to retrieve data from CelesTrak"
+            )
+    })
+    @GetMapping("/{noradCatalogId}/orbital-data")
+    public ResponseEntity<ApiResponse<List<CelesTrakOrbitalData>>> getSatelliteOrbitalData(
+            @PathVariable
+            @Min(value = 1, message = "NORAD catalog ID must be greater than zero.")
+            Integer noradCatalogId) {
+
+        List<CelesTrakOrbitalData> orbitalData =
+                celesTrakService.fetchSatelliteOrbitalData(noradCatalogId);
+
+        return ResponseEntity.ok(
+                ResponseBuilder.success(
+                        "Satellite orbital data retrieved successfully.",
+                        orbitalData
                 )
         );
     }

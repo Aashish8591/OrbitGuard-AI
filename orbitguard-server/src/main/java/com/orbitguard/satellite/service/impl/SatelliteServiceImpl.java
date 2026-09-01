@@ -141,7 +141,7 @@ public class SatelliteServiceImpl implements SatelliteService {
             String satelliteId,
             UpdateSatelliteRequest request) {
 
-        Satellite satellite = satelliteRepository.findById(satelliteId)
+        Satellite satellite = satelliteRepository.findByIdAndActiveTrue(satelliteId)
                 .orElseThrow(() ->
                         new ResourceNotFoundException("Satellite not found."));
 

@@ -28,16 +28,22 @@ public class SecurityConfig {
 
         http
 
+                // Stateless REST API
                 .csrf(csrf -> csrf.disable())
 
+                // Unauthorized request handling
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint(authenticationEntryPoint))
 
+                // JWT-based authentication
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 
                 .authorizeHttpRequests(auth -> auth
 
+                        // ==================================================
+                        // PUBLIC ENDPOINTS
+                        // ==================================================
                         .requestMatchers(
                                 "/api/auth/**",
 
@@ -49,11 +55,36 @@ public class SecurityConfig {
                                 "/favicon.ico"
                         ).permitAll()
 
+                        // ==================================================
+                        // ADMIN-ONLY ENDPOINTS
+                        // ==================================================
+                        .requestMatchers("/api/admin/**")
+                        .hasRole("ADMIN")
+
+                        // ==================================================
+                        // USER + ADMIN ENDPOINTS
+                        // ==================================================
+                        .requestMatchers(
+                                "/api/satellites/**",
+                                "/api/debris/**",
+                                "/api/risks/**",
+                                "/api/alerts/**",
+                                "/api/notifications/**",
+                                "/api/reports/**",
+                                "/api/ai/**",
+                                "/api/dashboard/**"
+                        ).hasAnyRole("USER", "ADMIN")
+
+                        // ==================================================
+                        // ALL OTHER ENDPOINTS
+                        // ==================================================
                         .anyRequest().authenticated()
                 )
 
+                // Authentication provider
                 .authenticationProvider(authenticationProvider)
 
+                // JWT filter
                 .addFilterBefore(
                         jwtAuthenticationFilter,
                         UsernamePasswordAuthenticationFilter.class

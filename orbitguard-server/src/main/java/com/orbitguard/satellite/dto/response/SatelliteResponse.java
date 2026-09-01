@@ -29,6 +29,8 @@ public class SatelliteResponse {
 
     private Double altitude;
 
+    private Integer noradCatalogId;
+
     private Double velocity;
 
     private LocalDate launchDate;
