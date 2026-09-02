@@ -17,6 +17,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.orbitguard.common.util.ResponseBuilder;
+import com.orbitguard.debris.integration.celestrak.dto.CelesTrakOrbitalData;
+import com.orbitguard.debris.integration.celestrak.service.CelesTrakDebrisService;
+
 import com.orbitguard.common.response.PagedResponse;
 import com.orbitguard.debris.dto.request.UpdateDebrisRequest;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -36,6 +40,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 public class DebrisController {
 
     private final DebrisService debrisService;
+    private final CelesTrakDebrisService celesTrakDebrisService;
 
     /**
      * Creates a new Space Debris.
@@ -134,6 +139,28 @@ public class DebrisController {
     ) {
 
         return debrisService.deleteDebris(id);
+    }
+
+
+    /**
+     * Returns current orbital data for a debris object
+     * using its NORAD catalog ID.
+     */
+    @Operation(
+            summary = "Get Debris Orbital Data",
+            description = "Retrieves the latest available orbital data for a space debris object from CelesTrak using its NORAD catalog ID."
+    )
+    @GetMapping("/norad/{noradId}/orbital-data")
+    public ApiResponse<CelesTrakOrbitalData> getOrbitalData(
+            @PathVariable Long noradId) {
+
+        CelesTrakOrbitalData orbitalData =
+                celesTrakDebrisService.fetchOrbitalData(noradId);
+
+        return ResponseBuilder.success(
+                "Debris orbital data retrieved successfully.",
+                orbitalData
+        );
     }
 
 }
