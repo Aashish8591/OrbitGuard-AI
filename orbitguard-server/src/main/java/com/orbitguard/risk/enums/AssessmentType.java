@@ -4,6 +4,7 @@ public enum AssessmentType {
 
     MANUAL,
     SCHEDULED,
+    RULE_BASED,
     AI_GENERATED
 
 }

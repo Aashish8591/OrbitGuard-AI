@@ -30,6 +30,8 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
+import com.orbitguard.debris.integration.celestrak.service.DebrisSynchronizationService;
+
 @RestController
 @RequiredArgsConstructor
 @RequestMapping(DebrisApiConstants.BASE_URL)
@@ -41,6 +43,7 @@ public class DebrisController {
 
     private final DebrisService debrisService;
     private final CelesTrakDebrisService celesTrakDebrisService;
+    private final DebrisSynchronizationService debrisSynchronizationService;
 
     /**
      * Creates a new Space Debris.
@@ -160,6 +163,26 @@ public class DebrisController {
         return ResponseBuilder.success(
                 "Debris orbital data retrieved successfully.",
                 orbitalData
+        );
+    }
+
+    /**
+     * Synchronizes space debris data from CelesTrak
+     * with the local MongoDB database.
+     */
+    @Operation(
+            summary = "Synchronize Space Debris",
+            description = "Fetches space debris data from CelesTrak for the specified group and synchronizes it with the local database."
+    )
+    @PostMapping("/synchronize")
+    public ApiResponse<Void> synchronizeDebris(
+            @RequestParam String group) {
+
+        debrisSynchronizationService.synchronizeDebris(group);
+
+        return ResponseBuilder.success(
+                "Space debris synchronization completed successfully.",
+                null
         );
     }
 

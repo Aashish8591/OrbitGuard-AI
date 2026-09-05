@@ -1,5 +1,6 @@
 package com.orbitguard.satellite.integration.celestrak.service.impl;
 
+import com.orbitguard.common.exception.BadRequestException;
 import com.orbitguard.satellite.integration.celestrak.client.CelesTrakClient;
 import com.orbitguard.satellite.integration.celestrak.dto.CelesTrakOrbitalData;
 import com.orbitguard.satellite.integration.celestrak.dto.CelesTrakSatelliteResponse;
@@ -42,7 +43,7 @@ public class CelesTrakServiceImpl implements CelesTrakService {
             Integer noradCatalogId) {
 
         if (noradCatalogId == null || noradCatalogId <= 0) {
-            throw new IllegalArgumentException(
+            throw new BadRequestException(
                     "NORAD catalog ID must be greater than zero."
             );
         }
@@ -58,5 +59,15 @@ public class CelesTrakServiceImpl implements CelesTrakService {
                 .map(celesTrakSatelliteMapper::toOrbitalData)
                 .filter(data -> data != null)
                 .toList();
+    }
+
+    @Override
+    public List<CelesTrakSatelliteResponse> fetchSatellitesByGroup(String group) {
+
+        if (group == null || group.isBlank()) {
+            throw new IllegalArgumentException("CelesTrak group must not be blank.");
+        }
+
+        return celesTrakClient.getSatellitesByGroup(group);
     }
 }

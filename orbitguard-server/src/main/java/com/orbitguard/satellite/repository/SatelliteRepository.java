@@ -67,4 +67,12 @@ public interface SatelliteRepository extends MongoRepository<Satellite, String> 
             OrbitType orbitType
     );
 
+    /**
+     * Find satellite by NORAD catalog ID.
+     *
+     * Used during CelesTrak synchronization
+     * to determine whether a satellite already exists.
+     */
+    Optional<Satellite> findByNoradCatalogId(Integer noradCatalogId);
+
 }

@@ -9,6 +9,7 @@ import com.orbitguard.satellite.integration.celestrak.dto.CelesTrakOrbitalData;
 import com.orbitguard.satellite.integration.celestrak.service.CelesTrakService;
 import com.orbitguard.satellite.service.SatelliteService;
 import com.orbitguard.common.response.PagedResponse;
+import com.orbitguard.satellite.integration.celestrak.service.SatelliteSynchronizationService;
 
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -39,6 +40,7 @@ public class SatelliteController {
 
     private final SatelliteService satelliteService;
     private final CelesTrakService celesTrakService;
+    private final SatelliteSynchronizationService satelliteSynchronizationService;
 
     /**
      * Create Satellite
@@ -254,6 +256,42 @@ public class SatelliteController {
                 ResponseBuilder.success(
                         "Satellite orbital data retrieved successfully.",
                         orbitalData
+                )
+        );
+    }
+
+
+    /**
+     * Synchronize satellites from CelesTrak
+     * into the local satellite collection.
+     */
+    @Operation(
+            summary = "Synchronize satellites from CelesTrak",
+            description = "Fetches satellite data from the specified CelesTrak group and synchronizes it with the local satellite collection using the NORAD catalog ID."
+    )
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200",
+                    description = "Satellite synchronization completed successfully"
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "400",
+                    description = "Invalid CelesTrak group"
+            ),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "502",
+                    description = "Unable to retrieve data from CelesTrak"
+            )
+    })
+    @PostMapping("/synchronize")
+    public ResponseEntity<ApiResponse<Void>> synchronizeSatellites(
+            @RequestParam String group) {
+
+        satelliteSynchronizationService.synchronizeSatellites(group);
+
+        return ResponseEntity.ok(
+                ResponseBuilder.success(
+                        "Satellite synchronization completed successfully."
                 )
         );
     }

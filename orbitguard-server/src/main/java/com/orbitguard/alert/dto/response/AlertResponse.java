@@ -69,6 +69,11 @@ public class AlertResponse {
     private String message;
 
     /**
+     * Remarks added during alert status updates.
+     */
+    private String remarks;
+
+    /**
      * Alert severity.
      */
     private AlertSeverity severity;

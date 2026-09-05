@@ -1,6 +1,7 @@
 package com.orbitguard.satellite.integration.celestrak.service;
 
 import com.orbitguard.satellite.integration.celestrak.dto.CelesTrakOrbitalData;
+import com.orbitguard.satellite.integration.celestrak.dto.CelesTrakSatelliteResponse;
 
 import java.util.List;
 
@@ -16,4 +17,6 @@ public interface CelesTrakService {
     List<CelesTrakOrbitalData> fetchSatelliteOrbitalData(
             Integer noradCatalogId
     );
+
+    List<CelesTrakSatelliteResponse> fetchSatellitesByGroup(String group);
 }

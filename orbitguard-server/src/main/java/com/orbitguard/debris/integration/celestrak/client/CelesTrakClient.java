@@ -24,4 +24,16 @@ public class CelesTrakClient {
                 .retrieve()
                 .body(CelesTrakDebrisResponse[].class);
     }
+
+    public CelesTrakDebrisResponse[] fetchDebrisByGroup(String group) {
+
+        return celesTrakRestClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path(GP_ENDPOINT)
+                        .queryParam("GROUP", group)
+                        .queryParam("FORMAT", "JSON")
+                        .build())
+                .retrieve()
+                .body(CelesTrakDebrisResponse[].class);
+    }
 }

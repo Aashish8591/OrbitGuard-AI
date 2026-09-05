@@ -18,10 +18,10 @@ import com.orbitguard.common.exception.BadRequestException;
 import com.orbitguard.common.exception.ResourceNotFoundException;
 import com.orbitguard.common.response.ApiResponse;
 import com.orbitguard.common.response.PagedResponse;
-import com.orbitguard.common.util.ResponseBuilder;
 import com.orbitguard.common.sequence.SequenceConstants;
 import com.orbitguard.common.sequence.SequenceGeneratorService;
 import com.orbitguard.common.util.BusinessCodeGenerator;
+import com.orbitguard.common.util.ResponseBuilder;
 import com.orbitguard.risk.entity.CollisionRisk;
 import com.orbitguard.risk.repository.CollisionRiskRepository;
 import lombok.RequiredArgsConstructor;
@@ -32,7 +32,6 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
-
 
 /**
  * ==============================================================
@@ -55,7 +54,8 @@ import java.util.List;
  * • Alert Code is generated automatically.
  * • Alert Severity is calculated from Risk Level.
  * • Soft delete is used instead of permanent deletion.
- * * Module : Alert Management
+ *
+ * Module : Alert Management
  *
  * @author OrbitGuard AI Team
  * @version 1.0
@@ -86,7 +86,6 @@ public class AlertServiceImpl implements AlertService {
      * Business Prefix.
      */
     private static final String ALERT_PREFIX = "ALT";
-
 
     @Override
     public ApiResponse<AlertResponse> createAlert(
@@ -155,7 +154,6 @@ public class AlertServiceImpl implements AlertService {
                     "Risk ID is required."
             );
         }
-
     }
 
     /**
@@ -173,17 +171,14 @@ public class AlertServiceImpl implements AlertService {
             String riskId
     ) {
 
-        CollisionRisk collisionRisk = collisionRiskRepository
+        return collisionRiskRepository
                 .findByIdAndIsActiveTrue(riskId)
                 .orElseThrow(() ->
                         new ResourceNotFoundException(
                                 "Collision Risk not found with ID: " + riskId
                         )
                 );
-
-        return collisionRisk;
     }
-
 
     /**
      * ----------------------------------------------------------
@@ -209,7 +204,6 @@ public class AlertServiceImpl implements AlertService {
                 sequence
         );
     }
-
 
     /**
      * ----------------------------------------------------------
@@ -309,17 +303,36 @@ public class AlertServiceImpl implements AlertService {
             String alertId
     ) {
 
-        Alert alert = alertRepository
+        validateAlertId(alertId);
+
+        return alertRepository
                 .findByIdAndIsActiveTrue(alertId)
                 .orElseThrow(() ->
                         new ResourceNotFoundException(
                                 "Alert not found with ID: " + alertId
                         )
                 );
-
-        return alert;
     }
 
+    /**
+     * ----------------------------------------------------------
+     * Validate Alert ID
+     * ----------------------------------------------------------
+     *
+     * Validates the Alert ID before database operations.
+     *
+     * @param alertId Alert ID
+     */
+    private void validateAlertId(
+            String alertId
+    ) {
+
+        if (alertId == null || alertId.isBlank()) {
+            throw new BadRequestException(
+                    "Alert ID is required."
+            );
+        }
+    }
 
     /**
      * ----------------------------------------------------------
@@ -338,14 +351,14 @@ public class AlertServiceImpl implements AlertService {
 
         Alert alert = getActiveAlert(id);
 
-        AlertResponse response = alertMapper.toResponse(alert);
+        AlertResponse response =
+                alertMapper.toResponse(alert);
 
         return ResponseBuilder.success(
                 "Alert retrieved successfully.",
                 response
         );
     }
-
 
     /**
      * ----------------------------------------------------------
@@ -356,7 +369,7 @@ public class AlertServiceImpl implements AlertService {
      * pagination and sorting.
      *
      * @param request Search Request
-     * @param pageable Pagination Information
+     * @param pageable Pageable Information
      * @return Paged Alert Response
      */
     @Override
@@ -365,19 +378,22 @@ public class AlertServiceImpl implements AlertService {
             Pageable pageable
     ) {
 
-        Query query = alertQueryBuilder.buildQuery(request);
+        Query query =
+                alertQueryBuilder.buildQuery(request);
 
-        long totalElements = mongoTemplate.count(
-                query,
-                Alert.class
-        );
+        long totalElements =
+                mongoTemplate.count(
+                        query,
+                        Alert.class
+                );
 
         query.with(pageable);
 
-        List<Alert> alerts = mongoTemplate.find(
-                query,
-                Alert.class
-        );
+        List<Alert> alerts =
+                mongoTemplate.find(
+                        query,
+                        Alert.class
+                );
 
         PagedResponse<AlertResponse> response =
                 buildPagedResponse(
@@ -411,9 +427,10 @@ public class AlertServiceImpl implements AlertService {
             long totalElements
     ) {
 
-        List<AlertResponse> responses = alerts.stream()
-                .map(alertMapper::toResponse)
-                .toList();
+        List<AlertResponse> responses =
+                alerts.stream()
+                        .map(alertMapper::toResponse)
+                        .toList();
 
         int totalPages = (int) Math.ceil(
                 (double) totalElements / pageable.getPageSize()
@@ -425,7 +442,11 @@ public class AlertServiceImpl implements AlertService {
                 .size(pageable.getPageSize())
                 .totalElements(totalElements)
                 .totalPages(totalPages)
-                .last(totalPages == 0 || pageable.getPageNumber() == totalPages - 1)
+                .last(
+                        totalPages == 0
+                                || pageable.getPageNumber()
+                                == totalPages - 1
+                )
                 .build();
     }
 
@@ -446,25 +467,33 @@ public class AlertServiceImpl implements AlertService {
             UpdateAlertStatusRequest request
     ) {
 
+        // Validate request before accessing its fields
+        validateUpdateStatusRequest(request);
+
+        // Fetch active alert
         Alert alert = getActiveAlert(id);
 
+        // Validate status transition
         validateStatusTransition(
                 alert.getStatus(),
                 request.getStatus()
         );
 
+        // Use one timestamp for this status update
+        LocalDateTime now = LocalDateTime.now();
+
         alert.setStatus(request.getStatus());
 
         alert.setRemarks(request.getRemarks());
 
-        updateAuditFields(alert);
+        alert.setUpdatedAt(now);
 
         if (request.getStatus() == AlertStatus.ACKNOWLEDGED) {
-            alert.setAcknowledgedAt(LocalDateTime.now());
+            alert.setAcknowledgedAt(now);
         }
 
         if (request.getStatus() == AlertStatus.RESOLVED) {
-            alert.setResolvedAt(LocalDateTime.now());
+            alert.setResolvedAt(now);
         }
 
         Alert updatedAlert =
@@ -477,6 +506,32 @@ public class AlertServiceImpl implements AlertService {
                 "Alert status updated successfully.",
                 response
         );
+    }
+
+    /**
+     * ----------------------------------------------------------
+     * Validate Update Status Request
+     * ----------------------------------------------------------
+     *
+     * Validates the incoming status update request.
+     *
+     * @param request Update Alert Status Request
+     */
+    private void validateUpdateStatusRequest(
+            UpdateAlertStatusRequest request
+    ) {
+
+        if (request == null) {
+            throw new BadRequestException(
+                    "Update Alert Status Request cannot be null."
+            );
+        }
+
+        if (request.getStatus() == null) {
+            throw new BadRequestException(
+                    "Alert status cannot be null."
+            );
+        }
     }
 
     /**
@@ -552,43 +607,7 @@ public class AlertServiceImpl implements AlertService {
                             "A CLOSED alert cannot be updated."
                     );
         }
-
     }
-
-    /**
-     * ----------------------------------------------------------
-     * Update Audit Fields
-     * ----------------------------------------------------------
-     *
-     * Updates audit information before
-     * persisting the Alert entity.
-     *
-     * Current Audit Fields:
-     * • updatedAt
-     *
-     * Future:
-     * • updatedBy
-     * • modifiedBy
-     * • audit logs
-     *
-     * @param alert Alert Entity
-     */
-    private void updateAuditFields(
-            Alert alert
-    ) {
-
-        if (alert == null) {
-            throw new BadRequestException(
-                    "Alert cannot be null."
-            );
-        }
-
-        alert.setUpdatedAt(
-                LocalDateTime.now()
-        );
-
-    }
-
 
     /**
      * ----------------------------------------------------------
@@ -614,7 +633,7 @@ public class AlertServiceImpl implements AlertService {
 
         alert.setIsActive(false);
 
-        updateAuditFields(alert);
+        alert.setUpdatedAt(LocalDateTime.now());
 
         alertRepository.save(alert);
 
@@ -622,5 +641,4 @@ public class AlertServiceImpl implements AlertService {
                 "Alert deleted successfully."
         );
     }
-
 }

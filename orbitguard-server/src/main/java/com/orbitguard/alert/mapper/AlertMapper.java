@@ -80,6 +80,7 @@ public class AlertMapper {
                 .debrisId(alert.getDebrisId())
                 .title(alert.getTitle())
                 .message(alert.getMessage())
+                .remarks(alert.getRemarks())
                 .severity(alert.getSeverity())
                 .status(alert.getStatus())
                 .source(alert.getSource())

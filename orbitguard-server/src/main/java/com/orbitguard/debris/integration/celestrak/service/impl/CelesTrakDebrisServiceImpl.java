@@ -9,6 +9,9 @@ import com.orbitguard.debris.integration.celestrak.service.CelesTrakDebrisServic
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.Arrays;
+import java.util.List;
+
 @Service
 @RequiredArgsConstructor
 public class CelesTrakDebrisServiceImpl implements CelesTrakDebrisService {
@@ -38,5 +41,24 @@ public class CelesTrakDebrisServiceImpl implements CelesTrakDebrisService {
                     "NORAD ID must be a positive number."
             );
         }
+    }
+
+    @Override
+    public List<CelesTrakDebrisResponse> fetchDebrisByGroup(String group) {
+
+        if (group == null || group.isBlank()) {
+            throw new BadRequestException(
+                    "CelesTrak group must not be blank."
+            );
+        }
+
+        CelesTrakDebrisResponse[] responses =
+                celesTrakClient.fetchDebrisByGroup(group);
+
+        if (responses == null || responses.length == 0) {
+            return List.of();
+        }
+
+        return Arrays.asList(responses);
     }
 }

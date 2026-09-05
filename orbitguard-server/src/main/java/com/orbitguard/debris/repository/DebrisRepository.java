@@ -56,4 +56,14 @@ public interface DebrisRepository extends MongoRepository<SpaceDebris, String> {
      */
     Optional<SpaceDebris> findByNoradIdAndIsActiveTrue(Long noradId);
 
+
+    /**
+     * Finds debris by NORAD ID regardless of active status.
+     *
+     * Used by CelesTrak synchronization to avoid
+     * duplicate NORAD records when a soft-deleted
+     * debris object already exists.
+     */
+    Optional<SpaceDebris> findByNoradId(Long noradId);
+
 }
