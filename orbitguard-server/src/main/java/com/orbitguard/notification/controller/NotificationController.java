@@ -15,6 +15,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -460,6 +461,7 @@ public class NotificationController {
                     example = "USER-000001"
             )
             @RequestParam
+            @NotBlank(message = "Recipient ID is required.")
             String recipientId) {
 
         ApiResponse<Long> response =

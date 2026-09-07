@@ -1,5 +1,6 @@
 package com.orbitguard.notification.service.impl;
 
+import com.orbitguard.alert.repository.AlertRepository;
 import com.orbitguard.common.exception.BadRequestException;
 import com.orbitguard.common.exception.DuplicateResourceException;
 import com.orbitguard.common.exception.ResourceNotFoundException;
@@ -23,6 +24,7 @@ import com.orbitguard.notification.repository.NotificationRepository;
 import com.orbitguard.notification.service.NotificationService;
 import com.orbitguard.notification.specification.NotificationQueryBuilder;
 import com.orbitguard.notification.validator.NotificationValidator;
+import com.orbitguard.risk.repository.CollisionRiskRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.domain.Page;
@@ -72,6 +74,16 @@ public class NotificationServiceImpl implements NotificationService {
     private final NotificationRepository notificationRepository;
 
     /**
+     * Repository used to validate referenced active alerts.
+     */
+    private final AlertRepository alertRepository;
+
+    /**
+     * Repository used to validate referenced active collision risks.
+     */
+    private final CollisionRiskRepository collisionRiskRepository;
+
+    /**
      * MongoTemplate used for dynamic search and filtering.
      */
     private final MongoTemplate mongoTemplate;
@@ -112,6 +124,8 @@ public class NotificationServiceImpl implements NotificationService {
             CreateNotificationRequest request) {
 
         notificationValidator.validateCreateRequest(request);
+
+        validateNotificationReferences(request);
 
         try {
             Notification notification =
@@ -393,15 +407,15 @@ public class NotificationServiceImpl implements NotificationService {
                                 )
                         );
 
+        LocalDateTime now = LocalDateTime.now();
+
         if (request.getAction() == NotificationAction.READ) {
 
             notification.setStatus(
                     NotificationStatus.READ
             );
 
-            notification.setReadAt(
-                    LocalDateTime.now()
-            );
+            notification.setReadAt(now);
 
         } else if (
                 request.getAction() == NotificationAction.UNREAD) {
@@ -419,9 +433,7 @@ public class NotificationServiceImpl implements NotificationService {
             );
         }
 
-        notification.setUpdatedAt(
-                LocalDateTime.now()
-        );
+        notification.setUpdatedAt(now);
 
         Notification updatedNotification =
                 notificationRepository.save(notification);
@@ -469,6 +481,47 @@ public class NotificationServiceImpl implements NotificationService {
                 "Unread notification count retrieved successfully.",
                 count
         );
+    }
+
+    /**
+     * Validates referenced Alert and Collision Risk entities.
+     *
+     * Only active referenced entities are accepted.
+     *
+     * @param request create notification request
+     * @throws ResourceNotFoundException when a referenced entity
+     *         does not exist or is inactive
+     */
+    private void validateNotificationReferences(
+            CreateNotificationRequest request) {
+
+        if (request.getType() == null) {
+            return;
+        }
+
+        if (request.getType().name().equals("ALERT")) {
+
+            alertRepository
+                    .findByIdAndIsActiveTrue(request.getAlertId())
+                    .orElseThrow(() ->
+                            new ResourceNotFoundException(
+                                    "Referenced alert not found or is inactive."
+                            )
+                    );
+        }
+
+        if (request.getType().name().equals("COLLISION")) {
+
+            collisionRiskRepository
+                    .findByIdAndIsActiveTrue(
+                            request.getCollisionRiskId()
+                    )
+                    .orElseThrow(() ->
+                            new ResourceNotFoundException(
+                                    "Referenced collision risk not found or is inactive."
+                            )
+                    );
+        }
     }
 
     /**

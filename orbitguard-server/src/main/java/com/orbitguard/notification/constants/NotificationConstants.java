@@ -1,4 +1,5 @@
 package com.orbitguard.notification.constants;
+
 /**
  * Constants used across the Notification module.
  *
@@ -105,10 +106,6 @@ public final class NotificationConstants {
      * Default Values
      * ========================================================== */
 
-    public static final boolean DEFAULT_IS_READ = false;
-
-    public static final boolean DEFAULT_DELETED = false;
-
     public static final int DEFAULT_PAGE_NUMBER = 0;
 
     public static final int DEFAULT_PAGE_SIZE = 10;
@@ -116,5 +113,4 @@ public final class NotificationConstants {
     public static final String DEFAULT_SORT_BY = "createdAt";
 
     public static final String DEFAULT_SORT_DIRECTION = "desc";
-
 }

@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * ===============================================================
@@ -86,23 +87,26 @@ public class NotificationQueryBuilder {
          *
          * Searches notification title and message.
          *
-         * Case-insensitive regular expression is used to provide
-         * user-friendly text searching.
+         * The keyword is escaped before being used as a regular
+         * expression so that user input is treated as literal text.
+         *
+         * Search is case-insensitive.
          */
         if (searchRequest != null
                 && searchRequest.getKeyword() != null
                 && !searchRequest.getKeyword().isBlank()) {
 
             String keyword = searchRequest.getKeyword().trim();
+            String escapedKeyword = Pattern.quote(keyword);
 
             criteriaList.add(
                     new Criteria().orOperator(
 
                             Criteria.where("title")
-                                    .regex(keyword, "i"),
+                                    .regex(escapedKeyword, "i"),
 
                             Criteria.where("message")
-                                    .regex(keyword, "i")
+                                    .regex(escapedKeyword, "i")
                     )
             );
         }

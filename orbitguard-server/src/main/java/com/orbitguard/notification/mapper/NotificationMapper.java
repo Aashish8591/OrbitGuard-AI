@@ -90,13 +90,17 @@ public class NotificationMapper {
         return NotificationResponse.builder()
                 .id(notification.getId())
                 .notificationCode(notification.getNotificationCode())
+                .recipientId(notification.getRecipientId())
                 .title(notification.getTitle())
                 .message(notification.getMessage())
                 .type(notification.getType())
                 .priority(notification.getPriority())
                 .status(notification.getStatus())
+                .alertId(notification.getAlertId())
+                .collisionRiskId(notification.getCollisionRiskId())
                 .readAt(notification.getReadAt())
                 .createdAt(notification.getCreatedAt())
+                .updatedAt(notification.getUpdatedAt())
                 .build();
     }
 

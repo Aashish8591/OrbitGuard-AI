@@ -18,7 +18,7 @@ import java.time.LocalDateTime;
  * Response object returned to the client after notification
  * operations.
  *
- * This DTO exposes only business-relevant information required
+ * This DTO exposes business-relevant information required
  * by the client while hiding internal database implementation
  * details.
  *
@@ -47,6 +47,11 @@ public class NotificationResponse {
     private String id;
 
     /**
+     * Recipient user identifier.
+     */
+    private String recipientId;
+
+    /**
      * Notification title.
      */
     private String title;
@@ -72,6 +77,22 @@ public class NotificationResponse {
     private NotificationStatus status;
 
     /**
+     * Related Alert ID.
+     *
+     * Nullable for notifications that are not related
+     * to an Alert.
+     */
+    private String alertId;
+
+    /**
+     * Related Collision Risk ID.
+     *
+     * Nullable for notifications that are not related
+     * to a Collision Risk.
+     */
+    private String collisionRiskId;
+
+    /**
      * Time when the notification was read.
      */
     private LocalDateTime readAt;
@@ -80,5 +101,10 @@ public class NotificationResponse {
      * Notification creation timestamp.
      */
     private LocalDateTime createdAt;
+
+    /**
+     * Notification last update timestamp.
+     */
+    private LocalDateTime updatedAt;
 
 }
