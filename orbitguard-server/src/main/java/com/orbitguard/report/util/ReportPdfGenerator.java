@@ -6,13 +6,17 @@ import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
+import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * ==============================================================
@@ -33,6 +37,7 @@ import java.time.format.DateTimeFormatter;
  *     <li>Accept an existing Report entity</li>
  *     <li>Create a PDF document</li>
  *     <li>Write report information into the document</li>
+ *     <li>Wrap long text within the page boundaries</li>
  *     <li>Return the generated PDF as byte[]</li>
  * </ul>
  *
@@ -61,6 +66,47 @@ public class ReportPdfGenerator {
      */
     private static final DateTimeFormatter DATE_TIME_FORMATTER =
             DateTimeFormatter.ofPattern("dd MMM yyyy, HH:mm:ss");
+
+    /**
+     * Standard PDF fonts used by the report.
+     *
+     * <p>
+     * PDFBox Standard 14 fonts provide broad compatibility
+     * without requiring an external font file.
+     * </p>
+     */
+    private static final PDFont BOLD_FONT =
+            new PDType1Font(
+                    Standard14Fonts.FontName.HELVETICA_BOLD
+            );
+
+    private static final PDFont REGULAR_FONT =
+            new PDType1Font(
+                    Standard14Fonts.FontName.HELVETICA
+            );
+
+    /**
+     * Horizontal position where field values begin.
+     */
+    private static final float VALUE_X_POSITION = 160;
+
+    /**
+     * Right margin of the PDF.
+     */
+    private static final float RIGHT_MARGIN = 50;
+
+    /**
+     * Maximum width available for field values.
+     */
+    private static final float VALUE_MAX_WIDTH =
+            PDRectangle.A4.getWidth()
+                    - VALUE_X_POSITION
+                    - RIGHT_MARGIN;
+
+    /**
+     * Standard line spacing for wrapped field values.
+     */
+    private static final float LINE_SPACING = 15;
 
 
     /**
@@ -137,9 +183,7 @@ public class ReportPdfGenerator {
         contentStream.beginText();
 
         contentStream.setFont(
-                new PDType1Font(
-                        Standard14Fonts.FontName.HELVETICA_BOLD
-                ),
+                BOLD_FONT,
                 20
         );
 
@@ -163,9 +207,7 @@ public class ReportPdfGenerator {
         contentStream.beginText();
 
         contentStream.setFont(
-                new PDType1Font(
-                        Standard14Fonts.FontName.HELVETICA_BOLD
-                ),
+                BOLD_FONT,
                 16
         );
 
@@ -321,7 +363,7 @@ public class ReportPdfGenerator {
      * @param contentStream PDF content stream
      * @param title section title
      * @param y vertical position
-     * @return updated vertical position
+     * @return unchanged vertical position
      * @throws IOException when PDF content cannot be written
      */
     private float writeSectionTitle(
@@ -333,9 +375,7 @@ public class ReportPdfGenerator {
         contentStream.beginText();
 
         contentStream.setFont(
-                new PDType1Font(
-                        Standard14Fonts.FontName.HELVETICA_BOLD
-                ),
+                BOLD_FONT,
                 12
         );
 
@@ -344,7 +384,9 @@ public class ReportPdfGenerator {
                 y
         );
 
-        contentStream.showText(title);
+        contentStream.showText(
+                sanitizeForPdf(title, BOLD_FONT)
+        );
 
         contentStream.endText();
 
@@ -353,12 +395,13 @@ public class ReportPdfGenerator {
 
 
     /**
-     * Writes a label/value field.
+     * Writes a label/value field and wraps the value when
+     * it exceeds the available PDF width.
      *
      * @param contentStream PDF content stream
      * @param label field label
      * @param value field value
-     * @param y vertical position
+     * @param y starting vertical position
      * @return updated vertical position
      * @throws IOException when PDF content cannot be written
      */
@@ -369,12 +412,34 @@ public class ReportPdfGenerator {
             float y
     ) throws IOException {
 
+        String sanitizedLabel =
+                sanitizeForPdf(label, BOLD_FONT);
+
+        String sanitizedValue =
+                sanitizeForPdf(value, REGULAR_FONT);
+
+        List<String> lines =
+                wrapText(
+                        sanitizedValue,
+                        REGULAR_FONT,
+                        10,
+                        VALUE_MAX_WIDTH
+                );
+
+        if (lines.isEmpty()) {
+            lines = List.of("N/A");
+        }
+
+
+        /*
+         * ----------------------------------------------------------
+         * Write label
+         * ----------------------------------------------------------
+         */
         contentStream.beginText();
 
         contentStream.setFont(
-                new PDType1Font(
-                        Standard14Fonts.FontName.HELVETICA_BOLD
-                ),
+                BOLD_FONT,
                 10
         );
 
@@ -384,28 +449,44 @@ public class ReportPdfGenerator {
         );
 
         contentStream.showText(
-                label + " :"
-        );
-
-        contentStream.setFont(
-                new PDType1Font(
-                        Standard14Fonts.FontName.HELVETICA
-                ),
-                10
-        );
-
-        contentStream.newLineAtOffset(
-                110,
-                0
-        );
-
-        contentStream.showText(
-                sanitizeForPdf(value)
+                sanitizedLabel + " :"
         );
 
         contentStream.endText();
 
-        return y - 20;
+
+        /*
+         * ----------------------------------------------------------
+         * Write wrapped value lines
+         * ----------------------------------------------------------
+         */
+        float currentY = y;
+
+        for (String line : lines) {
+
+            contentStream.beginText();
+
+            contentStream.setFont(
+                    REGULAR_FONT,
+                    10
+            );
+
+            contentStream.newLineAtOffset(
+                    VALUE_X_POSITION,
+                    currentY
+            );
+
+            contentStream.showText(line);
+
+            contentStream.endText();
+
+            currentY -= LINE_SPACING;
+        }
+
+        /*
+         * Add a small extra gap after multi-line fields.
+         */
+        return currentY - 5;
     }
 
 
@@ -434,9 +515,7 @@ public class ReportPdfGenerator {
         contentStream.beginText();
 
         contentStream.setFont(
-                new PDType1Font(
-                        Standard14Fonts.FontName.HELVETICA
-                ),
+                REGULAR_FONT,
                 8
         );
 
@@ -476,7 +555,7 @@ public class ReportPdfGenerator {
      * @return formatted timestamp or N/A
      */
     private String formatDateTime(
-            java.time.LocalDateTime dateTime
+            LocalDateTime dateTime
     ) {
 
         if (dateTime == null) {
@@ -488,27 +567,278 @@ public class ReportPdfGenerator {
 
 
     /**
-     * Sanitizes text before passing it to PDFBox's standard
-     * Helvetica font.
+     * Sanitizes text according to the actual PDF font.
      *
      * <p>
-     * PDFBox Standard 14 fonts do not support arbitrary Unicode
-     * characters. Replacing unsupported line-breaking/control
-     * characters prevents malformed PDF text output.
+     * PDFBox Standard 14 fonts have limited character support.
+     * Instead of assuming a particular character encoding,
+     * this method asks the actual PDF font whether each
+     * Unicode code point can be encoded.
+     *
+     * <p>
+     * Unsupported characters are replaced with '?' so that
+     * PDF generation remains stable.
      * </p>
      *
      * @param value source text
+     * @param font PDF font used to render the text
      * @return sanitized PDF-safe text
+     * @throws IOException when font encoding cannot be checked
      */
-    private String sanitizeForPdf(String value) {
+    private String sanitizeForPdf(
+            String value,
+            PDFont font
+    ) throws IOException {
 
         if (value == null || value.isBlank()) {
             return "N/A";
         }
 
-        return value
-                .replace("\r", " ")
-                .replace("\n", " ")
-                .trim();
+        String normalized =
+                value
+                        .replace("\r", " ")
+                        .replace("\n", " ")
+                        .trim();
+
+        StringBuilder sanitized =
+                new StringBuilder();
+
+        for (int offset = 0;
+             offset < normalized.length();) {
+
+            int codePoint =
+                    normalized.codePointAt(offset);
+
+            String character =
+                    new String(
+                            Character.toChars(codePoint)
+                    );
+
+            if (Character.isISOControl(codePoint)) {
+                sanitized.append(' ');
+            } else {
+                try {
+                    font.encode(character);
+                    sanitized.append(character);
+                } catch (IllegalArgumentException ex) {
+                    sanitized.append('?');
+                }
+            }
+
+            offset += Character.charCount(codePoint);
+        }
+
+        return sanitized.toString();
+    }
+
+
+    /**
+     * Wraps text according to the available PDF width.
+     *
+     * <p>
+     * Words are kept together whenever possible. If a single
+     * word itself is wider than the available width, it is split
+     * into smaller portions.
+     * </p>
+     *
+     * @param text text to wrap
+     * @param font PDF font
+     * @param fontSize font size
+     * @param maxWidth maximum allowed width
+     * @return wrapped text lines
+     * @throws IOException when font metrics cannot be calculated
+     */
+    private List<String> wrapText(
+            String text,
+            PDFont font,
+            float fontSize,
+            float maxWidth
+    ) throws IOException {
+
+        List<String> lines =
+                new ArrayList<>();
+
+        if (text == null || text.isBlank()) {
+            lines.add("N/A");
+            return lines;
+        }
+
+        String[] words =
+                text.trim().split("\\s+");
+
+        StringBuilder currentLine =
+                new StringBuilder();
+
+        for (String word : words) {
+
+            if (currentLine.isEmpty()) {
+
+                if (getTextWidth(
+                        word,
+                        font,
+                        fontSize
+                ) <= maxWidth) {
+
+                    currentLine.append(word);
+
+                } else {
+
+                    lines.addAll(
+                            splitLongWord(
+                                    word,
+                                    font,
+                                    fontSize,
+                                    maxWidth
+                            )
+                    );
+                }
+
+                continue;
+            }
+
+            String candidate =
+                    currentLine
+                            + " "
+                            + word;
+
+            if (getTextWidth(
+                    candidate,
+                    font,
+                    fontSize
+            ) <= maxWidth) {
+
+                currentLine.append(" ")
+                        .append(word);
+
+            } else {
+
+                lines.add(
+                        currentLine.toString()
+                );
+
+                currentLine.setLength(0);
+
+                if (getTextWidth(
+                        word,
+                        font,
+                        fontSize
+                ) <= maxWidth) {
+
+                    currentLine.append(word);
+
+                } else {
+
+                    lines.addAll(
+                            splitLongWord(
+                                    word,
+                                    font,
+                                    fontSize,
+                                    maxWidth
+                            )
+                    );
+                }
+            }
+        }
+
+        if (!currentLine.isEmpty()) {
+            lines.add(
+                    currentLine.toString()
+            );
+        }
+
+        return lines;
+    }
+
+
+    /**
+     * Splits a single word when the word itself exceeds the
+     * available PDF width.
+     *
+     * @param word word to split
+     * @param font PDF font
+     * @param fontSize font size
+     * @param maxWidth maximum allowed width
+     * @return split lines
+     * @throws IOException when font metrics cannot be calculated
+     */
+    private List<String> splitLongWord(
+            String word,
+            PDFont font,
+            float fontSize,
+            float maxWidth
+    ) throws IOException {
+
+        List<String> lines =
+                new ArrayList<>();
+
+        StringBuilder currentPart =
+                new StringBuilder();
+
+        for (int offset = 0;
+             offset < word.length();) {
+
+            int codePoint =
+                    word.codePointAt(offset);
+
+            String character =
+                    new String(
+                            Character.toChars(codePoint)
+                    );
+
+            String candidate =
+                    currentPart.toString()
+                            + character;
+
+            if (getTextWidth(
+                    candidate,
+                    font,
+                    fontSize
+            ) <= maxWidth) {
+
+                currentPart.append(character);
+
+            } else {
+
+                if (!currentPart.isEmpty()) {
+                    lines.add(
+                            currentPart.toString()
+                    );
+                }
+
+                currentPart.setLength(0);
+                currentPart.append(character);
+            }
+
+            offset += Character.charCount(codePoint);
+        }
+
+        if (!currentPart.isEmpty()) {
+            lines.add(
+                    currentPart.toString()
+            );
+        }
+
+        return lines;
+    }
+
+
+    /**
+     * Calculates the rendered width of text.
+     *
+     * @param text text to measure
+     * @param font PDF font
+     * @param fontSize font size
+     * @return text width
+     * @throws IOException when font metrics cannot be calculated
+     */
+    private float getTextWidth(
+            String text,
+            PDFont font,
+            float fontSize
+    ) throws IOException {
+
+        return font.getStringWidth(text)
+                / 1000
+                * fontSize;
     }
 }

@@ -56,8 +56,7 @@ import java.util.Objects;
  *
  * <p>
  * The service also does not contain PDF-generation logic.
- * PDF generation will be handled separately by
- * {@code ReportPdfGenerator} once its contract is implemented.
+ * PDF generation is delegated to {@link ReportPdfGenerator}.
  * </p>
  *
  * Module : Reports
@@ -94,6 +93,9 @@ public class ReportServiceImpl implements ReportService {
      */
     private final BusinessCodeGenerator businessCodeGenerator;
 
+    /**
+     * Generates PDF documents for reports.
+     */
     private final ReportPdfGenerator reportPdfGenerator;
 
 
@@ -410,7 +412,7 @@ public class ReportServiceImpl implements ReportService {
      *
      * Retrieves reports matching the supplied status.
      *
-     * @param status report processing status
+     * @param status report status used for filtering
      * @return standard API response containing matching reports
      */
     @Override
@@ -561,7 +563,7 @@ public class ReportServiceImpl implements ReportService {
      * Performs service-level validation for the report generation
      * request.
      *
-     * Bean validation annotations should remain responsible for
+     * Bean validation annotations remain responsible for
      * structural request validation at the controller boundary.
      *
      * @param request report generation request
@@ -638,6 +640,7 @@ public class ReportServiceImpl implements ReportService {
         }
     }
 
+
     /**
      * ==============================================================
      * Generate Report PDF
@@ -654,7 +657,7 @@ public class ReportServiceImpl implements ReportService {
      * <p>
      * This service method intentionally does not contain PDF
      * formatting logic. PDF generation remains isolated inside
-     * {@code ReportPdfGenerator}.
+     * {@link ReportPdfGenerator}.
      * </p>
      *
      * @param reportCode unique report business code
@@ -669,16 +672,27 @@ public class ReportServiceImpl implements ReportService {
 
         validateReportCode(reportCode);
 
-        Report report = reportRepository.findByReportCode(reportCode.trim())
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        ReportApiConstants.REPORT_NOT_FOUND_MESSAGE
-                ));
+        Report report =
+                reportRepository.findByReportCode(
+                                reportCode.trim()
+                        )
+                        .orElseThrow(() ->
+                                new ResourceNotFoundException(
+                                        ReportApiConstants.REPORT_NOT_FOUND_MESSAGE
+                                )
+                        );
 
         try {
 
             return reportPdfGenerator.generate(report);
 
         } catch (Exception ex) {
+
+            log.error(
+                    "Failed to generate PDF for reportCode={}",
+                    reportCode,
+                    ex
+            );
 
             throw new IllegalStateException(
                     ReportApiConstants.REPORT_PDF_GENERATION_FAILED_MESSAGE,
