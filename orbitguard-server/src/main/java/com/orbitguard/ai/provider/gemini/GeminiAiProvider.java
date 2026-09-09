@@ -1,6 +1,6 @@
 package com.orbitguard.ai.provider.gemini;
 
-import com.google.genai.Client;
+import com.google.genai.Models;
 import com.google.genai.types.GenerateContentResponse;
 import com.orbitguard.ai.exception.AiServiceException;
 import com.orbitguard.ai.provider.AiProvider;
@@ -26,7 +26,7 @@ import org.springframework.stereotype.Component;
  * </p>
  *
  * <p>
- * The Gemini client itself is created and configured by
+ * The Gemini Models API is configured and exposed by
  * {@code GeminiConfig} and injected through Spring.
  * </p>
  *
@@ -38,9 +38,9 @@ import org.springframework.stereotype.Component;
 public class GeminiAiProvider implements AiProvider {
 
     /**
-     * Gemini SDK client configured by GeminiConfig.
+     * Gemini Models API configured by GeminiConfig.
      */
-    private final Client geminiClient;
+    private final Models geminiModels;
 
 
     /**
@@ -74,7 +74,7 @@ public class GeminiAiProvider implements AiProvider {
         try {
 
             GenerateContentResponse response =
-                    geminiClient.models.generateContent(
+                    geminiModels.generateContent(
                             MODEL_NAME,
                             prompt,
                             null

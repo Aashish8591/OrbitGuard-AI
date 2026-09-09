@@ -1,6 +1,7 @@
 package com.orbitguard.ai.config;
 
 import com.google.genai.Client;
+import com.google.genai.Models;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -50,5 +51,23 @@ public class GeminiConfig {
         return Client.builder()
                 .apiKey(apiKey)
                 .build();
+    }
+
+
+    /**
+     * Exposes the Gemini Models API used by the AI provider.
+     *
+     * <p>
+     * The Models instance is obtained from the already configured
+     * Gemini client so that the application maintains a single
+     * Gemini client configuration.
+     * </p>
+     *
+     * @param geminiClient configured Gemini client
+     * @return Gemini Models API
+     */
+    @Bean
+    public Models geminiModels(Client geminiClient) {
+        return geminiClient.models;
     }
 }
