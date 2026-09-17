@@ -31,6 +31,9 @@ public class SecurityConfig {
                 // Stateless REST API
                 .csrf(csrf -> csrf.disable())
 
+                // CORS
+                .cors(cors -> {})
+
                 // Unauthorized request handling
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint(authenticationEntryPoint))
