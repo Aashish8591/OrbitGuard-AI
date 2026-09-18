@@ -4,6 +4,7 @@ import Landing from "../pages/public/Landing";
 import Register from "../pages/public/Register";
 import Login from "../pages/public/Login";
 import ProtectedRoute from "./ProtectedRoute";
+import AppLayout from "../components/layout/AppLayout";
 
 function AppRoutes() {
   return (
@@ -17,50 +18,96 @@ function AppRoutes() {
       <Route path="/register" element={<Register />} />
 
       {/* =========================================================
-          PROTECTED APPLICATION ROUTES
+          PROTECTED APPLICATION
           ========================================================= */}
 
       <Route element={<ProtectedRoute />}>
-        <Route path="/dashboard" element={<div>Dashboard</div>} />
+        <Route element={<AppLayout />}>
+          {/* Dashboard */}
 
-        <Route path="/satellites" element={<div>Satellites</div>} />
-        <Route
-          path="/satellites/:id"
-          element={<div>Satellite Details</div>}
-        />
+          <Route
+            path="/dashboard"
+            element={<div>Dashboard</div>}
+          />
 
-        <Route path="/debris" element={<div>Debris</div>} />
-        <Route
-          path="/debris/:id"
-          element={<div>Debris Details</div>}
-        />
+          {/* Satellites */}
 
-        <Route path="/risks" element={<div>Risks</div>} />
-        <Route
-          path="/risks/:id"
-          element={<div>Risk Details</div>}
-        />
+          <Route
+            path="/satellites"
+            element={<div>Satellites</div>}
+          />
 
-        <Route
-          path="/visualization"
-          element={<div>Visualization</div>}
-        />
+          <Route
+            path="/satellites/:id"
+            element={<div>Satellite Details</div>}
+          />
 
-        <Route path="/alerts" element={<div>Alerts</div>} />
+          {/* Debris */}
 
-        <Route
-          path="/notifications"
-          element={<div>Notifications</div>}
-        />
+          <Route
+            path="/debris"
+            element={<div>Debris</div>}
+          />
 
-        <Route path="/reports" element={<div>Reports</div>} />
+          <Route
+            path="/debris/:id"
+            element={<div>Debris Details</div>}
+          />
 
-        <Route
-          path="/ai-assistant"
-          element={<div>AI Assistant</div>}
-        />
+          {/* Risks */}
 
-        <Route path="/settings" element={<div>Settings</div>} />
+          <Route
+            path="/risks"
+            element={<div>Risks</div>}
+          />
+
+          <Route
+            path="/risks/:id"
+            element={<div>Risk Details</div>}
+          />
+
+          {/* Visualization */}
+
+          <Route
+            path="/visualization"
+            element={<div>Visualization</div>}
+          />
+
+          {/* Alerts */}
+
+          <Route
+            path="/alerts"
+            element={<div>Alerts</div>}
+          />
+
+          {/* Notifications */}
+
+          <Route
+            path="/notifications"
+            element={<div>Notifications</div>}
+          />
+
+          {/* Reports */}
+
+          <Route
+            path="/reports"
+            element={<div>Reports</div>}
+          />
+
+          {/* AI Assistant */}
+
+          <Route
+            path="/ai-assistant"
+            element={<div>AI Assistant</div>}
+          />
+
+          {/* Settings */}
+
+          <Route
+            path="/settings"
+            element={<div>Settings</div>}
+          />
+        </Route>
       </Route>
 
       {/* =========================================================
