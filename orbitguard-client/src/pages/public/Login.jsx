@@ -1,6 +1,7 @@
-import { useState } from 'react'
-import { motion } from 'framer-motion'
-import { Link, useNavigate } from 'react-router-dom'
+import { useState } from "react";
+import { motion } from "framer-motion";
+import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
 import {
   FiArrowLeft,
   FiArrowRight,
@@ -8,96 +9,232 @@ import {
   FiEyeOff,
   FiLock,
   FiMail,
-} from 'react-icons/fi'
+} from "react-icons/fi";
 
-const EASE = [0.22, 1, 0.36, 1]
+const EASE = [0.22, 1, 0.36, 1];
 
 function Login() {
-  const navigate = useNavigate()
+  const navigate = useNavigate();
+  const { login } = useAuth();
 
   const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-  })
+    email: "",
+    password: "",
+  });
 
-  const [showPassword, setShowPassword] = useState(false)
-  const [errors, setErrors] = useState({})
-  const [status, setStatus] = useState('idle')
+  const [showPassword, setShowPassword] = useState(false);
+  const [errors, setErrors] = useState({});
+  const [status, setStatus] = useState("idle");
+
+  /* ================================================================
+     FORM CHANGE
+     ================================================================ */
 
   const handleChange = (event) => {
-    const { name, value } = event.target
+    const { name, value } = event.target;
 
     setFormData((previous) => ({
       ...previous,
       [name]: value,
-    }))
+    }));
 
     setErrors((previous) => ({
       ...previous,
-      [name]: '',
-      submit: '',
-    }))
-  }
+      [name]: "",
+      submit: "",
+    }));
+  };
+
+  /* ================================================================
+     FORM VALIDATION
+     ================================================================ */
 
   const validateForm = () => {
-    const nextErrors = {}
+    const nextErrors = {};
 
-    const email = formData.email.trim()
-    const password = formData.password
+    const email = formData.email.trim();
+    const password = formData.password;
 
     if (!email) {
-      nextErrors.email = 'Email is required.'
-    } else if (
-      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-    ) {
-      nextErrors.email = 'Please enter a valid email address.'
+      nextErrors.email = "Email is required.";
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      nextErrors.email = "Please enter a valid email address.";
     }
 
     if (!password) {
-      nextErrors.password = 'Password is required.'
+      nextErrors.password = "Password is required.";
     }
 
-    setErrors(nextErrors)
+    setErrors(nextErrors);
 
-    return Object.keys(nextErrors).length === 0
-  }
+    return Object.keys(nextErrors).length === 0;
+  };
+
+  /* ================================================================
+     LOGIN / BACKEND CONNECTION
+     ================================================================ */
 
   const handleSubmit = async (event) => {
-    event.preventDefault()
+    event.preventDefault();
 
-    if (status !== 'idle') {
-      return
+    /*
+     * Prevent duplicate API requests while login
+     * is already being processed.
+     */
+    if (status !== "idle") {
+      return;
     }
 
     if (!validateForm()) {
-      return
+      return;
     }
 
-    /*
-     * Backend integration will be connected here
-     * after confirming the existing API/service architecture.
-     */
+    setStatus("loading");
 
-    setStatus('loading')
+    try {
+      /* ------------------------------------------------------------
+         API BASE URL
+         ------------------------------------------------------------ */
 
-    // Temporary loading state.
-    // Remove when the real login API is connected.
-    setTimeout(() => {
-      setStatus('idle')
-    }, 1000)
-  }
+      const baseUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "");
+
+      if (!baseUrl) {
+        throw new Error(
+          "API configuration is missing. Please configure VITE_API_BASE_URL.",
+        );
+      }
+
+      /* ------------------------------------------------------------
+         REQUEST PAYLOAD
+
+         This matches the backend LoginRequest exactly:
+         {
+           email,
+           password
+         }
+         ------------------------------------------------------------ */
+
+      const payload = {
+        email: formData.email.trim().toLowerCase(),
+        password: formData.password,
+      };
+
+      /* ------------------------------------------------------------
+         LOGIN REQUEST
+         ------------------------------------------------------------ */
+
+      const response = await fetch(`${baseUrl}/api/auth/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      /* ------------------------------------------------------------
+         READ BACKEND RESPONSE
+
+         Success:
+         {
+           success: true,
+           message: "Login successful.",
+           data: {
+             token: "...",
+             tokenType: "Bearer"
+           }
+         }
+
+         Error:
+         {
+           success: false,
+           message: "Invalid email or password.",
+           status: 401,
+           timestamp: "..."
+         }
+         ------------------------------------------------------------ */
+
+      let data = null;
+
+      try {
+        data = await response.json();
+      } catch {
+        data = null;
+      }
+
+      /* ------------------------------------------------------------
+         BACKEND ERROR
+         ------------------------------------------------------------ */
+
+      if (!response.ok) {
+        throw new Error(
+          data?.message || "Unable to sign in. Please try again.",
+        );
+      }
+
+      /* ------------------------------------------------------------
+         VALIDATE SUCCESS RESPONSE
+         ------------------------------------------------------------ */
+
+      if (data?.success !== true || !data?.data?.token) {
+        throw new Error(
+          data?.message || "Login response is invalid. Please try again.",
+        );
+      }
+
+      /* ------------------------------------------------------------
+         STORE AUTHENTICATION DATA
+
+         We store only:
+         - JWT token
+         - token type
+
+         Password is NEVER stored.
+         ------------------------------------------------------------ */
+
+      login({
+        token: data.data.token,
+        tokenType: data.data.tokenType || "Bearer",
+      });
+
+      /* ------------------------------------------------------------
+         LOGIN SUCCESS
+         ------------------------------------------------------------ */
+
+      setStatus("success");
+
+      /*
+       * Current authenticated destination.
+       *
+       * /satellites already exists in your current AppRoutes.
+       * Later, once Dashboard is implemented, this can become:
+       *
+       * navigate('/dashboard', { replace: true })
+       */
+      navigate("/dashboard", {
+        replace: true,
+      });
+    } catch (error) {
+      console.error("Login failed:", error);
+
+      setStatus("idle");
+
+      setErrors({
+        submit:
+          error instanceof Error
+            ? error.message
+            : "Unable to sign in. Please try again.",
+      });
+    }
+  };
 
   return (
     <main className="relative min-h-[100svh] overflow-hidden bg-[#050816] text-white">
-
       {/* =========================================================
           BACKGROUND
           ========================================================= */}
 
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0"
-      >
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0">
         {/* Earth */}
 
         <div
@@ -182,8 +319,6 @@ function Login() {
           lg:px-12
         "
       >
-        {/* OrbitGuard logo */}
-
         <Link
           to="/"
           className="
@@ -203,8 +338,6 @@ function Login() {
             "
           />
         </Link>
-
-        {/* Back */}
 
         <Link
           to="/"
@@ -231,7 +364,6 @@ function Login() {
               group-hover:-translate-x-1
             "
           />
-
           Back to home
         </Link>
       </header>
@@ -273,9 +405,8 @@ function Login() {
           }}
           className="w-full max-w-[1040px]"
         >
-
           {/* =====================================================
-              OUTER DIAMOND CARD
+              OUTER CARD
               ===================================================== */}
 
           <div
@@ -290,9 +421,7 @@ function Login() {
               shadow-[18px_18px_45px_rgba(0,0,0,0.55),-12px_-12px_35px_rgba(255,255,255,0.025)]
             "
           >
-            {/* ===================================================
-                DIAMOND CORNER ACCENTS
-                =================================================== */}
+            {/* Diamond accents */}
 
             <span
               aria-hidden="true"
@@ -323,8 +452,6 @@ function Login() {
                 border-blue-400/[0.12]
               "
             />
-
-            {/* Small diamond points */}
 
             <span
               aria-hidden="true"
@@ -371,7 +498,6 @@ function Login() {
               "
             >
               <div className="grid lg:grid-cols-[0.72fr_1.28fr]">
-
                 {/* =================================================
                     LEFT PANEL
                     ================================================= */}
@@ -512,9 +638,7 @@ function Login() {
                       "
                     >
                       Welcome
-                      <span className="text-cyan-300/90">
-                        {' '}Back
-                      </span>
+                      <span className="text-cyan-300/90"> Back</span>
                     </h1>
 
                     <p
@@ -528,8 +652,7 @@ function Login() {
                         lg:mx-0
                       "
                     >
-                      Continue your journey with
-                      OrbitGuard AI and access your
+                      Continue your journey with OrbitGuard AI and access your
                       space intelligence dashboard.
                     </p>
                   </div>
@@ -623,7 +746,6 @@ function Login() {
                     noValidate
                     className="space-y-5"
                   >
-
                     {/* =================================================
                         EMAIL
                         ================================================= */}
@@ -656,23 +778,30 @@ function Login() {
                       autoComplete="current-password"
                     />
 
-                    {/* Submit error */}
+                    {/* Backend / submit error */}
 
                     {errors.submit && (
-                      <p
+                      <motion.p
+                        initial={{
+                          opacity: 0,
+                          y: -4,
+                        }}
+                        animate={{
+                          opacity: 1,
+                          y: 0,
+                        }}
                         className="
                           px-1
                           text-[10px]
+                          leading-4
                           text-red-300/80
                         "
                       >
                         {errors.submit}
-                      </p>
+                      </motion.p>
                     )}
 
-                    {/* =================================================
-                        LOGIN BUTTON
-                        ================================================= */}
+                    {/* Login button */}
 
                     <LoginButton status={status} />
                   </form>
@@ -690,9 +819,7 @@ function Login() {
                       text-white/30
                     "
                   >
-                    <span>
-                      Don't have an account?
-                    </span>
+                    <span>Don't have an account?</span>
 
                     <Link
                       to="/register"
@@ -709,7 +836,6 @@ function Login() {
                       "
                     >
                       Create account
-
                       <FiArrowRight
                         size={11}
                         className="
@@ -745,40 +871,29 @@ function Login() {
           >
             <span className="h-px w-8 bg-white/10" />
 
-            <span>
-              ORBITGUARD AI / AUTHENTICATION
-            </span>
+            <span>ORBITGUARD AI / AUTHENTICATION</span>
 
             <span className="h-px w-8 bg-white/10" />
           </div>
         </motion.div>
       </section>
     </main>
-  )
+  );
 }
-
 
 /* =================================================================
    LOGIN BUTTON
    ================================================================= */
 
 function LoginButton({ status }) {
-  const isLoading = status === 'loading'
+  const isLoading = status === "loading";
 
   return (
     <motion.button
       type="submit"
       disabled={isLoading}
-      whileHover={
-        isLoading
-          ? undefined
-          : { y: -1 }
-      }
-      whileTap={
-        isLoading
-          ? undefined
-          : { scale: 0.985 }
-      }
+      whileHover={isLoading ? undefined : { y: -1 }}
+      whileTap={isLoading ? undefined : { scale: 0.985 }}
       className="
         group
         relative
@@ -791,16 +906,14 @@ function LoginButton({ status }) {
         disabled:cursor-not-allowed
       "
     >
-      {/* ---------------------------------------------------------
-          MOVING BORDER
-          --------------------------------------------------------- */}
+      {/* Moving border */}
 
       <span
         aria-hidden="true"
         className="
           pointer-events-none
           absolute
-          -inset-[250%]
+          -inset-[400%]
           rounded-full
           bg-[conic-gradient(from_0deg,transparent_0deg,transparent_320deg,rgba(34,211,238,1)_345deg,rgba(59,130,246,1)_360deg)]
           opacity-0
@@ -811,9 +924,7 @@ function LoginButton({ status }) {
         "
       />
 
-      {/* ---------------------------------------------------------
-          DARK BUTTON SURFACE
-          --------------------------------------------------------- */}
+      {/* Button surface */}
 
       <span
         className="
@@ -831,9 +942,7 @@ function LoginButton({ status }) {
         "
       />
 
-      {/* ---------------------------------------------------------
-          BUTTON CONTENT
-          --------------------------------------------------------- */}
+      {/* Button content */}
 
       <span
         className="
@@ -852,11 +961,7 @@ function LoginButton({ status }) {
           group-hover:text-[#03101c]
         "
       >
-        <span>
-          {isLoading
-            ? 'Logging in...'
-            : 'Login'}
-        </span>
+        <span>{isLoading ? "Logging in..." : "Login"}</span>
 
         <span
           className="
@@ -899,9 +1004,8 @@ function LoginButton({ status }) {
         </span>
       </span>
     </motion.button>
-  )
+  );
 }
-
 
 /* =================================================================
    FORM FIELD
@@ -918,7 +1022,7 @@ function FormField({
   onChange,
   autoComplete,
 }) {
-  const [active, setActive] = useState(false)
+  const [active, setActive] = useState(false);
 
   return (
     <div>
@@ -943,9 +1047,7 @@ function FormField({
         onMouseLeave={() => setActive(false)}
         className="relative"
       >
-        {/* =======================================================
-            COMPLETE MOVING BORDER
-            ======================================================= */}
+        {/* Moving border */}
 
         <motion.div
           aria-hidden="true"
@@ -966,20 +1068,16 @@ function FormField({
           <motion.div
             className="
               absolute
-              -inset-[250%]
+              -inset-[400%]
               bg-[conic-gradient(from_0deg,transparent_0deg,transparent_315deg,rgba(34,211,238,0.12)_330deg,rgba(34,211,238,1)_345deg,rgba(59,130,246,1)_360deg)]
             "
-            animate={
-              active
-                ? { rotate: 360 }
-                : { rotate: 0 }
-            }
+            animate={active ? { rotate: 360 } : { rotate: 0 }}
             transition={
               active
                 ? {
                     duration: 2.2,
                     repeat: Infinity,
-                    ease: 'linear',
+                    ease: "linear",
                   }
                 : {
                     duration: 0.2,
@@ -988,9 +1086,7 @@ function FormField({
           />
         </motion.div>
 
-        {/* =======================================================
-            INPUT SURFACE
-            ======================================================= */}
+        {/* Input surface */}
 
         <div
           className={`
@@ -1001,14 +1097,8 @@ function FormField({
             rounded-2xl
             border
             bg-[#070c18]
-
             shadow-[inset_5px_5px_12px_rgba(0,0,0,0.45),inset_-5px_-5px_12px_rgba(255,255,255,0.018)]
-
-            ${
-              error
-                ? 'border-red-400/35'
-                : 'border-transparent'
-            }
+            ${error ? "border-red-400/35" : "border-transparent"}
           `}
         >
           <Icon
@@ -1034,6 +1124,7 @@ function FormField({
             onFocus={() => setActive(true)}
             onBlur={() => setActive(false)}
             className="
+              auth-input
               h-14
               w-full
               bg-transparent
@@ -1048,7 +1139,15 @@ function FormField({
       </div>
 
       {error && (
-        <p
+        <motion.p
+          initial={{
+            opacity: 0,
+            y: -3,
+          }}
+          animate={{
+            opacity: 1,
+            y: 0,
+          }}
           className="
             mt-1.5
             px-1
@@ -1057,12 +1156,11 @@ function FormField({
           "
         >
           {error}
-        </p>
+        </motion.p>
       )}
     </div>
-  )
+  );
 }
-
 
 /* =================================================================
    PASSWORD FIELD
@@ -1079,7 +1177,7 @@ function PasswordField({
   onChange,
   autoComplete,
 }) {
-  const [active, setActive] = useState(false)
+  const [active, setActive] = useState(false);
 
   return (
     <div>
@@ -1104,9 +1202,7 @@ function PasswordField({
         onMouseLeave={() => setActive(false)}
         className="relative"
       >
-        {/* =======================================================
-            COMPLETE MOVING BORDER
-            ======================================================= */}
+        {/* Moving border */}
 
         <motion.div
           aria-hidden="true"
@@ -1127,20 +1223,16 @@ function PasswordField({
           <motion.div
             className="
               absolute
-              -inset-[250%]
+              -inset-[400%]
               bg-[conic-gradient(from_0deg,transparent_0deg,transparent_315deg,rgba(34,211,238,0.12)_330deg,rgba(34,211,238,1)_345deg,rgba(59,130,246,1)_360deg)]
             "
-            animate={
-              active
-                ? { rotate: 360 }
-                : { rotate: 0 }
-            }
+            animate={active ? { rotate: 360 } : { rotate: 0 }}
             transition={
               active
                 ? {
                     duration: 2.2,
                     repeat: Infinity,
-                    ease: 'linear',
+                    ease: "linear",
                   }
                 : {
                     duration: 0.2,
@@ -1149,9 +1241,7 @@ function PasswordField({
           />
         </motion.div>
 
-        {/* =======================================================
-            PASSWORD SURFACE
-            ======================================================= */}
+        {/* Password surface */}
 
         <div
           className={`
@@ -1162,14 +1252,8 @@ function PasswordField({
             rounded-2xl
             border
             bg-[#070c18]
-
             shadow-[inset_5px_5px_12px_rgba(0,0,0,0.45),inset_-5px_-5px_12px_rgba(255,255,255,0.018)]
-
-            ${
-              error
-                ? 'border-red-400/35'
-                : 'border-transparent'
-            }
+            ${error ? "border-red-400/35" : "border-transparent"}
           `}
         >
           <FiLock
@@ -1187,7 +1271,7 @@ function PasswordField({
           <input
             id={name}
             name={name}
-            type={visible ? 'text' : 'password'}
+            type={visible ? "text" : "password"}
             value={value}
             placeholder={placeholder}
             autoComplete={autoComplete}
@@ -1208,14 +1292,8 @@ function PasswordField({
 
           <button
             type="button"
-            onClick={() =>
-              setVisible((previous) => !previous)
-            }
-            aria-label={
-              visible
-                ? 'Hide password'
-                : 'Show password'
-            }
+            onClick={() => setVisible((previous) => !previous)}
+            aria-label={visible ? "Hide password" : "Show password"}
             className="
               mr-3
               flex
@@ -1232,17 +1310,21 @@ function PasswordField({
               hover:text-cyan-300/70
             "
           >
-            {visible ? (
-              <FiEyeOff size={15} />
-            ) : (
-              <FiEye size={15} />
-            )}
+            {visible ? <FiEyeOff size={15} /> : <FiEye size={15} />}
           </button>
         </div>
       </div>
 
       {error && (
-        <p
+        <motion.p
+          initial={{
+            opacity: 0,
+            y: -3,
+          }}
+          animate={{
+            opacity: 1,
+            y: 0,
+          }}
           className="
             mt-1.5
             px-1
@@ -1251,10 +1333,10 @@ function PasswordField({
           "
         >
           {error}
-        </p>
+        </motion.p>
       )}
     </div>
-  )
+  );
 }
 
-export default Login
+export default Login;

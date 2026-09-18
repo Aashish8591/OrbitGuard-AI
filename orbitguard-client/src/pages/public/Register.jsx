@@ -1,6 +1,6 @@
-import { useState } from 'react'
-import { motion, useReducedMotion } from 'framer-motion'
-import { Link, useNavigate } from 'react-router-dom'
+import { useState } from "react";
+import { motion, useReducedMotion } from "framer-motion";
+import { Link, useNavigate } from "react-router-dom";
 import {
   FiArrowLeft,
   FiArrowRight,
@@ -9,221 +9,187 @@ import {
   FiMail,
   FiUser,
   FiLock,
-} from 'react-icons/fi'
+} from "react-icons/fi";
 
-const EASE = [0.22, 1, 0.36, 1]
+const EASE = [0.22, 1, 0.36, 1];
 
 function Register() {
-  const shouldReduceMotion = useReducedMotion()
-  const navigate = useNavigate()
+  const shouldReduceMotion = useReducedMotion();
+  const navigate = useNavigate();
 
   const [formData, setFormData] = useState({
-    fullName: '',
-    email: '',
-    password: '',
-    confirmPassword: '',
-  })
+    fullName: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
+  });
 
-  const [showPassword, setShowPassword] = useState(false)
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  const [errors, setErrors] = useState({})
-  const [status, setStatus] = useState('idle')
+  const [errors, setErrors] = useState({});
+  const [status, setStatus] = useState("idle");
 
   /* ================================================================
      FORM CHANGE
      ================================================================ */
 
   const handleChange = (event) => {
-    const { name, value } = event.target
+    const { name, value } = event.target;
 
     setFormData((previous) => ({
       ...previous,
       [name]: value,
-    }))
+    }));
 
     setErrors((previous) => ({
       ...previous,
-      [name]: '',
-      submit: '',
-    }))
-  }
+      [name]: "",
+      submit: "",
+    }));
+  };
 
   /* ================================================================
      FORM VALIDATION
      ================================================================ */
 
   const validateForm = () => {
-    const nextErrors = {}
+    const nextErrors = {};
 
-    const fullName = formData.fullName.trim()
-    const email = formData.email.trim()
-    const password = formData.password
-    const confirmPassword = formData.confirmPassword
+    const fullName = formData.fullName.trim();
+    const email = formData.email.trim();
+    const password = formData.password;
+    const confirmPassword = formData.confirmPassword;
 
     /* Full Name */
 
     if (!fullName) {
-      nextErrors.fullName = 'Full name is required.'
-    } else if (
-      fullName.length < 3 ||
-      fullName.length > 50
-    ) {
-      nextErrors.fullName =
-        'Full name must be between 3 and 50 characters.'
+      nextErrors.fullName = "Full name is required.";
+    } else if (fullName.length < 3 || fullName.length > 50) {
+      nextErrors.fullName = "Full name must be between 3 and 50 characters.";
     }
 
     /* Email */
 
     if (!email) {
-      nextErrors.email = 'Email is required.'
-    } else if (
-      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-    ) {
-      nextErrors.email =
-        'Please enter a valid email address.'
+      nextErrors.email = "Email is required.";
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      nextErrors.email = "Please enter a valid email address.";
     }
 
     /* Password */
 
     if (!password) {
-      nextErrors.password = 'Password is required.'
-    } else if (
-      password.length < 8 ||
-      password.length > 20
-    ) {
-      nextErrors.password =
-        'Password must be between 8 and 20 characters.'
+      nextErrors.password = "Password is required.";
+    } else if (password.length < 8 || password.length > 20) {
+      nextErrors.password = "Password must be between 8 and 20 characters.";
     }
 
     /* Confirm Password */
 
     if (!confirmPassword) {
-      nextErrors.confirmPassword =
-        'Please confirm your password.'
+      nextErrors.confirmPassword = "Please confirm your password.";
     } else if (password !== confirmPassword) {
-      nextErrors.confirmPassword =
-        'Passwords do not match.'
+      nextErrors.confirmPassword = "Passwords do not match.";
     }
 
-    setErrors(nextErrors)
+    setErrors(nextErrors);
 
-    return Object.keys(nextErrors).length === 0
-  }
+    return Object.keys(nextErrors).length === 0;
+  };
 
   /* ================================================================
      SUBMIT
      ================================================================ */
 
   const handleSubmit = async (event) => {
-    event.preventDefault()
+    event.preventDefault();
 
-    if (status !== 'idle') {
-      return
+    if (status !== "idle") {
+      return;
     }
 
     if (!validateForm()) {
-      return
+      return;
     }
 
-    setStatus('loading')
+    setStatus("loading");
 
     try {
-      /*
-       * Only backend fields are sent.
-       *
-       * confirmPassword remains frontend-only.
-       */
-
       const payload = {
         fullName: formData.fullName.trim(),
-        email: formData.email.trim(),
+        email: formData.email.trim().toLowerCase(),
         password: formData.password,
+      };
+
+      const baseUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "");
+
+      if (!baseUrl) {
+        throw new Error(
+          "API configuration is missing. Please configure VITE_API_BASE_URL.",
+        );
       }
 
-      /*
-       * Uses VITE_API_BASE_URL when frontend and backend
-       * are deployed separately.
-       *
-       * Example:
-       *
-       * VITE_API_BASE_URL=http://localhost:8080
-       *
-       * Result:
-       *
-       * POST http://localhost:8080/api/auth/register
-       */
-
-      const baseUrl =
-        import.meta.env.VITE_API_BASE_URL || ''
-
-      const response = await fetch(
-        `${baseUrl}/api/auth/register`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(payload),
+      const response = await fetch(`${baseUrl}/api/auth/register`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
         },
-      )
+        body: JSON.stringify(payload),
+      });
 
-      let data = {}
+      let data = null;
 
       try {
-        data = await response.json()
+        data = await response.json();
       } catch {
-        data = {}
+        data = null;
       }
 
       if (!response.ok) {
         throw new Error(
-          data?.message ||
-            data?.error ||
-            'Unable to create account.',
-        )
+          data?.message || "Unable to create account. Please try again.",
+        );
       }
 
-      /* Registration successful */
+      if (data?.success !== true) {
+        throw new Error(
+          data?.message || "Unable to create account. Please try again.",
+        );
+      }
 
-      setStatus('success')
+      setStatus("success");
 
-      /*
-       * Give the success state time to display
-       * before navigating to Login.
-       */
-
-      setTimeout(() => {
-        navigate('/login')
-      }, shouldReduceMotion ? 0 : 1000)
+      setTimeout(
+        () => {
+          navigate("/login", {
+            replace: true,
+          });
+        },
+        shouldReduceMotion ? 0 : 1000,
+      );
     } catch (error) {
-      console.error(
-        'Registration failed:',
-        error,
-      )
+      console.error("Registration failed:", error);
 
-      setStatus('idle')
+      setStatus("idle");
 
       setErrors({
         submit:
-          error.message ||
-          'Unable to create account. Please try again.',
-      })
+          error instanceof Error
+            ? error.message
+            : "Unable to create account. Please try again.",
+      });
     }
-  }
+  };
 
   return (
     <main className="relative min-h-[100svh] overflow-hidden bg-[#050816] text-white">
-
       {/* =========================================================
           BACKGROUND
           ========================================================= */}
 
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0"
-      >
-
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0">
         {/* Earth */}
 
         <div
@@ -308,9 +274,6 @@ function Register() {
           lg:px-12
         "
       >
-
-        {/* OrbitGuard Logo */}
-
         <Link
           to="/"
           className="
@@ -330,8 +293,6 @@ function Register() {
             "
           />
         </Link>
-
-        {/* Back to Home */}
 
         <Link
           to="/"
@@ -358,7 +319,6 @@ function Register() {
               group-hover:-translate-x-1
             "
           />
-
           Back to home
         </Link>
       </header>
@@ -404,10 +364,7 @@ function Register() {
           }}
           className="w-full max-w-[1040px]"
         >
-
-          {/* =======================================================
-              MAIN AUTH CARD
-              ======================================================= */}
+          {/* MAIN AUTH CARD */}
 
           <div
             className="
@@ -419,9 +376,6 @@ function Register() {
               shadow-[18px_18px_45px_rgba(0,0,0,0.55),-12px_-12px_35px_rgba(255,255,255,0.025)]
             "
           >
-
-            {/* INNER CARD */}
-
             <div
               className="
                 overflow-hidden
@@ -431,9 +385,7 @@ function Register() {
                 bg-[#080d1a]/95
               "
             >
-
               <div className="grid lg:grid-cols-[0.72fr_1.28fr]">
-
                 {/* =================================================
                     LEFT PANEL
                     ================================================= */}
@@ -452,12 +404,8 @@ function Register() {
                     x: 0,
                   }}
                   transition={{
-                    duration: shouldReduceMotion
-                      ? 0
-                      : 0.65,
-                    delay: shouldReduceMotion
-                      ? 0
-                      : 0.1,
+                    duration: shouldReduceMotion ? 0 : 0.65,
+                    delay: shouldReduceMotion ? 0 : 0.1,
                     ease: EASE,
                   }}
                   className="
@@ -478,7 +426,6 @@ function Register() {
                     xl:px-12
                   "
                 >
-
                   {/* Orbital circle 1 */}
 
                   <div
@@ -535,12 +482,8 @@ function Register() {
                       scale: 1,
                     }}
                     transition={{
-                      duration: shouldReduceMotion
-                        ? 0
-                        : 0.5,
-                      delay: shouldReduceMotion
-                        ? 0
-                        : 0.18,
+                      duration: shouldReduceMotion ? 0 : 0.5,
+                      delay: shouldReduceMotion ? 0 : 0.18,
                     }}
                     className="
                       relative
@@ -566,11 +509,7 @@ function Register() {
                       <img
                         src="/images/branding/orbitguard-mark.png"
                         alt=""
-                        className="
-                          h-9
-                          w-9
-                          object-contain
-                        "
+                        className="h-9 w-9 object-contain"
                       />
                     </div>
                   </motion.div>
@@ -591,12 +530,8 @@ function Register() {
                       y: 0,
                     }}
                     transition={{
-                      duration: shouldReduceMotion
-                        ? 0
-                        : 0.55,
-                      delay: shouldReduceMotion
-                        ? 0
-                        : 0.25,
+                      duration: shouldReduceMotion ? 0 : 0.55,
+                      delay: shouldReduceMotion ? 0 : 0.25,
                       ease: EASE,
                     }}
                     className="
@@ -630,9 +565,7 @@ function Register() {
                       "
                     >
                       Create
-                      <span className="text-cyan-300/90">
-                        {' '}Account
-                      </span>
+                      <span className="text-cyan-300/90"> Account</span>
                     </h1>
 
                     <p
@@ -646,13 +579,12 @@ function Register() {
                         lg:mx-0
                       "
                     >
-                      Start your journey with
-                      OrbitGuard AI and explore
+                      Start your journey with OrbitGuard AI and explore
                       intelligent space awareness.
                     </p>
                   </motion.div>
 
-                  {/* Security Status */}
+                  {/* Security status */}
 
                   <motion.div
                     initial={
@@ -666,12 +598,8 @@ function Register() {
                       opacity: 1,
                     }}
                     transition={{
-                      duration: shouldReduceMotion
-                        ? 0
-                        : 0.5,
-                      delay: shouldReduceMotion
-                        ? 0
-                        : 0.45,
+                      duration: shouldReduceMotion ? 0 : 0.5,
+                      delay: shouldReduceMotion ? 0 : 0.45,
                     }}
                     className="
                       relative
@@ -726,12 +654,8 @@ function Register() {
                     x: 0,
                   }}
                   transition={{
-                    duration: shouldReduceMotion
-                      ? 0
-                      : 0.65,
-                    delay: shouldReduceMotion
-                      ? 0
-                      : 0.18,
+                    duration: shouldReduceMotion ? 0 : 0.65,
+                    delay: shouldReduceMotion ? 0 : 0.18,
                     ease: EASE,
                   }}
                   className="
@@ -744,15 +668,8 @@ function Register() {
                     xl:px-12
                   "
                 >
-
-                  <form
-                    onSubmit={handleSubmit}
-                    noValidate
-                  >
-
-                    {/* =================================================
-                        FORM TITLE
-                        ================================================= */}
+                  <form onSubmit={handleSubmit} noValidate>
+                    {/* FORM HEADER */}
 
                     <div className="mb-6">
                       <p
@@ -777,9 +694,7 @@ function Register() {
                       />
                     </div>
 
-                    {/* =================================================
-                        FIELDS
-                        ================================================= */}
+                    {/* FIELDS */}
 
                     <div
                       className="
@@ -788,10 +703,7 @@ function Register() {
                         md:grid-cols-2
                       "
                     >
-
-                      {/* Full Name */}
-
-                      <AnimatedField
+                      <FormField
                         label="Full Name"
                         name="fullName"
                         type="text"
@@ -803,9 +715,7 @@ function Register() {
                         autoComplete="name"
                       />
 
-                      {/* Email */}
-
-                      <AnimatedField
+                      <FormField
                         label="Email Address"
                         name="email"
                         type="email"
@@ -816,8 +726,6 @@ function Register() {
                         onChange={handleChange}
                         autoComplete="email"
                       />
-
-                      {/* Password */}
 
                       <PasswordField
                         label="Password"
@@ -831,8 +739,6 @@ function Register() {
                         autoComplete="new-password"
                       />
 
-                      {/* Confirm Password */}
-
                       <PasswordField
                         label="Confirm Password"
                         name="confirmPassword"
@@ -844,12 +750,9 @@ function Register() {
                         onChange={handleChange}
                         autoComplete="new-password"
                       />
-
                     </div>
 
-                    {/* =================================================
-                        PASSWORD INFORMATION
-                        ================================================= */}
+                    {/* PASSWORD INFORMATION */}
 
                     <p
                       className="
@@ -860,13 +763,10 @@ function Register() {
                         text-white/25
                       "
                     >
-                      Password must be between
-                      8 and 20 characters.
+                      Password must be between 8 and 20 characters.
                     </p>
 
-                    {/* =================================================
-                        SUBMIT ERROR
-                        ================================================= */}
+                    {/* SUBMIT ERROR */}
 
                     {errors.submit && (
                       <motion.p
@@ -889,20 +789,14 @@ function Register() {
                       </motion.p>
                     )}
 
-                    {/* =================================================
-                        CREATE ACCOUNT BUTTON
-                        ================================================= */}
+                    {/* REGISTER BUTTON */}
 
                     <RegisterButton
                       status={status}
-                      shouldReduceMotion={
-                        shouldReduceMotion
-                      }
+                      shouldReduceMotion={shouldReduceMotion}
                     />
 
-                    {/* =================================================
-                        LOGIN LINK
-                        ================================================= */}
+                    {/* LOGIN LINK */}
 
                     <motion.div
                       initial={
@@ -916,12 +810,8 @@ function Register() {
                         opacity: 1,
                       }}
                       transition={{
-                        duration: shouldReduceMotion
-                          ? 0
-                          : 0.5,
-                        delay: shouldReduceMotion
-                          ? 0
-                          : 0.6,
+                        duration: shouldReduceMotion ? 0 : 0.5,
+                        delay: shouldReduceMotion ? 0 : 0.6,
                       }}
                       className="
                         mt-6
@@ -933,12 +823,11 @@ function Register() {
                         text-white/30
                       "
                     >
-                      <span>
-                        Already have an account?
-                      </span>
+                      <span>Already have an account?</span>
 
-                      <Link
-                        to="/login"
+                      <button
+                        type="button"
+                        onClick={() => navigate("/login")}
                         className="
                           group
                           inline-flex
@@ -952,7 +841,6 @@ function Register() {
                         "
                       >
                         Sign in
-
                         <FiArrowRight
                           size={11}
                           className="
@@ -961,18 +849,15 @@ function Register() {
                             group-hover:translate-x-0.5
                           "
                         />
-                      </Link>
+                      </button>
                     </motion.div>
-
                   </form>
                 </motion.div>
               </div>
             </div>
           </div>
 
-          {/* =======================================================
-              BOTTOM LABEL
-              ======================================================= */}
+          {/* SYSTEM LABEL */}
 
           <motion.div
             initial={
@@ -1004,25 +889,22 @@ function Register() {
           >
             <span className="h-px w-8 bg-white/10" />
 
-            <span>
-              ORBITGUARD AI / AUTHENTICATION
-            </span>
+            <span>ORBITGUARD AI / AUTHENTICATION</span>
 
             <span className="h-px w-8 bg-white/10" />
           </motion.div>
-
         </motion.div>
       </section>
     </main>
-  )
+  );
 }
 
-
 /* ==================================================================
-   ANIMATED FIELD
+   FORM FIELD
+   Same field architecture as Login.jsx
    ================================================================== */
 
-function AnimatedField({
+function FormField({
   label,
   name,
   type,
@@ -1033,12 +915,10 @@ function AnimatedField({
   onChange,
   autoComplete,
 }) {
-  const [active, setActive] = useState(false)
+  const [active, setActive] = useState(false);
 
   return (
     <div>
-      {/* LABEL */}
-
       <label
         htmlFor={name}
         className="
@@ -1055,30 +935,19 @@ function AnimatedField({
         {label}
       </label>
 
-      {/* =========================================================
-          FIELD CONTAINER
-          ========================================================= */}
-
       <div
         onMouseEnter={() => setActive(true)}
         onMouseLeave={() => setActive(false)}
-        className="
-          relative
-          rounded-2xl
-          p-[1px]
-        "
+        className="relative"
       >
-
-        {/* =======================================================
-            MOVING BORDER
-            ======================================================= */}
+        {/* MOVING BORDER */}
 
         <motion.div
           aria-hidden="true"
           className="
             pointer-events-none
             absolute
-            inset-0
+            -inset-[1px]
             overflow-hidden
             rounded-2xl
           "
@@ -1092,24 +961,16 @@ function AnimatedField({
           <motion.div
             className="
               absolute
-              -inset-[100%]
+              -inset-[250%]
               bg-[conic-gradient(from_0deg,transparent_0deg,transparent_315deg,rgba(34,211,238,0.12)_330deg,rgba(34,211,238,1)_345deg,rgba(59,130,246,1)_360deg)]
             "
-            animate={
-              active
-                ? {
-                    rotate: 360,
-                  }
-                : {
-                    rotate: 0,
-                  }
-            }
+            animate={active ? { rotate: 360 } : { rotate: 0 }}
             transition={
               active
                 ? {
                     duration: 2.2,
                     repeat: Infinity,
-                    ease: 'linear',
+                    ease: "linear",
                   }
                 : {
                     duration: 0.2,
@@ -1118,9 +979,7 @@ function AnimatedField({
           />
         </motion.div>
 
-        {/* =======================================================
-            DARK INPUT SURFACE
-            ======================================================= */}
+        {/* INPUT SURFACE */}
 
         <div
           className={`
@@ -1128,25 +987,13 @@ function AnimatedField({
             relative
             flex
             items-center
-            rounded-[15px]
+            rounded-2xl
             border
             bg-[#070c18]
-
             shadow-[inset_5px_5px_12px_rgba(0,0,0,0.45),inset_-5px_-5px_12px_rgba(255,255,255,0.018)]
-
-            transition-all
-            duration-300
-
-            ${
-              error
-                ? 'border-red-400/35'
-                : 'border-white/[0.045]'
-            }
+            ${error ? "border-red-400/35" : "border-transparent"}
           `}
         >
-
-          {/* ICON */}
-
           <Icon
             size={16}
             className="
@@ -1159,8 +1006,6 @@ function AnimatedField({
             "
           />
 
-          {/* INPUT */}
-
           <input
             id={name}
             name={name}
@@ -1172,32 +1017,22 @@ function AnimatedField({
             onFocus={() => setActive(true)}
             onBlur={() => setActive(false)}
             className="
-              h-14
-              w-full
-              bg-transparent
-              px-3
-              text-sm
-              text-white
-              outline-none
-              placeholder:text-white/20
-            "
+    auth-input
+    h-14
+    w-full
+    bg-transparent
+    px-3
+    text-sm
+    text-white
+    outline-none
+    placeholder:text-white/20
+  "
           />
-
         </div>
       </div>
 
-      {/* ERROR */}
-
       {error && (
-        <motion.p
-          initial={{
-            opacity: 0,
-            y: -3,
-          }}
-          animate={{
-            opacity: 1,
-            y: 0,
-          }}
+        <p
           className="
             mt-1.5
             px-1
@@ -1206,15 +1041,15 @@ function AnimatedField({
           "
         >
           {error}
-        </motion.p>
+        </p>
       )}
     </div>
-  )
+  );
 }
-
 
 /* ==================================================================
    PASSWORD FIELD
+   Same field architecture as Login.jsx
    ================================================================== */
 
 function PasswordField({
@@ -1228,12 +1063,10 @@ function PasswordField({
   onChange,
   autoComplete,
 }) {
-  const [active, setActive] = useState(false)
+  const [active, setActive] = useState(false);
 
   return (
     <div>
-      {/* LABEL */}
-
       <label
         htmlFor={name}
         className="
@@ -1250,30 +1083,19 @@ function PasswordField({
         {label}
       </label>
 
-      {/* =========================================================
-          FIELD CONTAINER
-          ========================================================= */}
-
       <div
         onMouseEnter={() => setActive(true)}
         onMouseLeave={() => setActive(false)}
-        className="
-          relative
-          rounded-2xl
-          p-[1px]
-        "
+        className="relative"
       >
-
-        {/* =======================================================
-            MOVING BORDER
-            ======================================================= */}
+        {/* MOVING BORDER */}
 
         <motion.div
           aria-hidden="true"
           className="
             pointer-events-none
             absolute
-            inset-0
+            -inset-[1px]
             overflow-hidden
             rounded-2xl
           "
@@ -1287,24 +1109,16 @@ function PasswordField({
           <motion.div
             className="
               absolute
-              -inset-[100%]
+              -inset-[250%]
               bg-[conic-gradient(from_0deg,transparent_0deg,transparent_315deg,rgba(34,211,238,0.12)_330deg,rgba(34,211,238,1)_345deg,rgba(59,130,246,1)_360deg)]
             "
-            animate={
-              active
-                ? {
-                    rotate: 360,
-                  }
-                : {
-                    rotate: 0,
-                  }
-            }
+            animate={active ? { rotate: 360 } : { rotate: 0 }}
             transition={
               active
                 ? {
                     duration: 2.2,
                     repeat: Infinity,
-                    ease: 'linear',
+                    ease: "linear",
                   }
                 : {
                     duration: 0.2,
@@ -1313,9 +1127,7 @@ function PasswordField({
           />
         </motion.div>
 
-        {/* =======================================================
-            DARK PASSWORD SURFACE
-            ======================================================= */}
+        {/* PASSWORD SURFACE */}
 
         <div
           className={`
@@ -1323,25 +1135,13 @@ function PasswordField({
             relative
             flex
             items-center
-            rounded-[15px]
+            rounded-2xl
             border
             bg-[#070c18]
-
             shadow-[inset_5px_5px_12px_rgba(0,0,0,0.45),inset_-5px_-5px_12px_rgba(255,255,255,0.018)]
-
-            transition-all
-            duration-300
-
-            ${
-              error
-                ? 'border-red-400/35'
-                : 'border-white/[0.045]'
-            }
+            ${error ? "border-red-400/35" : "border-transparent"}
           `}
         >
-
-          {/* LOCK ICON */}
-
           <FiLock
             size={16}
             className="
@@ -1354,12 +1154,10 @@ function PasswordField({
             "
           />
 
-          {/* PASSWORD INPUT */}
-
           <input
             id={name}
             name={name}
-            type={visible ? 'text' : 'password'}
+            type={visible ? "text" : "password"}
             value={value}
             placeholder={placeholder}
             autoComplete={autoComplete}
@@ -1367,26 +1165,21 @@ function PasswordField({
             onFocus={() => setActive(true)}
             onBlur={() => setActive(false)}
             className="
-              h-14
-              w-full
-              bg-transparent
-              px-3
-              text-sm
-              text-white
-              outline-none
-              placeholder:text-white/20
-            "
+    auth-input
+    h-14
+    w-full
+    bg-transparent
+    px-3
+    text-sm
+    text-white
+    outline-none
+    placeholder:text-white/20
+  "
           />
-
-          {/* =====================================================
-              SHOW / HIDE PASSWORD
-              ===================================================== */}
 
           <button
             type="button"
-            onClick={() =>
-              setVisible((previous) => !previous)
-            }
+            onClick={() => setVisible((previous) => !previous)}
             aria-label={
               visible
                 ? `Hide ${label.toLowerCase()}`
@@ -1408,28 +1201,13 @@ function PasswordField({
               hover:text-cyan-300/70
             "
           >
-            {visible ? (
-              <FiEyeOff size={15} />
-            ) : (
-              <FiEye size={15} />
-            )}
+            {visible ? <FiEyeOff size={15} /> : <FiEye size={15} />}
           </button>
-
         </div>
       </div>
 
-      {/* ERROR */}
-
       {error && (
-        <motion.p
-          initial={{
-            opacity: 0,
-            y: -3,
-          }}
-          animate={{
-            opacity: 1,
-            y: 0,
-          }}
+        <p
           className="
             mt-1.5
             px-1
@@ -1438,49 +1216,31 @@ function PasswordField({
           "
         >
           {error}
-        </motion.p>
+        </p>
       )}
     </div>
-  )
+  );
 }
 
-
 /* ==================================================================
    REGISTER BUTTON
    ================================================================== */
 
-/* ==================================================================
-   REGISTER BUTTON
-   ================================================================== */
-
-/* ==================================================================
-   REGISTER BUTTON
-   ================================================================== */
-
-function RegisterButton({
-  status,
-  shouldReduceMotion,
-}) {
-  const isLoading = status === 'loading'
-  const isSuccess = status === 'success'
+function RegisterButton({ status, shouldReduceMotion }) {
+  const isLoading = status === "loading";
+  const isSuccess = status === "success";
 
   return (
     <motion.button
       type="submit"
       disabled={isLoading || isSuccess}
       whileHover={
-        shouldReduceMotion || isLoading || isSuccess
-          ? undefined
-          : {
-              y: -1,
-            }
+        shouldReduceMotion || isLoading || isSuccess ? undefined : { y: -1 }
       }
       whileTap={
         shouldReduceMotion || isLoading || isSuccess
           ? undefined
-          : {
-              scale: 0.985,
-            }
+          : { scale: 0.985 }
       }
       className="
         group
@@ -1494,10 +1254,7 @@ function RegisterButton({
         disabled:cursor-not-allowed
       "
     >
-
-      {/* =========================================================
-          MOVING BORDER
-          ========================================================= */}
+      {/* MOVING BORDER */}
 
       {!isSuccess && (
         <motion.span
@@ -1505,7 +1262,7 @@ function RegisterButton({
           className="
             pointer-events-none
             absolute
-            -inset-[100%]
+            -inset-[400%]
             rounded-full
             bg-[conic-gradient(from_0deg,transparent_0deg,transparent_315deg,rgba(34,211,238,0.12)_330deg,rgba(34,211,238,1)_345deg,rgba(59,130,246,1)_360deg)]
             opacity-0
@@ -1513,24 +1270,16 @@ function RegisterButton({
             duration-300
             group-hover:opacity-100
           "
-          animate={
-            shouldReduceMotion
-              ? undefined
-              : {
-                  rotate: 360,
-                }
-          }
+          animate={shouldReduceMotion ? undefined : { rotate: 360 }}
           transition={{
             duration: isLoading ? 1.5 : 2.2,
             repeat: Infinity,
-            ease: 'linear',
+            ease: "linear",
           }}
         />
       )}
 
-      {/* =========================================================
-          BUTTON SURFACE
-          ========================================================= */}
+      {/* BUTTON SURFACE */}
 
       <span
         className={`
@@ -1540,10 +1289,9 @@ function RegisterButton({
           transition-all
           duration-500
           ease-[cubic-bezier(0.22,1,0.36,1)]
-
           ${
             isSuccess
-              ? 'bg-gradient-to-r from-cyan-400 via-cyan-300 to-blue-500'
+              ? "bg-gradient-to-r from-cyan-400 via-cyan-300 to-blue-500"
               : `
                 bg-[#0d1527]
                 group-hover:bg-gradient-to-r
@@ -1555,9 +1303,7 @@ function RegisterButton({
         `}
       />
 
-      {/* =========================================================
-          SUBTLE BOTTOM LIGHT
-          ========================================================= */}
+      {/* SUBTLE BOTTOM LIGHT */}
 
       {!isSuccess && (
         <span
@@ -1579,9 +1325,7 @@ function RegisterButton({
         />
       )}
 
-      {/* =========================================================
-          BUTTON CONTENT
-          ========================================================= */}
+      {/* BUTTON CONTENT */}
 
       <span
         className={`
@@ -1596,28 +1340,20 @@ function RegisterButton({
           font-medium
           transition-colors
           duration-300
-
           ${
             isSuccess
-              ? 'text-[#03101c]'
-              : 'text-white group-hover:text-[#03101c]'
+              ? "text-[#03101c]"
+              : "text-white group-hover:text-[#03101c]"
           }
         `}
       >
-
-        {/* BUTTON TEXT */}
-
         <span>
           {isSuccess
-            ? 'Account Created'
+            ? "Account Created"
             : isLoading
-              ? 'Creating Account...'
-              : 'Create Account'}
+              ? "Creating Account..."
+              : "Create Account"}
         </span>
-
-        {/* =====================================================
-            ARROW / LOADING / SUCCESS
-            ===================================================== */}
 
         <span
           className={`
@@ -1629,17 +1365,13 @@ function RegisterButton({
             rounded-full
             transition-all
             duration-300
-
             ${
               isSuccess
-                ? 'bg-[#03101c] text-cyan-300'
-                : 'bg-[#050816] text-white/75 group-hover:bg-[#03101c] group-hover:text-cyan-300'
+                ? "bg-[#03101c] text-cyan-300"
+                : "bg-[#050816] text-white/75 group-hover:bg-[#03101c] group-hover:text-cyan-300"
             }
           `}
         >
-
-          {/* SUCCESS */}
-
           {isSuccess ? (
             <motion.span
               initial={{
@@ -1654,30 +1386,17 @@ function RegisterButton({
                 duration: 0.3,
                 ease: EASE,
               }}
-              className="
-                text-sm
-                font-semibold
-              "
+              className="text-sm font-semibold"
             >
               ✓
             </motion.span>
-
           ) : isLoading ? (
-
-            /* LOADING */
-
             <motion.span
-              animate={
-                shouldReduceMotion
-                  ? undefined
-                  : {
-                      rotate: 360,
-                    }
-              }
+              animate={shouldReduceMotion ? undefined : { rotate: 360 }}
               transition={{
                 duration: 0.8,
                 repeat: Infinity,
-                ease: 'linear',
+                ease: "linear",
               }}
               className="
                 h-3
@@ -1688,11 +1407,7 @@ function RegisterButton({
                 border-t-cyan-300
               "
             />
-
           ) : (
-
-            /* DEFAULT ARROW */
-
             <FiArrowRight
               size={13}
               className="
@@ -1702,11 +1417,10 @@ function RegisterButton({
               "
             />
           )}
-
         </span>
       </span>
     </motion.button>
-  )
+  );
 }
 
-export default Register
+export default Register;

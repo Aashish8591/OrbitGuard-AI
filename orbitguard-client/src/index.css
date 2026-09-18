@@ -1,2 +1,43 @@
 @import "tailwindcss";
 
+/* ================================================================
+   ORBITGUARD AUTH INPUT
+   Prevent browser autofill from changing the authentication UI.
+   ================================================================ */
+
+.auth-input {
+  color-scheme: dark;
+}
+
+/* Chrome / Edge / Safari */
+
+.auth-input:-webkit-autofill,
+.auth-input:-webkit-autofill:hover,
+.auth-input:-webkit-autofill:focus,
+.auth-input:-webkit-autofill:active {
+  -webkit-text-fill-color: #ffffff !important;
+
+  /*
+   * Paint the original OrbitGuard input background over
+   * the browser's default autofill background.
+   */
+  -webkit-box-shadow:
+    0 0 0 1000px #070c18 inset !important;
+
+  box-shadow:
+    0 0 0 1000px #070c18 inset !important;
+
+  /*
+   * Prevent the browser from immediately repainting
+   * the field with its default autofill color.
+   */
+  transition:
+    background-color 9999s ease-in-out 0s;
+}
+
+/* Standard autofill support */
+
+.auth-input:autofill {
+  background-color: #070c18 !important;
+  color: #ffffff !important;
+}
