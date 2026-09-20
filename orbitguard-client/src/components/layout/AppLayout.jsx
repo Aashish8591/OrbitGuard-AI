@@ -1,110 +1,115 @@
-import { useState } from "react";
-import { Outlet } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Outlet, useLocation } from "react-router-dom";
 
 import Sidebar from "./Sidebar";
+import Navbar from "./Navbar";
+import ProtectedBackground from "../common/ProtectedBackground";
+
+/* =================================================================
+   CONSTANTS
+   ================================================================= */
+
+const NAVBAR_HEIGHT = 68;
+const SIDEBAR_COLLAPSED_WIDTH = 72;
 
 /* =================================================================
    APP LAYOUT
    ================================================================= */
 
 /**
- * Main layout for all authenticated OrbitGuard pages.
+ * Global layout for authenticated OrbitGuard pages.
  *
  * Responsibilities:
- * - Render the persistent application sidebar
- * - Provide the authenticated page content area
- * - Manage the mobile sidebar drawer state
+ * - Render the global Navbar
+ * - Render the desktop/mobile Sidebar
+ * - Manage mobile navigation state
+ * - Render the active authenticated route through Outlet
  *
- * The layout intentionally does NOT contain:
- * - Dashboard logic
+ * This component intentionally contains no:
  * - API calls
- * - Authentication logic
- * - Page-specific UI
- *
- * Those responsibilities belong to their respective modules.
+ * - authentication logic
+ * - dashboard logic
+ * - page-specific UI
  */
 function AppLayout() {
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const location = useLocation();
 
-  const handleOpenMobileSidebar = () => {
+  const [mobileSidebarOpen, setMobileSidebarOpen] =
+    useState(false);
+
+  /* ===============================================================
+     MOBILE SIDEBAR
+     =============================================================== */
+
+  const openMobileSidebar = () => {
     setMobileSidebarOpen(true);
   };
 
-  const handleCloseMobileSidebar = () => {
+  const closeMobileSidebar = () => {
     setMobileSidebarOpen(false);
   };
 
+  /* ===============================================================
+     CLOSE MOBILE SIDEBAR AFTER ROUTE CHANGE
+     =============================================================== */
+
+  useEffect(() => {
+    setMobileSidebarOpen(false);
+  }, [location.pathname]);
+
   return (
-    <div className="min-h-[100svh] bg-[#050816] text-white">
+    <div
+      className="
+        min-h-[100svh]
+        overflow-x-hidden
+        bg-[#050816]
+        text-white
+      "
+    >
+
       {/* =========================================================
-          SIDEBAR
+        PROTECTED SPACE ENVIRONMENT
+      ========================================================= */}
+
+      <ProtectedBackground />
+
+
+      {/* =========================================================
+          GLOBAL NAVBAR
+          ========================================================= */}
+
+      <Navbar onMenuClick={openMobileSidebar} />
+
+      {/* =========================================================
+          APPLICATION SIDEBAR
           ========================================================= */}
 
       <Sidebar
         mobileOpen={mobileSidebarOpen}
-        onMobileClose={handleCloseMobileSidebar}
+        onMobileClose={closeMobileSidebar}
       />
 
       {/* =========================================================
-          APPLICATION CONTENT
+          MAIN APPLICATION CONTENT
           ========================================================= */}
 
       <main
         className="
           min-h-[100svh]
+          pt-[68px]
+
           md:pl-[72px]
         "
+        style={{
+          paddingTop: NAVBAR_HEIGHT,
+        }}
       >
-        {/* -------------------------------------------------------
-            Mobile menu trigger
-
-            Temporary until Topbar is created.
-
-            This allows us to test the mobile drawer now without
-            introducing the Topbar component prematurely.
-        ------------------------------------------------------- */}
-
-        <button
-          type="button"
-          onClick={handleOpenMobileSidebar}
-          aria-label="Open navigation"
+        <div
           className="
-            fixed
-            left-4
-            top-4
-            z-30
-            flex
-            h-10
-            w-10
-            items-center
-            justify-center
-            rounded-xl
-            border
-            border-white/[0.08]
-            bg-[#0a1020]/90
-            text-white/65
-            shadow-[0_8px_25px_rgba(0,0,0,0.30)]
-            backdrop-blur-xl
-            transition-all
-            duration-200
-            hover:border-cyan-300/[0.18]
-            hover:bg-[#0d1527]
-            hover:text-cyan-300
-            md:hidden
+            min-h-[calc(100svh-68px)]
+            w-full
           "
         >
-          <span className="flex flex-col gap-1">
-            <span className="h-px w-4 bg-current" />
-            <span className="h-px w-4 bg-current" />
-            <span className="h-px w-3 bg-current" />
-          </span>
-        </button>
-
-        {/* -------------------------------------------------------
-            Nested authenticated page
-        ------------------------------------------------------- */}
-
-        <div className="min-h-[100svh]">
           <Outlet />
         </div>
       </main>

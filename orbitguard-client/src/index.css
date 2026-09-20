@@ -1,13 +1,48 @@
 @import "tailwindcss";
 
-/* ================================================================
+/* =================================================================
+   ORBITGUARD GLOBAL TYPOGRAPHY SYSTEM
+   ================================================================= */
+
+:root {
+  --font-display: "Orbitron", sans-serif;
+  --font-body: "Inter", sans-serif;
+}
+
+html,
+body {
+  font-family: var(--font-body);
+}
+
+body {
+  margin: 0;
+  background: #050816;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.font-body {
+  font-family: var(--font-body);
+}
+
+.font-telemetry {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.035em;
+}
+
+
+/* =================================================================
    ORBITGUARD AUTH INPUT
    Prevent browser autofill from changing the authentication UI.
-   ================================================================ */
+   ================================================================= */
 
 .auth-input {
   color-scheme: dark;
 }
+
 
 /* Chrome / Edge / Safari */
 
@@ -35,9 +70,74 @@
     background-color 9999s ease-in-out 0s;
 }
 
+
 /* Standard autofill support */
 
 .auth-input:autofill {
   background-color: #070c18 !important;
   color: #ffffff !important;
+}
+
+
+/* =================================================================
+   ORBITGUARD PROTECTED SPACE BACKGROUND
+   ================================================================= */
+
+@keyframes orbit-star {
+  0% {
+    transform:
+      translate3d(
+        var(--star-start-x),
+        var(--star-start-y),
+        0
+      )
+      scale(0.15);
+
+    opacity: 0;
+  }
+
+  12% {
+    opacity: 0.35;
+  }
+
+  45% {
+    opacity: 0.75;
+  }
+
+  75% {
+    opacity: 0.95;
+  }
+
+  100% {
+    transform:
+      translate3d(
+        var(--star-end-x),
+        var(--star-end-y),
+        0
+      )
+      scale(2);
+
+    opacity: 0;
+  }
+}
+
+.animate-orbit-star {
+  animation-name: orbit-star;
+  animation-duration: var(--star-duration);
+  animation-delay: var(--star-delay);
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+
+/* =================================================================
+   ACCESSIBILITY
+   Respect users who prefer reduced motion.
+   ================================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-orbit-star {
+    animation: none;
+    opacity: 0.35;
+  }
 }

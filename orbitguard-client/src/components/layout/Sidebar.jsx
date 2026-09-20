@@ -1,12 +1,11 @@
 import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { NavLink } from "react-router-dom";
 import {
   FiActivity,
   FiAlertTriangle,
   FiBell,
   FiChevronRight,
-  FiCpu,
   FiDatabase,
   FiFileText,
   FiGlobe,
@@ -16,9 +15,7 @@ import {
   FiSettings,
   FiX,
 } from "react-icons/fi";
-
 import { RiRobot3Line } from "react-icons/ri";
-
 
 import { useAuth } from "../../context/AuthContext";
 
@@ -28,6 +25,7 @@ import { useAuth } from "../../context/AuthContext";
 
 const SIDEBAR_WIDTH = 245;
 const SIDEBAR_COLLAPSED_WIDTH = 72;
+const NAVBAR_HEIGHT = 68;
 
 const EASE = [0.22, 1, 0.36, 1];
 
@@ -102,19 +100,19 @@ const SYSTEM_NAVIGATION = [
    ================================================================= */
 
 /**
- * OrbitGuard application sidebar.
+ * OrbitGuard application navigation.
  *
  * Desktop / tablet:
  * - Collapsed by default
- * - Expands on mouse enter
- * - Collapses on mouse leave
+ * - Expands while hovered
+ * - Starts below the global Navbar
+ * - Uses a curved right edge
  *
  * Mobile:
- * - Controlled through mobileOpen
- * - Appears as a slide-in drawer
- *
- * @param {boolean} mobileOpen
- * @param {Function} onMobileClose
+ * - Opens as a drawer
+ * - Starts below the global Navbar
+ * - Uses a curved right edge
+ * - Close button appears outside the drawer
  */
 function Sidebar({
   mobileOpen = false,
@@ -124,13 +122,11 @@ function Sidebar({
 
   const [isHovered, setIsHovered] = useState(false);
 
-  /*
-   * Desktop sidebar is expanded only while hovered.
-   *
-   * Mobile uses a separate drawer state supplied
-   * by AppLayout later.
-   */
   const isExpanded = isHovered;
+
+  /* ===============================================================
+     DESKTOP HOVER
+     =============================================================== */
 
   const handleMouseEnter = () => {
     setIsHovered(true);
@@ -140,15 +136,17 @@ function Sidebar({
     setIsHovered(false);
   };
 
+  /* ===============================================================
+     NAVIGATION
+     =============================================================== */
+
   const handleNavigation = () => {
-    /*
-     * On mobile, close the drawer after selecting
-     * a navigation item.
-     *
-     * On desktop this callback does nothing.
-     */
     onMobileClose();
   };
+
+  /* ===============================================================
+     LOGOUT
+     =============================================================== */
 
   const handleLogout = () => {
     logout();
@@ -166,26 +164,31 @@ function Sidebar({
           <motion.button
             type="button"
             aria-label="Close navigation"
+            onClick={onMobileClose}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            onClick={onMobileClose}
             className="
               fixed
-              inset-0
+              left-0
+              right-0
+              bottom-0
               z-40
               cursor-default
               bg-[#02050c]/70
               backdrop-blur-[2px]
               md:hidden
             "
+            style={{
+              top: NAVBAR_HEIGHT,
+            }}
           />
         )}
       </AnimatePresence>
 
       {/* =========================================================
-          SIDEBAR
+          DESKTOP / TABLET SIDEBAR
           ========================================================= */}
 
       <motion.aside
@@ -194,39 +197,35 @@ function Sidebar({
           width: isExpanded
             ? SIDEBAR_WIDTH
             : SIDEBAR_COLLAPSED_WIDTH,
-          x: mobileOpen ? 0 : undefined,
         }}
         transition={{
           width: {
             duration: 0.28,
             ease: EASE,
           },
-          x: {
-            duration: 0.32,
-            ease: EASE,
-          },
         }}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
+        aria-label="Application navigation"
         className="
           fixed
-          inset-y-0
           left-0
+          bottom-0
           z-50
           hidden
           overflow-hidden
+          rounded-r-[28px]
           border-r
+          border-t
           border-white/[0.07]
           bg-[#070c18]/95
-          shadow-[12px_0_40px_rgba(0,0,0,0.30)]
+          shadow-[12px_10px_40px_rgba(0,0,0,0.32)]
           backdrop-blur-xl
           md:flex
           md:flex-col
         "
         style={{
-          minWidth: isExpanded
-            ? SIDEBAR_WIDTH
-            : SIDEBAR_COLLAPSED_WIDTH,
+          top: NAVBAR_HEIGHT,
         }}
       >
         <SidebarContent
@@ -240,85 +239,107 @@ function Sidebar({
           MOBILE DRAWER
           ========================================================= */}
 
-      <motion.aside
-        initial={false}
-        animate={{
-          x: mobileOpen ? 0 : "-100%",
-        }}
-        transition={{
-          duration: 0.32,
-          ease: EASE,
-        }}
-        className="
-          fixed
-          inset-y-0
-          left-0
-          z-50
-          flex
-          w-[220px]
-          max-w-[86vw]
-          flex-col
-          overflow-hidden
-          border-r
-          border-white/[0.08]
-          bg-[#070c18]
-          shadow-[20px_0_60px_rgba(0,0,0,0.55)]
-          md:hidden
-        "
-      >
-        {/* Mobile close button */}
-
-        <div
-          className="
-            flex
-            h-[76px]
-            shrink-0
-            items-center
-            justify-between
-            border-b
-            border-white/[0.07]
-            px-5
-          "
-        >
-          <div className="flex items-center">
-            <img
-              src="/images/branding/orbitguard-minimal.png"
-              alt="OrbitGuard AI"
-              className="h-7 w-auto object-contain"
-            />
-          </div>
-
-          <button
-            type="button"
-            onClick={onMobileClose}
-            aria-label="Close navigation"
+      <AnimatePresence>
+        {mobileOpen && (
+          <motion.div
+            initial={{
+              x: "-100%",
+            }}
+            animate={{
+              x: 0,
+            }}
+            exit={{
+              x: "-100%",
+            }}
+            transition={{
+              duration: 0.32,
+              ease: EASE,
+            }}
             className="
-              flex
-              h-9
-              w-9
-              items-center
-              justify-center
-              rounded-xl
-              border
-              border-white/[0.06]
-              bg-white/[0.025]
-              text-white/45
-              transition-colors
-              duration-200
-              hover:bg-white/[0.06]
-              hover:text-white
+              fixed
+              left-0
+              bottom-0
+              z-50
+              w-[250px]
+              max-w-[86vw]
+              pointer-events-none
+              md:hidden
             "
+            style={{
+              top: NAVBAR_HEIGHT,
+            }}
           >
-            <FiX size={17} />
-          </button>
-        </div>
+            {/* ===================================================
+                MOBILE SIDEBAR PANEL
+                =================================================== */}
 
-        <SidebarContent
-          isExpanded
-          onNavigation={handleNavigation}
-          onLogout={handleLogout}
-        />
-      </motion.aside>
+            <aside
+              aria-label="Mobile application navigation"
+              className="
+                relative
+                flex
+                h-full
+                w-full
+                flex-col
+                overflow-hidden
+                rounded-r-[28px]
+                border-r
+                border-t
+                border-white/[0.08]
+                bg-[#070c18]
+                shadow-[20px_10px_60px_rgba(0,0,0,0.55)]
+                backdrop-blur-xl
+              "
+            >
+              <SidebarContent
+                isExpanded
+                onNavigation={handleNavigation}
+                onLogout={handleLogout}
+              />
+            </aside>
+
+            {/* ===================================================
+                OUTSIDE CLOSE BUTTON
+                =================================================== */}
+
+            <button
+              type="button"
+              onClick={onMobileClose}
+              aria-label="Close navigation"
+              title="Close navigation"
+              className="
+                pointer-events-auto
+                absolute
+                -right-11
+                top-4
+                flex
+                h-9
+                w-9
+                shrink-0
+                items-center
+                justify-center
+                rounded-full
+                border
+                border-white/[0.10]
+                bg-[#070c18]/95
+                text-white/50
+                shadow-[0_8px_24px_rgba(0,0,0,0.35)]
+                backdrop-blur-xl
+                transition-all
+                duration-200
+                hover:border-cyan-300/[0.20]
+                hover:bg-[#0a1222]
+                hover:text-cyan-300
+              "
+            >
+              <FiX
+                size={17}
+                strokeWidth={1.8}
+              />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }
@@ -335,85 +356,18 @@ function SidebarContent({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* =========================================================
-          DESKTOP BRANDING
-          ========================================================= */}
-
-      <div
-        className={`
-          hidden
-          h-[76px]
-          shrink-0
-          items-center
-          border-b
-          border-white/[0.07]
-          md:flex
-          ${isExpanded ? "px-5" : "justify-center px-2"}
-        `}
-      >
-        <AnimatePresence mode="wait" initial={false}>
-          {isExpanded ? (
-            <motion.img
-              key="full-logo"
-              src="/images/branding/orbitguard-minimal.png"
-              alt="OrbitGuard AI"
-              initial={{
-                opacity: 0,
-                x: -8,
-              }}
-              animate={{
-                opacity: 1,
-                x: 0,
-              }}
-              exit={{
-                opacity: 0,
-                x: -8,
-              }}
-              transition={{
-                duration: 0.18,
-                ease: EASE,
-              }}
-              className="h-7 w-auto max-w-[190px] object-contain"
-            />
-          ) : (
-            <motion.img
-              key="mark-logo"
-              src="/images/branding/orbitguard-mark.png"
-              alt="OrbitGuard AI"
-              initial={{
-                opacity: 0,
-                scale: 0.9,
-              }}
-              animate={{
-                opacity: 1,
-                scale: 1,
-              }}
-              exit={{
-                opacity: 0,
-                scale: 0.9,
-              }}
-              transition={{
-                duration: 0.18,
-                ease: EASE,
-              }}
-              className="h-8 w-8 object-contain"
-            />
-          )}
-        </AnimatePresence>
-      </div>
-
-      {/* =========================================================
           NAVIGATION
           ========================================================= */}
 
       <nav
-        aria-label="Primary navigation"
+        aria-label="Application navigation"
         className="
           min-h-0
           flex-1
           overflow-y-auto
           overflow-x-hidden
-          px-2
-          py-4
+          px-3
+          py-5
           [scrollbar-width:none]
           [&::-webkit-scrollbar]:hidden
         "
@@ -475,9 +429,17 @@ function SidebarContent({
             duration-200
             hover:bg-red-400/[0.06]
             hover:text-red-300/80
-            ${isExpanded ? "gap-3 px-3" : "justify-center px-0"}
+            ${
+              isExpanded
+                ? "gap-3 px-3"
+                : "justify-center px-0"
+            }
           `}
         >
+          {/* =====================================================
+              ICON
+              ===================================================== */}
+
           <span
             className="
               flex
@@ -492,8 +454,15 @@ function SidebarContent({
               group-hover:bg-red-400/[0.06]
             "
           >
-            <FiLogOut size={16} />
+            <FiLogOut
+              size={16}
+              strokeWidth={1.8}
+            />
           </span>
+
+          {/* =====================================================
+              LABEL
+              ===================================================== */}
 
           <AnimatePresence initial={false}>
             {isExpanded && (
@@ -515,11 +484,12 @@ function SidebarContent({
                   ease: EASE,
                 }}
                 className="
+                  font-display
                   whitespace-nowrap
-                  text-[11px]
+                  text-[9px]
                   font-medium
                   uppercase
-                  tracking-[0.16em]
+                  tracking-[0.14em]
                 "
               >
                 Sign out
@@ -543,8 +513,10 @@ function SidebarSection({
   onNavigation,
 }) {
   return (
-    <div className="mb-5 last:mb-0">
-      {/* Section heading */}
+    <section className="mb-5 last:mb-0">
+      {/* =========================================================
+          SECTION HEADING
+          ========================================================= */}
 
       <div className="mb-1.5 h-5 overflow-hidden px-2">
         <AnimatePresence initial={false}>
@@ -567,11 +539,12 @@ function SidebarSection({
                 ease: EASE,
               }}
               className="
+                font-display
                 whitespace-nowrap
                 text-[8px]
                 font-medium
                 uppercase
-                tracking-[0.24em]
+                tracking-[0.20em]
                 text-white/20
               "
             >
@@ -593,7 +566,9 @@ function SidebarSection({
         </AnimatePresence>
       </div>
 
-      {/* Items */}
+      {/* =========================================================
+          SECTION ITEMS
+          ========================================================= */}
 
       <div className="space-y-1">
         {items.map((item) => (
@@ -605,7 +580,7 @@ function SidebarSection({
           />
         ))}
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -636,7 +611,11 @@ function SidebarItem({
           rounded-xl
           transition-all
           duration-200
-          ${isExpanded ? "gap-3 px-2.5" : "justify-center px-0"}
+          ${
+            isExpanded
+              ? "gap-3 px-2.5"
+              : "justify-center px-0"
+          }
           ${
             isActive
               ? "bg-cyan-300/[0.08] text-cyan-200"
@@ -647,13 +626,19 @@ function SidebarItem({
     >
       {({ isActive }) => (
         <>
-          {/* Active indicator */}
+          {/* =====================================================
+              ACTIVE INDICATOR
+              ===================================================== */}
 
           <motion.span
             initial={false}
             animate={{
               opacity: isActive ? 1 : 0,
               scaleY: isActive ? 1 : 0.5,
+            }}
+            transition={{
+              duration: 0.18,
+              ease: EASE,
             }}
             className="
               absolute
@@ -668,7 +653,9 @@ function SidebarItem({
             "
           />
 
-          {/* Icon container */}
+          {/* =====================================================
+              ICON
+              ===================================================== */}
 
           <span
             className={`
@@ -689,10 +676,15 @@ function SidebarItem({
               }
             `}
           >
-            <Icon size={17} strokeWidth={1.8} />
+            <Icon
+              size={17}
+              strokeWidth={1.8}
+            />
           </span>
 
-          {/* Label */}
+          {/* =====================================================
+              LABEL
+              ===================================================== */}
 
           <AnimatePresence initial={false}>
             {isExpanded && (
@@ -714,13 +706,14 @@ function SidebarItem({
                   ease: EASE,
                 }}
                 className={`
+                  font-display
                   min-w-0
                   flex-1
                   truncate
                   whitespace-nowrap
-                  text-[11px]
+                  text-[9px]
                   font-medium
-                  tracking-[0.01em]
+                  tracking-[0.035em]
                   ${
                     isActive
                       ? "text-cyan-100/90"
@@ -733,7 +726,9 @@ function SidebarItem({
             )}
           </AnimatePresence>
 
-          {/* Active route arrow */}
+          {/* =====================================================
+              ACTIVE ARROW
+              ===================================================== */}
 
           <AnimatePresence initial={false}>
             {isExpanded && isActive && (
@@ -752,10 +747,14 @@ function SidebarItem({
                 }}
                 transition={{
                   duration: 0.16,
+                  ease: EASE,
                 }}
                 className="text-cyan-300/50"
               >
-                <FiChevronRight size={13} />
+                <FiChevronRight
+                  size={13}
+                  strokeWidth={1.8}
+                />
               </motion.span>
             )}
           </AnimatePresence>
