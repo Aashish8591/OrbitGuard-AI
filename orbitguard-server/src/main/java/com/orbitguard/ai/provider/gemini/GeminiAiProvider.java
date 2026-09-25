@@ -1,7 +1,9 @@
 package com.orbitguard.ai.provider.gemini;
 
 import com.google.genai.Models;
+import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.GenerateContentResponse;
+import com.google.genai.types.ThinkingConfig;
 import com.orbitguard.ai.exception.AiServiceException;
 import com.orbitguard.ai.provider.AiProvider;
 import lombok.RequiredArgsConstructor;
@@ -51,7 +53,23 @@ public class GeminiAiProvider implements AiProvider {
      * it throughout the application.
      * </p>
      */
-    private static final String MODEL_NAME = "gemini-3.6-flash";
+    private static final String MODEL_NAME = "gemini-3.8-flash";
+
+
+    /**
+     * Maximum number of attempts for temporary Gemini failures.
+     */
+    private static final int MAX_RETRY_ATTEMPTS = 3;
+
+
+    /**
+     * Initial retry delay in milliseconds.
+     *
+     * <p>
+     * The delay increases exponentially after every failed attempt.
+     * </p>
+     */
+    private static final long INITIAL_RETRY_DELAY_MS = 1000L;
 
 
     /**
@@ -71,41 +89,97 @@ public class GeminiAiProvider implements AiProvider {
             );
         }
 
-        try {
+        GenerateContentConfig config =
+                GenerateContentConfig.builder()
+                        .maxOutputTokens(500)
+                        .temperature(0.3F)
+                        .thinkingConfig(
+                                ThinkingConfig.builder()
+                                        .thinkingLevel("LOW")
+                                        .build()
+                        )
+                        .build();
 
-            GenerateContentResponse response =
-                    geminiModels.generateContent(
-                            MODEL_NAME,
-                            prompt,
-                            null
+        long delayMs = INITIAL_RETRY_DELAY_MS;
+
+        for (int attempt = 1; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
+
+            try {
+
+                GenerateContentResponse response =
+                        geminiModels.generateContent(
+                                MODEL_NAME,
+                                prompt,
+                                config
+                        );
+
+                if (response == null) {
+                    throw new AiServiceException(
+                            "Gemini returned an empty response."
                     );
+                }
 
-            if (response == null) {
-                throw new AiServiceException(
-                        "Gemini returned an empty response."
-                );
+                String generatedText = response.text();
+
+                if (generatedText == null || generatedText.isBlank()) {
+                    throw new AiServiceException(
+                            "Gemini returned an empty AI response."
+                    );
+                }
+
+                return generatedText.trim();
+
+            } catch (AiServiceException exception) {
+
+                throw exception;
+
+            } catch (Exception exception) {
+
+                if (!isRetryable503Exception(exception)
+                        || attempt == MAX_RETRY_ATTEMPTS) {
+
+                    throw new AiServiceException(
+                            "Failed to generate response from Gemini AI.",
+                            exception
+                    );
+                }
+
+                try {
+
+                    Thread.sleep(delayMs);
+
+                } catch (InterruptedException interruptedException) {
+
+                    Thread.currentThread().interrupt();
+
+                    throw new AiServiceException(
+                            "Gemini AI retry was interrupted.",
+                            interruptedException
+                    );
+                }
+
+                delayMs *= 2;
             }
-
-            String generatedText = response.text();
-
-            if (generatedText == null || generatedText.isBlank()) {
-                throw new AiServiceException(
-                        "Gemini returned an empty AI response."
-                );
-            }
-
-            return generatedText.trim();
-
-        } catch (AiServiceException exception) {
-
-            throw exception;
-
-        } catch (Exception exception) {
-
-            throw new AiServiceException(
-                    "Failed to generate response from Gemini AI.",
-                    exception
-            );
         }
+
+        throw new AiServiceException(
+                "Failed to generate response from Gemini AI."
+        );
+    }
+
+
+    /**
+     * Determines whether the Gemini exception represents a temporary
+     * HTTP 503 service-unavailable condition.
+     *
+     * @param exception exception returned by Gemini SDK
+     * @return true when the request should be retried
+     */
+    private boolean isRetryable503Exception(Exception exception) {
+
+        String message = exception.getMessage();
+
+        return message != null
+                && message.contains("503");
     }
 }

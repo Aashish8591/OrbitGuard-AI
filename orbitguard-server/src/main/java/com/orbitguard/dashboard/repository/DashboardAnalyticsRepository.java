@@ -1,10 +1,6 @@
 package com.orbitguard.dashboard.repository;
 
-import com.orbitguard.dashboard.dto.response.DashboardAlertAnalyticsResponse;
-import com.orbitguard.dashboard.dto.response.DashboardOverviewResponse;
-import com.orbitguard.dashboard.dto.response.DashboardRiskAnalyticsResponse;
-import com.orbitguard.dashboard.dto.response.DashboardSatelliteAnalyticsResponse;
-import com.orbitguard.dashboard.dto.response.DashboardTrendResponse;
+import com.orbitguard.dashboard.dto.response.*;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -129,4 +125,17 @@ public interface DashboardAnalyticsRepository {
             LocalDate fromDate,
             LocalDate toDate
     );
+
+    /**
+     * --------------------------------------------------------------
+     * Latest Orbital Intelligence Insight
+     * --------------------------------------------------------------
+     *
+     * Retrieves the most recently assessed active
+     * collision-risk record.
+     *
+     * @return latest dashboard intelligence insight,
+     *         or null when no active risk assessment exists
+     */
+    DashboardLatestInsightResponse getLatestInsight();
 }

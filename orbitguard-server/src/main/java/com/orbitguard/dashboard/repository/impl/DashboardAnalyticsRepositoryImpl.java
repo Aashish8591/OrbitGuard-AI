@@ -2,12 +2,7 @@ package com.orbitguard.dashboard.repository.impl;
 
 import com.orbitguard.alert.enums.AlertStatus;
 import com.orbitguard.dashboard.constants.DashboardApiConstants;
-import com.orbitguard.dashboard.dto.response.DashboardAlertAnalyticsResponse;
-import com.orbitguard.dashboard.dto.response.DashboardCountResponse;
-import com.orbitguard.dashboard.dto.response.DashboardOverviewResponse;
-import com.orbitguard.dashboard.dto.response.DashboardRiskAnalyticsResponse;
-import com.orbitguard.dashboard.dto.response.DashboardSatelliteAnalyticsResponse;
-import com.orbitguard.dashboard.dto.response.DashboardTrendResponse;
+import com.orbitguard.dashboard.dto.response.*;
 import com.orbitguard.dashboard.repository.DashboardAnalyticsRepository;
 import com.orbitguard.risk.enums.RiskLevel;
 import lombok.RequiredArgsConstructor;
@@ -467,6 +462,120 @@ public class DashboardAnalyticsRepositoryImpl
                 query,
                 collectionName
         );
+    }
+
+    /**
+     * ==============================================================
+     * Get Latest Orbital Intelligence Insight
+     * ==============================================================
+     *
+     * Retrieves the most recently assessed active
+     * collision-risk assessment.
+     *
+     * The Dashboard module does not store a separate
+     * intelligence document.
+     *
+     * Instead, the latest insight is derived from the
+     * existing collision_risks collection.
+     *
+     * @return latest dashboard intelligence insight,
+     *         or null when no active assessment exists
+     */
+    @Override
+    public DashboardLatestInsightResponse getLatestInsight() {
+
+        Query query =
+                Query.query(
+                        Criteria.where(
+                                DashboardApiConstants.FIELD_IS_ACTIVE
+                        ).is(true)
+                );
+
+        query.with(
+                Sort.by(
+                        Sort.Direction.DESC,
+                        DashboardApiConstants.FIELD_ASSESSED_AT
+                )
+        );
+
+        query.limit(1);
+
+        Document latestRisk =
+                mongoTemplate.findOne(
+                        query,
+                        Document.class,
+                        DashboardApiConstants.COLLISION_RISKS_COLLECTION
+                );
+
+        if (latestRisk == null) {
+            return null;
+        }
+
+        Object riskLevelValue =
+                latestRisk.get(
+                        DashboardApiConstants.FIELD_RISK_LEVEL
+                );
+
+        Object statusValue =
+                latestRisk.get(
+                        DashboardApiConstants.FIELD_RISK_STATUS
+                );
+
+        Object assessedAtValue =
+                latestRisk.get(
+                        DashboardApiConstants.FIELD_ASSESSED_AT
+                );
+
+        String riskLevel =
+                riskLevelValue != null
+                        ? riskLevelValue.toString()
+                        : "UNKNOWN";
+
+        String status =
+                statusValue != null
+                        ? statusValue.toString()
+                        : "UNKNOWN";
+
+        LocalDateTime assessedAt = null;
+
+        if (assessedAtValue instanceof LocalDateTime) {
+
+            assessedAt =
+                    (LocalDateTime) assessedAtValue;
+
+        } else if (assessedAtValue != null) {
+
+            try {
+
+                assessedAt =
+                        LocalDateTime.parse(
+                                assessedAtValue.toString()
+                        );
+
+            } catch (Exception ignored) {
+
+                /*
+                 * Keep assessedAt null when the stored
+                 * MongoDB value cannot be converted safely.
+                 */
+            }
+        }
+
+        String message =
+                "Latest collision-risk assessment is "
+                        + riskLevel
+                        + " with status "
+                        + status
+                        + ".";
+
+        return DashboardLatestInsightResponse.builder()
+                .type("RISK_ASSESSMENT")
+                .title("Latest Collision Risk Assessment")
+                .message(message)
+                .riskLevel(riskLevel)
+                .status(status)
+                .assessedAt(assessedAt)
+                .build();
     }
 
 

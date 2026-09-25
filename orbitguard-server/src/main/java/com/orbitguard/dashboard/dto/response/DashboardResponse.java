@@ -5,6 +5,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+
+
 import java.util.List;
 
 /**
@@ -54,4 +56,9 @@ public class DashboardResponse {
      * Risk trend analytics.
      */
     private List<DashboardTrendResponse> riskTrends;
+
+    /**
+     * Latest orbital intelligence insight.
+     */
+    private DashboardLatestInsightResponse latestInsight;
 }

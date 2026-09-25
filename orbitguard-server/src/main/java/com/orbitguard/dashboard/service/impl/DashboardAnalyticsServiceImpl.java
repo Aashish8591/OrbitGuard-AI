@@ -3,12 +3,7 @@ package com.orbitguard.dashboard.service.impl;
 import com.orbitguard.common.response.ApiResponse;
 import com.orbitguard.common.util.ResponseBuilder;
 import com.orbitguard.dashboard.constants.DashboardApiConstants;
-import com.orbitguard.dashboard.dto.response.DashboardAlertAnalyticsResponse;
-import com.orbitguard.dashboard.dto.response.DashboardOverviewResponse;
-import com.orbitguard.dashboard.dto.response.DashboardResponse;
-import com.orbitguard.dashboard.dto.response.DashboardRiskAnalyticsResponse;
-import com.orbitguard.dashboard.dto.response.DashboardSatelliteAnalyticsResponse;
-import com.orbitguard.dashboard.dto.response.DashboardTrendResponse;
+import com.orbitguard.dashboard.dto.response.*;
 import com.orbitguard.dashboard.repository.DashboardAnalyticsRepository;
 import com.orbitguard.dashboard.service.DashboardAnalyticsService;
 import lombok.RequiredArgsConstructor;
@@ -130,6 +125,9 @@ public class DashboardAnalyticsServiceImpl
                         toDate
                 );
 
+        DashboardLatestInsightResponse latestInsight =
+                dashboardAnalyticsRepository.getLatestInsight();
+
 
         /*
          * ----------------------------------------------------------
@@ -143,6 +141,7 @@ public class DashboardAnalyticsServiceImpl
                         .riskAnalytics(riskAnalytics)
                         .alertAnalytics(alertAnalytics)
                         .riskTrends(riskTrends)
+                        .latestInsight(latestInsight)
                         .build();
 
 
