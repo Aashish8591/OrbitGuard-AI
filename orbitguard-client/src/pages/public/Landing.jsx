@@ -12,7 +12,7 @@ function Landing() {
     <SpaceBackground>
       <PublicNavbar />
 
-      <main>
+      <main className="landing-page">
         <Hero />
         <PlatformIntro/>
         <Capabilities/>

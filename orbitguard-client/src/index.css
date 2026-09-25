@@ -5,7 +5,13 @@
    ================================================================= */
 
 :root {
-  --font-display: "Orbitron", sans-serif;
+  /* Protected application */
+  --font-display: "Space Grotesk", sans-serif;
+
+  /* Landing / brand */
+  --font-brand: "Orbitron", sans-serif;
+
+  /* General readable content */
   --font-body: "Inter", sans-serif;
 }
 
@@ -23,6 +29,10 @@ body {
   font-family: var(--font-display);
 }
 
+.font-brand {
+  font-family: var(--font-brand);
+}
+
 .font-body {
   font-family: var(--font-body);
 }
@@ -35,16 +45,21 @@ body {
 
 
 /* =================================================================
+   PUBLIC LANDING TYPOGRAPHY
+   ================================================================= */
+
+.landing-page .font-display {
+  font-family: var(--font-brand);
+}
+
+
+/* =================================================================
    ORBITGUARD AUTH INPUT
-   Prevent browser autofill from changing the authentication UI.
    ================================================================= */
 
 .auth-input {
   color-scheme: dark;
 }
-
-
-/* Chrome / Edge / Safari */
 
 .auth-input:-webkit-autofill,
 .auth-input:-webkit-autofill:hover,
@@ -52,26 +67,15 @@ body {
 .auth-input:-webkit-autofill:active {
   -webkit-text-fill-color: #ffffff !important;
 
-  /*
-   * Paint the original OrbitGuard input background over
-   * the browser's default autofill background.
-   */
   -webkit-box-shadow:
     0 0 0 1000px #070c18 inset !important;
 
   box-shadow:
     0 0 0 1000px #070c18 inset !important;
 
-  /*
-   * Prevent the browser from immediately repainting
-   * the field with its default autofill color.
-   */
   transition:
     background-color 9999s ease-in-out 0s;
 }
-
-
-/* Standard autofill support */
 
 .auth-input:autofill {
   background-color: #070c18 !important;
@@ -132,7 +136,6 @@ body {
 
 /* =================================================================
    ACCESSIBILITY
-   Respect users who prefer reduced motion.
    ================================================================= */
 
 @media (prefers-reduced-motion: reduce) {

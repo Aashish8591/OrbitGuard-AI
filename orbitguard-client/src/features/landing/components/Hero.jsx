@@ -1,5 +1,5 @@
-import { motion } from 'framer-motion'
-import { Link } from 'react-router-dom'
+import { motion } from "framer-motion";
+import { Link } from "react-router-dom";
 import {
   FiArrowUpRight,
   FiChevronDown,
@@ -7,38 +7,38 @@ import {
   FiCpu,
   FiRadio,
   FiShield,
-} from 'react-icons/fi'
+} from "react-icons/fi";
 
 const capabilities = [
   {
     icon: FiRadio,
-    number: '01',
-    label: 'SATELLITES',
-    description: 'Orbital monitoring',
-    image: '/images/capabilities/satellite-monitoring.png',
+    number: "01",
+    label: "SATELLITES",
+    description: "Orbital monitoring",
+    image: "/images/capabilities/satellite-monitoring.png",
   },
   {
     icon: FiShield,
-    number: '02',
-    label: 'RISK',
-    description: 'Collision intelligence',
-    image: '/images/capabilities/collision-risk.png',
+    number: "02",
+    label: "RISK",
+    description: "Collision intelligence",
+    image: "/images/capabilities/collision-risk.png",
   },
   {
     icon: FiCircle,
-    number: '03',
-    label: 'DEBRIS',
-    description: 'Object analysis',
-    image: '/images/capabilities/space-debris.png',
+    number: "03",
+    label: "DEBRIS",
+    description: "Object analysis",
+    image: "/images/capabilities/space-debris.png",
   },
   {
     icon: FiCpu,
-    number: '04',
-    label: 'AI',
-    description: 'Intelligent insights',
-    image: '/images/capabilities/ai-intelligence.png',
+    number: "04",
+    label: "AI",
+    description: "Intelligent insights",
+    image: "/images/capabilities/ai-intelligence.png",
   },
-]
+];
 
 function Hero() {
   return (
@@ -90,10 +90,10 @@ function Hero() {
               lg:inset-y-0
               lg:h-full
               lg:w-[82%]
-              lg:object-[68%_center]
+              lg:object-[68%_58%]
 
               xl:w-[84%]
-              xl:object-[70%_center]
+              xl:object-[70%_58%]
             "
             loading="eager"
             fetchPriority="high"
@@ -311,6 +311,7 @@ function Hero() {
                 className="
                   max-w-[650px]
                   text-balance
+                  font-brand
                   font-light
                   uppercase
                   leading-[0.91]
@@ -325,8 +326,8 @@ function Hero() {
 
                     sm:text-5xl
                     md:text-6xl
-                    lg:text-[4.05rem]
-                    xl:text-[4.55rem]
+                    lg:text-[3.05rem]
+                    xl:text-[3.55rem]
                   "
                 >
                   Monitor Space.
@@ -339,8 +340,8 @@ function Hero() {
 
                     sm:text-5xl
                     md:text-6xl
-                    lg:text-[4.05rem]
-                    xl:text-[4.55rem]
+                    lg:text-[3.05rem]
+                    xl:text-[3.55rem]
                   "
                 >
                   <span className="bg-gradient-to-r from-cyan-300 via-blue-400 to-blue-500 bg-clip-text text-transparent">
@@ -355,8 +356,8 @@ function Hero() {
 
                     sm:text-5xl
                     md:text-6xl
-                    lg:text-[4.05rem]
-                    xl:text-[4.55rem]
+                    lg:text-[3.05rem]
+                    xl:text-[3.55rem]
                   "
                 >
                   Protect Orbit.
@@ -387,9 +388,9 @@ function Hero() {
                   sm:leading-7
                 "
               >
-                Understand the orbital environment through satellite
-                monitoring, space debris analysis, collision risk assessment,
-                and AI-powered intelligence.
+                Understand the orbital environment through satellite monitoring,
+                space debris analysis, collision risk assessment, and AI-powered
+                intelligence.
               </motion.p>
 
               {/* =================================================
@@ -434,7 +435,6 @@ function Hero() {
                   "
                 >
                   Enter Mission Control
-
                   <span
                     className="
                       flex
@@ -480,7 +480,6 @@ function Hero() {
                   "
                 >
                   Explore Platform
-
                   <FiChevronDown
                     size={15}
                     className="transition-transform duration-300 group-hover:translate-y-0.5"
@@ -519,7 +518,7 @@ function Hero() {
             "
           >
             {capabilities.map((capability, index) => {
-              const Icon = capability.icon
+              const Icon = capability.icon;
 
               return (
                 <motion.div
@@ -528,14 +527,14 @@ function Hero() {
                   initial="rest"
                   animate="rest"
                   className={[
-                    'group relative min-h-[150px] overflow-hidden',
+                    "group relative min-h-[150px] overflow-hidden",
                     index !== capabilities.length - 1
-                      ? 'border-b border-white/[0.08] lg:border-b-0 lg:border-r'
-                      : '',
+                      ? "border-b border-white/[0.08] lg:border-b-0 lg:border-r"
+                      : "",
                     index === 1
-                      ? 'sm:border-b sm:border-white/[0.08] lg:border-b-0'
-                      : '',
-                  ].join(' ')}
+                      ? "sm:border-b sm:border-white/[0.08] lg:border-b-0"
+                      : "",
+                  ].join(" ")}
                 >
                   {/* =================================================
                       CAPABILITY IMAGE
@@ -667,6 +666,7 @@ function Hero() {
                     {/* Label */}
                     <p
                       className="
+                        font-brand
                         text-[10px]
                         font-medium
                         uppercase
@@ -683,7 +683,7 @@ function Hero() {
                     </p>
                   </div>
                 </motion.div>
-              )
+              );
             })}
           </div>
         </motion.div>
@@ -722,7 +722,6 @@ function Hero() {
             "
           >
             Explore system
-
             <span
               className="
                 flex
@@ -755,7 +754,7 @@ function Hero() {
         </div>
       </div>
     </section>
-  )
+  );
 }
 
-export default Hero
+export default Hero;

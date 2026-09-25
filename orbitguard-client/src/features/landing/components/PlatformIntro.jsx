@@ -69,22 +69,18 @@ function PlatformIntro() {
         px-5
         pb-24
         pt-16
+
         sm:px-8
         sm:pb-28
         sm:pt-20
+
         lg:px-12
-        lg:pb-5
-        lg:pt-45
+        lg:pb-3
+        lg:pt-20
+
         xl:px-16
       "
     >
-      {/* =========================================================
-          GLOBAL SPACE ENVIRONMENT
-
-          SpaceBackground.jsx owns the complete atmosphere.
-          No additional section background is required here.
-      ========================================================== */}
-
       <div
         className="
           relative
@@ -92,31 +88,19 @@ function PlatformIntro() {
           max-w-[1440px]
         "
       >
+
         {/* =======================================================
             MAIN PLATFORM STAGE
-
-            Desktop:
-
-            LEFT
-            Main platform statement
-
-            CENTER-RIGHT
-            Earth
-
-            TOP-RIGHT
-            Supporting message
-
-            LOWER-RIGHT
-            Secondary intelligence message + flow
         ======================================================== */}
 
         <div
           className="
             relative
             min-h-0
-            lg:min-h-[700px]
+            lg:min-h-[620px]
           "
         >
+
           {/* =====================================================
               TOP-LEFT — MAIN PLATFORM STATEMENT
           ====================================================== */}
@@ -134,21 +118,18 @@ function PlatformIntro() {
               z-30
               max-w-[620px]
               pt-4
+
               sm:pt-6
+
               lg:absolute
               lg:left-0
               lg:top-0
               lg:max-w-[610px]
               lg:pt-0
+
               xl:max-w-[650px]
             "
           >
-            {/* =================================================
-                HEADLINE
-
-                Each line enters independently.
-            ================================================== */}
-
             <motion.h2
               variants={revealContainer}
               className="
@@ -159,6 +140,7 @@ function PlatformIntro() {
                 leading-[0.9]
                 tracking-[-0.055em]
                 text-white
+
                 sm:text-5xl
                 md:text-6xl
                 lg:text-[4.2rem]
@@ -187,10 +169,6 @@ function PlatformIntro() {
               </motion.span>
             </motion.h2>
 
-            {/* =================================================
-                DESCRIPTION
-            ================================================== */}
-
             <motion.p
               variants={softReveal}
               className="
@@ -199,6 +177,7 @@ function PlatformIntro() {
                 text-sm
                 leading-6
                 text-slate-300/60
+
                 sm:text-base
                 sm:leading-7
               "
@@ -208,10 +187,6 @@ function PlatformIntro() {
               reporting, and AI-powered insights in one operational
               environment.
             </motion.p>
-
-            {/* =================================================
-                CTA
-            ================================================== */}
 
             <motion.a
               variants={softReveal}
@@ -271,12 +246,6 @@ function PlatformIntro() {
 
           {/* =====================================================
               CENTER-RIGHT — EARTH
-
-              Position and size intentionally unchanged.
-
-              The animation only controls the entrance of the
-              Earth container. HeroEarth keeps ownership of
-              the actual 3D interaction and rotation.
           ====================================================== */}
 
           <motion.div
@@ -305,9 +274,12 @@ function PlatformIntro() {
               mt-[-24px]
               w-full
               max-w-[520px]
+
               sm:mt-[-30px]
               sm:max-w-[570px]
+
               md:max-w-[610px]
+
               lg:absolute
               lg:left-[54%]
               lg:top-[36%]
@@ -316,16 +288,11 @@ function PlatformIntro() {
               lg:max-w-none
               lg:-translate-x-1/2
               lg:-translate-y-1/2
+
               xl:w-[630px]
             "
           >
             <HeroEarth />
-
-            {/* =================================================
-                VERY SUBTLE AMBIENT BREATHING LIGHT
-
-                Slow enough to be felt rather than noticed.
-            ================================================== */}
 
             <motion.div
               aria-hidden="true"
@@ -357,8 +324,6 @@ function PlatformIntro() {
 
           {/* =====================================================
               LOWER-RIGHT — SECONDARY INTELLIGENCE MESSAGE
-
-              Explicitly positioned on desktop.
           ====================================================== */}
 
           <motion.div
@@ -385,19 +350,18 @@ function PlatformIntro() {
               mt-10
               ml-auto
               max-w-[340px]
+
               sm:max-w-[390px]
+
               lg:absolute
               lg:right-0
               lg:top-[1%]
               lg:mt-0
               lg:max-w-[350px]
+
               xl:max-w-[380px]
             "
           >
-            {/* =================================================
-                EDITORIAL MESSAGE
-            ================================================== */}
-
             <motion.div
               variants={revealContainer}
               initial="hidden"
@@ -408,8 +372,6 @@ function PlatformIntro() {
               }}
               className="text-left"
             >
-              {/* Primary message */}
-
               <motion.h3
                 variants={revealContainer}
                 className="
@@ -419,6 +381,7 @@ function PlatformIntro() {
                   leading-[1.02]
                   tracking-[-0.04em]
                   text-white
+
                   sm:text-3xl
                 "
               >
@@ -436,8 +399,6 @@ function PlatformIntro() {
                   environment.
                 </motion.span>
 
-                {/* Secondary message */}
-
                 <motion.span
                   variants={revealItem}
                   className="
@@ -454,8 +415,6 @@ function PlatformIntro() {
                 </motion.span>
               </motion.h3>
 
-              {/* Supporting description */}
-
               <motion.p
                 variants={softReveal}
                 className="
@@ -464,6 +423,7 @@ function PlatformIntro() {
                   text-xs
                   leading-6
                   text-slate-300/60
+
                   sm:text-sm
                 "
               >
@@ -474,19 +434,11 @@ function PlatformIntro() {
 
             {/* =================================================
                 INTELLIGENCE FLOW
-
-                Observe → Analyze → Predict
-
-                The cards reveal sequentially and the connector
-                carries a subtle moving cyan signal.
             ================================================== */}
 
             <div className="mt-7 w-full max-w-[300px]">
               {intelligenceFlow.map((step, index) => (
                 <div key={step.number}>
-                  {/* =================================================
-                      INTELLIGENCE CARD
-                  ================================================== */}
 
                   <motion.div
                     initial={{
@@ -529,8 +481,6 @@ function PlatformIntro() {
                       hover:bg-cyan-300/[0.025]
                     "
                   >
-                    {/* Number */}
-
                     <span
                       className="
                         w-5
@@ -547,8 +497,6 @@ function PlatformIntro() {
                       {step.number}
                     </span>
 
-                    {/* Vertical divider */}
-
                     <span
                       aria-hidden="true"
                       className="
@@ -560,8 +508,6 @@ function PlatformIntro() {
                         group-hover:bg-cyan-300/20
                       "
                     />
-
-                    {/* Stage content */}
 
                     <div>
                       <p
@@ -591,8 +537,6 @@ function PlatformIntro() {
                       </p>
                     </div>
 
-                    {/* Active edge */}
-
                     <span
                       aria-hidden="true"
                       className="
@@ -608,10 +552,6 @@ function PlatformIntro() {
                       "
                     />
                   </motion.div>
-
-                  {/* =================================================
-                      DOWNWARD CONNECTOR
-                  ================================================== */}
 
                   {index < intelligenceFlow.length - 1 && (
                     <div
@@ -635,8 +575,6 @@ function PlatformIntro() {
                           items-center
                         "
                       >
-                        {/* Base connector */}
-
                         <span
                           className="
                             h-full
@@ -644,8 +582,6 @@ function PlatformIntro() {
                             bg-white/[0.1]
                           "
                         />
-
-                        {/* Moving signal */}
 
                         <motion.span
                           className="
@@ -670,8 +606,6 @@ function PlatformIntro() {
                             ease: 'easeInOut',
                           }}
                         />
-
-                        {/* Arrow */}
 
                         <FiArrowDown
                           size={10}

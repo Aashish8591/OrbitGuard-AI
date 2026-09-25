@@ -120,7 +120,7 @@ function VideoCard({ onOpen }) {
               <div>
                 <p
                   className="
-                    font-mono
+                    font-orbitron
                     text-[7px]
                     uppercase
                     tracking-[0.26em]
@@ -133,6 +133,7 @@ function VideoCard({ onOpen }) {
                 <p
                   className="
                     mt-1
+                    font-inter
                     text-[10px]
                     font-medium
                     text-white/90
@@ -144,7 +145,7 @@ function VideoCard({ onOpen }) {
 
               <span
                 className="
-                  font-mono
+                  font-orbitron
                   text-[7px]
                   uppercase
                   tracking-[0.18em]
@@ -170,7 +171,7 @@ function VideoCard({ onOpen }) {
       >
         <span
           className="
-            font-mono
+            font-orbitron
             text-[7px]
             uppercase
             tracking-[0.22em]
@@ -182,7 +183,7 @@ function VideoCard({ onOpen }) {
 
         <span
           className="
-            font-mono
+            font-orbitron
             text-[7px]
             uppercase
             tracking-[0.18em]
@@ -239,7 +240,7 @@ function ExplorePanel() {
         <div className="min-w-0">
           <p
             className="
-              font-mono
+              font-orbitron
               text-[9px]
               uppercase
               tracking-[0.28em]
@@ -253,6 +254,7 @@ function ExplorePanel() {
             className="
               mt-2
               max-w-[290px]
+              font-inter
               text-[14px]
               font-light
               leading-5
@@ -303,7 +305,7 @@ function ExplorePanel() {
           border-b
           border-white/[0.16]
           pb-1.5
-          font-mono
+          font-orbitron
           text-[9px]
           font-medium
           uppercase
@@ -316,6 +318,7 @@ function ExplorePanel() {
         "
       >
         Explore orbital data
+
         <FiArrowUpRight
           className="
             text-cyan-300/70
@@ -371,7 +374,7 @@ function EditorialContent() {
       <p
         className="
           mb-4
-          font-mono
+          font-orbitron
           text-[8px]
           uppercase
           tracking-[0.32em]
@@ -384,6 +387,7 @@ function EditorialContent() {
 
       <h2
         className="
+          font-orbitron
           text-[clamp(2.6rem,10vw,5.2rem)]
           font-light
           leading-[0.9]
@@ -401,6 +405,7 @@ function EditorialContent() {
         className="
           mt-5
           max-w-[390px]
+          font-inter
           text-xs
           font-light
           leading-6
@@ -426,6 +431,7 @@ function EditorialContent() {
           border-b
           border-white/20
           pb-2
+          font-orbitron
           text-[9px]
           font-medium
           uppercase
@@ -438,6 +444,7 @@ function EditorialContent() {
         "
       >
         Explore OrbitGuard
+
         <FiArrowUpRight
           className="
             text-cyan-300
@@ -559,7 +566,7 @@ function BottomEditorial() {
         pt-4
 
         lg:absolute
-        lg:bottom-9
+        lg:bottom-15
         lg:right-10
         lg:mt-0
         lg:w-auto
@@ -581,7 +588,7 @@ function BottomEditorial() {
 
       <p
         className="
-          font-mono
+          font-orbitron
           text-[7px]
           uppercase
           tracking-[0.28em]
@@ -595,6 +602,7 @@ function BottomEditorial() {
         className="
           mt-2
           max-w-[280px]
+          font-inter
           text-[11px]
           font-light
           leading-5
@@ -614,7 +622,7 @@ function BottomEditorial() {
           inline-flex
           items-center
           gap-2
-          font-mono
+          font-orbitron
           text-[7px]
           uppercase
           tracking-[0.2em]
@@ -624,6 +632,7 @@ function BottomEditorial() {
         "
       >
         Enter orbital explorer
+
         <FiArrowUpRight
           className="
             text-cyan-300/70
@@ -915,7 +924,7 @@ function About() {
 
                 <span
                   className="
-                    font-mono
+                    font-orbitron
                     text-[8px]
                     font-medium
                     uppercase
@@ -930,7 +939,7 @@ function About() {
 
               <span
                 className="
-                  font-mono
+                  font-orbitron
                   text-[9px]
                   uppercase
                   tracking-[0.28em]
@@ -1040,7 +1049,7 @@ function About() {
                 pt-4
 
                 lg:absolute
-                lg:bottom-9
+                lg:bottom-12
                 lg:left-10
                 lg:mt-0
                 lg:border-t-0
@@ -1050,25 +1059,25 @@ function About() {
               <div className="hidden lg:block">
                 <p
                   className="
-      font-mono
-      text-[7px]
-      uppercase
-      tracking-[0.25em]
-      text-white/25
-    "
+                    font-orbitron
+                    text-[7px]
+                    uppercase
+                    tracking-[0.25em]
+                    text-white/25
+                  "
                 >
                   Orbital environment
                 </p>
 
                 <p
                   className="
-      mt-1
-      font-mono
-      text-[7px]
-      uppercase
-      tracking-[0.18em]
-      text-cyan-300/40
-    "
+                    mt-1
+                    font-orbitron
+                    text-[7px]
+                    uppercase
+                    tracking-[0.18em]
+                    text-cyan-300/40
+                  "
                 >
                   Observe what moves
                 </p>
@@ -1230,7 +1239,7 @@ function About() {
               >
                 <span
                   className="
-                    font-mono
+                    font-orbitron
                     text-[8px]
                     uppercase
                     tracking-[0.24em]
@@ -1242,7 +1251,7 @@ function About() {
 
                 <span
                   className="
-                    font-mono
+                    font-orbitron
                     text-[8px]
                     uppercase
                     tracking-[0.2em]

@@ -5,6 +5,8 @@ import Register from "../pages/public/Register";
 import Login from "../pages/public/Login";
 import ProtectedRoute from "./ProtectedRoute";
 import AppLayout from "../components/layout/AppLayout";
+import Dashboard from "../pages/app/Dashboard";
+import AIAssistant from "../pages/app/AIAssistant";
 
 function AppRoutes() {
   return (
@@ -27,7 +29,7 @@ function AppRoutes() {
 
           <Route
             path="/dashboard"
-            element={<div>Dashboard</div>}
+            element={<Dashboard/>}
           />
 
           {/* Satellites */}
@@ -98,7 +100,7 @@ function AppRoutes() {
 
           <Route
             path="/ai-assistant"
-            element={<div>AI Assistant</div>}
+            element={<AIAssistant/>}
           />
 
           {/* Settings */}

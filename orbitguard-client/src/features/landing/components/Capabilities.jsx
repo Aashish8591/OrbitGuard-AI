@@ -148,7 +148,84 @@ const revealItem = {
 
 function Capabilities() {
   const [activeCapability, setActiveCapability] = useState(0);
+  const [railPositions, setRailPositions] = useState([]);
+  const [railHeight, setRailHeight] = useState(0);
+
   const sectionRefs = useRef([]);
+  const panelsRef = useRef(null);
+
+  /*
+   * ============================================================
+   * CALCULATE NAVIGATION RAIL POSITIONS
+   * ============================================================
+   *
+   * Instead of assuming the capability area is 2000px tall,
+   * we calculate each node from the actual capability card.
+   *
+   * This keeps the rail aligned when:
+   * - text wraps
+   * - card heights change
+   * - browser width changes
+   * - fonts change
+   * - content changes
+   */
+
+  useEffect(() => {
+    const updateRailPositions = () => {
+      const panels = panelsRef.current;
+
+      if (!panels) {
+        return;
+      }
+
+      const panelsRect = panels.getBoundingClientRect();
+
+      const positions = sectionRefs.current.map((section) => {
+        if (!section) {
+          return 0;
+        }
+
+        const rect = section.getBoundingClientRect();
+
+        const sectionCenter =
+          rect.top - panelsRect.top + rect.height / 2;
+
+        return sectionCenter;
+      });
+
+      setRailPositions(positions);
+      setRailHeight(panels.scrollHeight);
+    };
+
+    updateRailPositions();
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateRailPositions();
+    });
+
+    if (panelsRef.current) {
+      resizeObserver.observe(panelsRef.current);
+    }
+
+    sectionRefs.current.forEach((section) => {
+      if (section) {
+        resizeObserver.observe(section);
+      }
+    });
+
+    window.addEventListener("resize", updateRailPositions);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", updateRailPositions);
+    };
+  }, []);
+
+  /*
+   * ============================================================
+   * ACTIVE CAPABILITY
+   * ============================================================
+   */
 
   useEffect(() => {
     let animationFrameId = null;
@@ -179,7 +256,9 @@ function Capabilities() {
       });
 
       setActiveCapability((currentIndex) =>
-        currentIndex === closestIndex ? currentIndex : closestIndex,
+        currentIndex === closestIndex
+          ? currentIndex
+          : closestIndex,
       );
     };
 
@@ -188,18 +267,20 @@ function Capabilities() {
         return;
       }
 
-      animationFrameId = window.requestAnimationFrame(updateActiveCapability);
+      animationFrameId =
+        window.requestAnimationFrame(updateActiveCapability);
     };
 
     updateActiveCapability();
 
-    window.addEventListener("scroll", handleScroll, { passive: true });
+    window.addEventListener("scroll", handleScroll, {
+      passive: true,
+    });
 
     window.addEventListener("resize", handleScroll);
 
     return () => {
       window.removeEventListener("scroll", handleScroll);
-
       window.removeEventListener("resize", handleScroll);
 
       if (animationFrameId !== null) {
@@ -207,6 +288,12 @@ function Capabilities() {
       }
     };
   }, []);
+
+  /*
+   * ============================================================
+   * NAVIGATION
+   * ============================================================
+   */
 
   const handleCapabilityNavigation = (index) => {
     const target = sectionRefs.current[index];
@@ -222,26 +309,31 @@ function Capabilities() {
   };
 
   return (
-    <section
-      id="capabilities"
-      className="
-        relative
-        px-5
-        pb-24
-        pt-14
-        sm:px-8
-        sm:pb-28
-        sm:pt-16
-        lg:px-12
-        lg:pb-32
-        lg:pt-14
-        xl:px-16
-      "
-    >
+<section
+  id="capabilities"
+  className="
+    relative
+    px-5
+    pb-10
+    pt-14
+
+    sm:px-8
+    sm:pb-12
+    sm:pt-16
+
+    lg:px-12
+    lg:pb-16
+    lg:pt-14
+
+    xl:px-16
+  "
+>
       <div className="mx-auto max-w-[1440px]">
+
         {/* =====================================================
             CAPABILITIES INTRO
         ====================================================== */}
+
         <div
           className="
             relative
@@ -250,8 +342,10 @@ function Capabilities() {
             overflow-hidden
             border-b
             border-white/[0.08]
+
             sm:mb-14
             sm:min-h-[330px]
+
             lg:mb-16
             lg:min-h-[350px]
           "
@@ -275,16 +369,16 @@ function Capabilities() {
           <div
             aria-hidden="true"
             className="
-    absolute
-    inset-0
-    bg-gradient-to-r
-    from-[#050816]/95
-    via-[#050816]/35
-    to-transparent
-  "
+              absolute
+              inset-0
+              bg-gradient-to-r
+              from-[#050816]/95
+              via-[#050816]/35
+              to-transparent
+            "
           />
 
-          {/* Bottom fade into global space background */}
+          {/* Bottom fade */}
           <div
             aria-hidden="true"
             className="
@@ -324,60 +418,73 @@ function Capabilities() {
               flex-col
               justify-end
               pb-8
+
               sm:min-h-[330px]
               sm:pb-10
+
               lg:min-h-[350px]
               lg:pb-12
             "
           >
+            {/* Section label */}
             <p
               className="
                 mb-3
-                font-mono
+                font-brand
                 text-[9px]
+                font-medium
                 uppercase
-                tracking-[0.28em]
+                tracking-[0.2em]
                 text-cyan-200/65
               "
             >
               CAPABILITIES
             </p>
 
+            {/* Main heading */}
             <h2
               className="
+                font-brand
                 text-balance
-                text-[3rem]
-                font-light
+                text-[2.6rem]
+                font-medium
                 uppercase
-                leading-[0.88]
-                tracking-[-0.06em]
+                leading-[0.92]
+                tracking-[-0.04em]
                 text-white
+
                 sm:text-5xl
                 md:text-6xl
-                lg:text-[4.8rem]
+                lg:text-[4.5rem]
               "
             >
               What OrbitGuard
-              <span className="block text-slate-300/60">can do.</span>
+              <span className="block text-slate-300/60">
+                can do.
+              </span>
             </h2>
 
+            {/* Description intentionally stays Inter */}
             <p
               className="
                 mt-5
                 max-w-[520px]
+                font-sans
                 text-sm
                 leading-6
                 text-slate-300/65
+
                 sm:text-[15px]
                 sm:leading-7
               "
             >
-              From satellite monitoring to collision-risk intelligence and
-              AI-assisted analysis, OrbitGuard brings the orbital environment
-              into one operational experience.
+              From satellite monitoring to collision-risk intelligence
+              and AI-assisted analysis, OrbitGuard brings the orbital
+              environment into one operational experience.
             </p>
           </motion.div>
 
+          {/* Technical metadata */}
           <div
             aria-hidden="true"
             className="
@@ -387,82 +494,92 @@ function Capabilities() {
               z-10
               hidden
               text-right
-              font-mono
+              font-brand
               text-[8px]
               uppercase
               leading-4
               tracking-[0.2em]
               text-white/30
+
               sm:block
+
               lg:right-8
               lg:top-8
             "
           >
-            <span className="block">SIX CAPABILITIES.</span>
-            <span className="block">ONE ORBITAL VIEW.</span>
+            <span className="block">
+              SIX CAPABILITIES.
+            </span>
+
+            <span className="block">
+              ONE ORBITAL VIEW.
+            </span>
           </div>
         </div>
 
         {/* =====================================================
             CAPABILITY SYSTEM
         ====================================================== */}
+
         <div
           className="
             relative
+
             lg:grid
             lg:grid-cols-[110px_minmax(0,1fr)]
             lg:gap-5
           "
         >
+
           {/* =================================================
               DESKTOP NAVIGATION RAIL
           ================================================== */}
+
           <aside
             className="
-    sticky
-    top-28
-    z-30
-    hidden
-    h-[2000px]
-    lg:block
-  "
+              sticky
+              top-28
+              z-30
+              hidden
+              self-start
+              lg:block
+            "
+            style={{
+              height: railHeight || "auto",
+            }}
           >
             <div className="relative h-full">
-              {/* =====================================================
-        BASE TIMELINE
-    ====================================================== */}
 
+              {/* Base timeline */}
               <div
                 aria-hidden="true"
                 className="
-        absolute
-        left-[10px]
-        top-[10px]
-        bottom-[10px]
-        w-px
-        bg-white/[0.14]
-      "
+                  absolute
+                  left-[10px]
+                  top-0
+                  h-full
+                  w-px
+                  bg-white/[0.14]
+                "
               />
 
-              {/* =====================================================
-        ACTIVE / COMPLETED PROGRESS
-    ====================================================== */}
-
+              {/* Active / completed progress */}
               <motion.div
                 aria-hidden="true"
                 className="
-        absolute
-        left-[10px]
-        top-[10px]
-        w-px
-        origin-top
-        bg-cyan-300/65
-      "
+                  absolute
+                  left-[10px]
+                  top-0
+                  w-px
+                  origin-top
+                  bg-cyan-300/65
+                "
                 animate={{
                   height:
-                    activeCapability === 0
-                      ? "0%"
-                      : `${(activeCapability / (capabilities.length - 1)) * 100}%`,
+                    railPositions.length > 0 &&
+                    railPositions[activeCapability]
+                      ? railPositions[activeCapability]
+                      : 0,
                 }}
                 transition={{
                   duration: 0.5,
@@ -470,159 +587,166 @@ function Capabilities() {
                 }}
               />
 
-              {/* =====================================================
-        CAPABILITY NODES
-    ====================================================== */}
+              {/* Capability nodes */}
+              {capabilities.map((capability, index) => {
+                const isActive =
+                  activeCapability === index;
 
-              <div
-                className="
-        relative
-        flex
-        h-full
-        flex-col
-        justify-between
-      "
-              >
-                {capabilities.map((capability, index) => {
-                  const isActive = activeCapability === index;
+                const isCompleted =
+                  activeCapability > index;
 
-                  const isCompleted = activeCapability > index;
+                const nodePosition =
+                  railPositions[index] ?? 0;
 
-                  return (
-                    <button
-                      key={capability.number}
-                      type="button"
-                      onClick={() => handleCapabilityNavigation(index)}
-                      className="
-              group
-              relative
-              flex
-              items-center
-              gap-3
-              text-left
-            "
-                      aria-label={`Go to ${capability.shortLabel}`}
-                      aria-current={isActive ? "step" : undefined}
+                return (
+                  <button
+                    key={capability.number}
+                    type="button"
+                    onClick={() =>
+                      handleCapabilityNavigation(index)
+                    }
+                    className="
+                      group
+                      absolute
+                      left-0
+                      flex
+                      -translate-y-1/2
+                      items-center
+                      gap-3
+                      text-left
+                    "
+                    style={{
+                      top: nodePosition,
+                    }}
+                    aria-label={`Go to ${capability.shortLabel}`}
+                    aria-current={
+                      isActive ? "step" : undefined
+                    }
+                  >
+                    {/* Node */}
+                    <motion.span
+                      animate={{
+                        scale: isActive ? 1.08 : 1,
+                      }}
+                      transition={{
+                        duration: 0.35,
+                        ease: [0.22, 1, 0.36, 1],
+                      }}
+                      className={`
+                        relative
+                        z-10
+                        flex
+                        h-[21px]
+                        w-[21px]
+                        shrink-0
+                        items-center
+                        justify-center
+                        rounded-full
+                        border
+                        bg-[#050816]
+                        transition-all
+                        duration-500
+
+                        ${
+                          isActive
+                            ? `
+                              border-cyan-300
+                              shadow-[0_0_18px_rgba(103,232,249,0.30)]
+                            `
+                            : isCompleted
+                              ? `
+                                border-cyan-300/40
+                              `
+                              : `
+                                border-white/25
+                                group-hover:border-white/55
+                              `
+                        }
+                      `}
                     >
-                      {/* =================================================
-                NODE
-            ================================================== */}
-
                       <motion.span
                         animate={{
-                          scale: isActive ? 1.08 : 1,
+                          scale: isActive ? 1.25 : 1,
+                          opacity: isActive
+                            ? 1
+                            : isCompleted
+                              ? 0.6
+                              : 0.3,
                         }}
                         transition={{
-                          duration: 0.35,
-                          ease: [0.22, 1, 0.36, 1],
+                          duration: 0.3,
                         }}
                         className={`
-                relative
-                z-10
-                flex
-                h-[21px]
-                w-[21px]
-                shrink-0
-                items-center
-                justify-center
-                rounded-full
-                border
-                bg-[#050816]
-                transition-all
-                duration-500
+                          h-1.5
+                          w-1.5
+                          rounded-full
 
-                ${
-                  isActive
-                    ? `
-                      border-cyan-300
-                      shadow-[0_0_18px_rgba(103,232,249,0.30)]
-                    `
-                    : isCompleted
-                      ? `
-                        border-cyan-300/40
-                      `
-                      : `
-                        border-white/25
-                        group-hover:border-white/55
-                      `
-                }
-              `}
-                      >
-                        {/* Node center */}
+                          ${
+                            isActive
+                              ? "bg-cyan-200"
+                              : isCompleted
+                                ? "bg-cyan-300/60"
+                                : "bg-white/30"
+                          }
+                        `}
+                      />
+                    </motion.span>
 
-                        <motion.span
-                          animate={{
-                            scale: isActive ? 1.25 : 1,
+                    {/* Label */}
+                    <span
+                      className={`
+                        hidden
+                        font-brand
+                        text-[9px]
+                        uppercase
+                        tracking-[0.1em]
+                        transition-all
+                        duration-500
+                        xl:block
 
-                            opacity: isActive ? 1 : isCompleted ? 0.6 : 0.3,
-                          }}
-                          transition={{
-                            duration: 0.3,
-                          }}
-                          className={`
-                  h-1.5
-                  w-1.5
-                  rounded-full
-
-                  ${
-                    isActive
-                      ? "bg-cyan-200"
-                      : isCompleted
-                        ? "bg-cyan-300/60"
-                        : "bg-white/30"
-                  }
-                `}
-                        />
-                      </motion.span>
-
-                      {/* =================================================
-                LABEL
-            ================================================== */}
-
-                      <span
-                        className={`
-                hidden
-                font-mono
-                text-[9px]
-                uppercase
-                tracking-[0.1em]
-                transition-all
-                duration-500
-                xl:block
-
-                ${
-                  isActive
-                    ? "text-cyan-200/90"
-                    : isCompleted
-                      ? "text-slate-300/45"
-                      : "text-slate-300/30 group-hover:text-slate-300/60"
-                }
-              `}
-                      >
-                        <span>{capability.number}</span>
-
-                        <span className="ml-2">{capability.shortLabel}</span>
+                        ${
+                          isActive
+                            ? "text-cyan-200/90"
+                            : isCompleted
+                              ? "text-slate-300/45"
+                              : "text-slate-300/30 group-hover:text-slate-300/60"
+                        }
+                      `}
+                    >
+                      <span>
+                        {capability.number}
                       </span>
-                    </button>
-                  );
-                })}
-              </div>
+
+                      <span className="ml-2">
+                        {capability.shortLabel}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </aside>
 
           {/* =================================================
               CAPABILITY PANELS
           ================================================== */}
-          <div className="space-y-5 sm:space-y-6">
+
+          <div
+            ref={panelsRef}
+            className="space-y-5 sm:space-y-6"
+          >
             {capabilities.map((capability, index) => {
               const Icon = capability.icon;
-              const isActive = activeCapability === index;
+
+              const isActive =
+                activeCapability === index;
 
               return (
                 <motion.article
                   key={capability.number}
                   ref={(element) => {
-                    sectionRefs.current[index] = element;
+                    sectionRefs.current[index] =
+                      element;
                   }}
                   initial={{
                     opacity: 0,
@@ -648,6 +772,7 @@ function Capabilities() {
                     bg-[#07111f]/70
                     transition-all
                     duration-500
+
                     ${
                       isActive
                         ? "border-cyan-200/[0.22]"
@@ -660,14 +785,18 @@ function Capabilities() {
                       relative
                       grid
                       min-h-[360px]
+
                       lg:grid-cols-[47%_53%]
                       lg:min-h-[310px]
+
                       xl:min-h-[325px]
                     "
                   >
-                    {/* =========================================
+
+                    {/* =================================================
                         CONTENT
-                    ========================================== */}
+                    ================================================== */}
+
                     <div
                       className="
                         relative
@@ -676,17 +805,20 @@ function Capabilities() {
                         flex-col
                         justify-between
                         p-6
+
                         sm:p-7
                         lg:p-7
                         xl:p-8
                       "
                     >
                       <div>
+
                         {/* Number + eyebrow */}
                         <div className="flex items-center gap-3">
+
                           <span
                             className="
-                              font-mono
+                              font-brand
                               text-[15px]
                               tracking-[0.14em]
                               text-white/65
@@ -706,7 +838,7 @@ function Capabilities() {
 
                           <span
                             className="
-                              font-mono
+                              font-brand
                               text-[11px]
                               uppercase
                               tracking-[0.18em]
@@ -739,16 +871,18 @@ function Capabilities() {
                           className="
                             mt-4
                             max-w-[500px]
+                            font-brand
                             text-balance
-                            text-[2.15rem]
-                            font-light
+                            text-[2rem]
+                            font-medium
                             uppercase
-                            leading-[0.93]
-                            tracking-[-0.045em]
+                            leading-[0.96]
+                            tracking-[-0.035em]
                             text-white
+
                             sm:text-4xl
-                            lg:text-[2.65rem]
-                            xl:text-[3rem]
+                            lg:text-[2.55rem]
+                            xl:text-[2.85rem]
                           "
                         >
                           {capability.title}
@@ -775,9 +909,11 @@ function Capabilities() {
                           className="
                             mt-4
                             max-w-[500px]
+                            font-sans
                             text-xs
                             leading-5
                             text-slate-300/65
+
                             sm:text-sm
                             sm:leading-6
                           "
@@ -787,6 +923,7 @@ function Capabilities() {
                       </div>
 
                       <div className="mt-6">
+
                         {/* Features */}
                         <motion.div
                           variants={revealContainer}
@@ -801,36 +938,40 @@ function Capabilities() {
                             grid-cols-1
                             gap-x-6
                             gap-y-2
+
                             sm:grid-cols-2
                           "
                         >
-                          {capability.features.map((feature) => (
-                            <motion.div
-                              key={feature}
-                              variants={revealItem}
-                              className="
+                          {capability.features.map(
+                            (feature) => (
+                              <motion.div
+                                key={feature}
+                                variants={revealItem}
+                                className="
                                   flex
                                   items-center
                                   gap-2
+                                  font-sans
                                   text-[12px]
                                   uppercase
                                   tracking-[0.05em]
                                   text-slate-200/55
                                 "
-                            >
-                              <span
-                                className="
+                              >
+                                <span
+                                  className="
                                     h-1.5
                                     w-1.5
                                     shrink-0
                                     rounded-full
                                     bg-cyan-300/55
                                   "
-                              />
+                                />
 
-                              {feature}
-                            </motion.div>
-                          ))}
+                                {feature}
+                              </motion.div>
+                            ),
+                          )}
                         </motion.div>
 
                         {/* Action */}
@@ -846,6 +987,7 @@ function Capabilities() {
                             bg-cyan-300/[0.025]
                             px-3.5
                             py-2
+                            font-brand
                             text-[8px]
                             font-medium
                             uppercase
@@ -873,14 +1015,16 @@ function Capabilities() {
                       </div>
                     </div>
 
-                    {/* =========================================
+                    {/* =================================================
                         IMAGE
-                    ========================================== */}
+                    ================================================== */}
+
                     <div
                       className="
                         relative
                         min-h-[220px]
                         overflow-hidden
+
                         lg:min-h-0
                       "
                     >
@@ -912,6 +1056,7 @@ function Capabilities() {
                           from-[#07111f]
                           via-[#07111f]/20
                           to-transparent
+
                           lg:from-[#07111f]
                           lg:via-[#07111f]/10
                           lg:to-transparent
@@ -937,7 +1082,7 @@ function Capabilities() {
                           right-5
                           top-5
                           text-right
-                          font-mono
+                          font-brand
                           text-[7px]
                           uppercase
                           leading-4
@@ -945,9 +1090,13 @@ function Capabilities() {
                           text-white/45
                         "
                       >
-                        <span className="block">ORBITGUARD</span>
+                        <span className="block">
+                          ORBITGUARD
+                        </span>
 
-                        <span className="block">{capability.number} / 06</span>
+                        <span className="block">
+                          {capability.number} / 06
+                        </span>
                       </div>
 
                       {/* Technical corner */}

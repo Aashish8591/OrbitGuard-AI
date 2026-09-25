@@ -45,6 +45,7 @@ function FooterLink({ href, children }) {
     w-fit
     items-center
     gap-1.5
+    font-inter
     text-[13px]
     font-light
     leading-5
@@ -115,7 +116,7 @@ function FooterColumn({ title, links }) {
       <p
         className="
           mb-5
-          font-mono
+          font-orbitron
           text-[10px]
           font-medium
           uppercase
@@ -334,7 +335,7 @@ function MissionControlPanel() {
 
           <span
             className="
-              font-mono
+              font-orbitron
               text-[9px]
               uppercase
               tracking-[0.3em]
@@ -348,7 +349,7 @@ function MissionControlPanel() {
 
         <span
           className="
-            font-mono
+            font-orbitron
             text-[9px]
             uppercase
             tracking-[0.25em]
@@ -423,7 +424,7 @@ function MissionControlPanel() {
 
             <span
               className="
-                font-mono
+                font-orbitron
                 text-[9px]
                 uppercase
                 tracking-[0.28em]
@@ -438,6 +439,7 @@ function MissionControlPanel() {
           {/* Heading */}
           <h2
             className="
+              font-inter
               max-w-[680px]
               text-[clamp(2.8rem,8vw,6rem)]
               font-light
@@ -454,6 +456,7 @@ function MissionControlPanel() {
           {/* Description */}
           <p
             className="
+              font-inter
               mt-6
               max-w-[500px]
               text-[13px]
@@ -483,7 +486,7 @@ function MissionControlPanel() {
               bg-[#02050d]/45
               px-5
               py-3
-              font-mono
+              font-orbitron
               text-[10px]
               font-medium
               uppercase
@@ -547,7 +550,7 @@ function MissionControlPanel() {
       >
         <span
           className="
-            font-mono
+            font-orbitron
             text-[8px]
             uppercase
             tracking-[0.2em]
@@ -615,7 +618,7 @@ function PublicFooter() {
               gap-12
               lg:grid-cols-[1.7fr_1fr_1fr_1fr]
               lg:gap-10
-          "
+            "
           >
             {/* =================================================
                 BRAND
@@ -664,6 +667,7 @@ function PublicFooter() {
 
               <p
                 className="
+                  font-inter
                   mt-6
                   max-w-[400px]
                   text-[13px]
@@ -713,6 +717,7 @@ function PublicFooter() {
           >
             <span
               className="
+                font-inter
                 text-[11px]
                 font-light
                 text-white/30
@@ -730,7 +735,7 @@ function PublicFooter() {
                 w-fit
                 items-center
                 gap-2
-                font-mono
+                font-orbitron
                 text-[9px]
                 uppercase
                 tracking-[0.2em]

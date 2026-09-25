@@ -134,15 +134,9 @@ const revealItem = {
 /* ============================================================
    TECHNOLOGY CORE
 
-   The background artwork already contains:
-   - galaxy
-   - planet
-   - orbital rings
-   - debris
-
-   Therefore this component deliberately avoids another large
-   artificial orbital system. It acts as an intelligence layer
-   over the artwork instead.
+   Typography:
+   - Orbitron → technical/system identity
+   - Inter → readable supporting text
 ============================================================ */
 
 function TechnologyCore() {
@@ -347,11 +341,11 @@ function TechnologyCore() {
             className="mx-auto text-cyan-200/80"
           />
 
-          <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.24em] text-cyan-200/75">
+          <p className="mt-3 font-orbitron text-[11px] uppercase tracking-[0.24em] text-cyan-200/75">
             ORBITGUARD
           </p>
 
-          <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.18em] text-slate-300/45">
+          <p className="mt-1 font-orbitron text-[9px] uppercase tracking-[0.18em] text-slate-300/45">
             INTELLIGENCE CORE
           </p>
         </div>
@@ -401,15 +395,19 @@ function TechnologyCore() {
               backdrop-blur-sm
             "
           >
-            <FiGlobe size={15} strokeWidth={1.2} className="text-cyan-200/75" />
+            <FiGlobe
+              size={15}
+              strokeWidth={1.2}
+              className="text-cyan-200/75"
+            />
           </div>
 
           <div>
-            <p className="font-mono text-[12px] uppercase tracking-[0.16em] text-white/75">
+            <p className="font-orbitron text-[12px] uppercase tracking-[0.16em] text-white/75">
               SATELLITES
             </p>
 
-            <p className="mt-0.5 text-[12px] text-slate-300/50">
+            <p className="mt-0.5 font-inter text-[12px] text-slate-300/50">
               Real orbital objects
             </p>
           </div>
@@ -447,11 +445,11 @@ function TechnologyCore() {
       >
         <div className="flex items-center gap-2.5">
           <div className="text-right">
-            <p className="font-mono text-[12px] uppercase tracking-[0.16em] text-white/75">
+            <p className="font-orbitron text-[12px] uppercase tracking-[0.16em] text-white/75">
               SPACE DEBRIS
             </p>
 
-            <p className="mt-0.5 text-[12px] text-slate-300/50">
+            <p className="mt-0.5 font-inter text-[12px] text-slate-300/50">
               Tracked objects
             </p>
           </div>
@@ -470,7 +468,11 @@ function TechnologyCore() {
               backdrop-blur-sm
             "
           >
-            <FiBox size={15} strokeWidth={1.2} className="text-cyan-200/75" />
+            <FiBox
+              size={15}
+              strokeWidth={1.2}
+              className="text-cyan-200/75"
+            />
           </div>
         </div>
       </motion.div>
@@ -527,11 +529,11 @@ function TechnologyCore() {
           </div>
 
           <div>
-            <p className="font-mono text-[12px] uppercase tracking-[0.16em] text-white/75">
+            <p className="font-orbitron text-[12px] uppercase tracking-[0.16em] text-white/75">
               RISK ENGINE
             </p>
 
-            <p className="mt-0.5 text-[12px] text-slate-300/50">
+            <p className="mt-0.5 font-inter text-[12px] text-slate-300/50">
               Orbital assessment
             </p>
           </div>
@@ -569,11 +571,11 @@ function TechnologyCore() {
       >
         <div className="flex items-center gap-2.5">
           <div className="text-right">
-            <p className="font-mono text-[12px] uppercase tracking-[0.16em] text-white/75">
+            <p className="font-orbitron text-[12px] uppercase tracking-[0.16em] text-white/75">
               AI SERVICE
             </p>
 
-            <p className="mt-0.5 text-[12px] text-slate-300/50">
+            <p className="mt-0.5 font-inter text-[12px] text-slate-300/50">
               Intelligent assistance
             </p>
           </div>
@@ -592,7 +594,11 @@ function TechnologyCore() {
               backdrop-blur-sm
             "
           >
-            <FiCpu size={15} strokeWidth={1.2} className="text-cyan-200/75" />
+            <FiCpu
+              size={15}
+              strokeWidth={1.2}
+              className="text-cyan-200/75"
+            />
           </div>
         </div>
       </motion.div>
@@ -610,7 +616,7 @@ function TechnologyCore() {
           text-center
         "
       >
-        <p className="font-mono text-[12px] uppercase tracking-[0.22em] text-cyan-200/65">
+        <p className="font-orbitron text-[12px] uppercase tracking-[0.22em] text-cyan-200/65">
           REAL ORBITAL DATA
         </p>
 
@@ -632,7 +638,7 @@ function TechnologyCore() {
       >
         <div className="mx-auto mb-2 h-8 w-px bg-gradient-to-t from-cyan-300/45 to-transparent" />
 
-        <p className="font-mono text-[12px] uppercase tracking-[0.22em] text-cyan-200/65">
+        <p className="font-orbitron text-[12px] uppercase tracking-[0.22em] text-cyan-200/65">
           ACTIONABLE INTELLIGENCE
         </p>
       </div>
@@ -666,9 +672,6 @@ function Technology() {
     >
       {/* ========================================================
           FULL TECHNOLOGY BACKGROUND
-
-          This artwork belongs to the complete section.
-          It is NOT attached to a card.
       ======================================================== */}
 
       <div
@@ -681,15 +684,6 @@ function Technology() {
           overflow-hidden
         "
       >
-        {/* ======================================================
-            Main cosmic artwork
-
-            Important:
-            We intentionally use object-cover here because the
-            artwork should behave as an atmospheric environment,
-            not as a normal content image.
-        ====================================================== */}
-
         <img
           src="/images/Technology/technologyBg.png"
           alt=""
@@ -712,13 +706,6 @@ function Technology() {
           "
         />
 
-        {/* ======================================================
-            Cinematic darkening
-
-            Kept intentionally light so the artwork remains
-            visible.
-        ====================================================== */}
-
         <div
           className="
             absolute
@@ -726,12 +713,6 @@ function Technology() {
             bg-[#050816]/[0.10]
           "
         />
-
-        {/* ======================================================
-            Left readability protection
-
-            Text sits primarily on the left side.
-        ====================================================== */}
 
         <div
           className="
@@ -744,10 +725,6 @@ function Technology() {
           "
         />
 
-        {/* ======================================================
-            Center atmosphere
-        ====================================================== */}
-
         <div
           className="
             absolute
@@ -755,10 +732,6 @@ function Technology() {
             bg-[radial-gradient(circle_at_68%_20%,rgba(56,189,248,0.08),transparent_26%),radial-gradient(circle_at_78%_58%,rgba(37,99,235,0.05),transparent_32%)]
           "
         />
-
-        {/* ======================================================
-            Top transition
-        ====================================================== */}
 
         <div
           className="
@@ -772,10 +745,6 @@ function Technology() {
             to-transparent
           "
         />
-
-        {/* ======================================================
-            Bottom transition
-        ====================================================== */}
 
         <div
           className="
@@ -833,7 +802,7 @@ function Technology() {
             >
               <span className="h-px w-8 bg-cyan-300/55" />
 
-              <span className="font-mono text-[9px] uppercase tracking-[0.3em] text-cyan-200/75">
+              <span className="font-orbitron text-[9px] uppercase tracking-[0.3em] text-cyan-200/75">
                 TECHNOLOGY
               </span>
             </motion.div>
@@ -841,6 +810,7 @@ function Technology() {
             <motion.h2
               variants={revealItem}
               className="
+                font-orbitron
                 mt-7
                 text-balance
                 text-[3.2rem]
@@ -863,6 +833,7 @@ function Technology() {
             <motion.p
               variants={revealItem}
               className="
+                font-inter
                 mt-7
                 max-w-[570px]
                 text-sm
@@ -896,31 +867,33 @@ function Technology() {
               "
             >
               <div className="border-r border-white/[0.10] py-4 pr-4">
-                <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-cyan-200/65">
+                <p className="font-orbitron text-[9px] uppercase tracking-[0.18em] text-cyan-200/65">
                   DATA
                 </p>
 
-                <p className="mt-1.5 text-sm text-slate-100/80">
+                <p className="font-inter mt-1.5 text-sm text-slate-100/80">
                   Orbital sources
                 </p>
               </div>
 
               <div className="border-r border-white/[0.10] px-4 py-4">
-                <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-cyan-200/65">
+                <p className="font-orbitron text-[9px] uppercase tracking-[0.18em] text-cyan-200/65">
                   ENGINE
                 </p>
 
-                <p className="mt-1.5 text-sm text-slate-100/80">
+                <p className="font-inter mt-1.5 text-sm text-slate-100/80">
                   SGP4 propagation
                 </p>
               </div>
 
               <div className="col-span-2 py-4 pl-0 sm:col-span-1 sm:pl-4">
-                <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-cyan-200/65">
+                <p className="font-orbitron text-[9px] uppercase tracking-[0.18em] text-cyan-200/65">
                   INTELLIGENCE
                 </p>
 
-                <p className="mt-1.5 text-sm text-slate-100/80">Risk + AI</p>
+                <p className="font-inter mt-1.5 text-sm text-slate-100/80">
+                  Risk + AI
+                </p>
               </div>
             </motion.div>
           </motion.div>
@@ -995,12 +968,13 @@ function Technology() {
             "
           >
             <div>
-              <p className="font-mono text-[9px] uppercase tracking-[0.3em] text-cyan-200/70">
+              <p className="font-orbitron text-[9px] uppercase tracking-[0.3em] text-cyan-200/70">
                 HOW IT WORKS
               </p>
 
               <h3
                 className="
+                  font-orbitron
                   mt-4
                   max-w-[650px]
                   text-balance
@@ -1021,7 +995,7 @@ function Technology() {
               </h3>
             </div>
 
-            <p className="max-w-[420px] text-sm leading-6 text-slate-200/65 lg:justify-self-end">
+            <p className="font-inter max-w-[420px] text-sm leading-6 text-slate-200/65 lg:justify-self-end">
               A connected system transforms orbital information through
               computation, analysis, and intelligent services into meaningful
               operational insight.
@@ -1071,7 +1045,7 @@ function Technology() {
                   "
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-mono text-[10px] tracking-[0.18em] text-white/40">
+                    <span className="font-orbitron text-[10px] tracking-[0.18em] text-white/40">
                       {layer.number}
                     </span>
 
@@ -1087,15 +1061,15 @@ function Technology() {
                     />
                   </div>
 
-                  <p className="mt-10 font-mono text-[10px] uppercase tracking-[0.24em] text-cyan-200/65">
+                  <p className="font-orbitron mt-10 text-[10px] uppercase tracking-[0.24em] text-cyan-200/65">
                     {layer.label}
                   </p>
 
-                  <h4 className="mt-3 max-w-[360px] text-2xl font-light uppercase leading-[0.95] tracking-[-0.035em] text-white">
+                  <h4 className="font-orbitron mt-3 max-w-[360px] text-2xl font-light uppercase leading-[0.95] tracking-[-0.035em] text-white">
                     {layer.title}
                   </h4>
 
-                  <p className="mt-5 max-w-[400px] text-xs leading-5 text-slate-200/65 sm:text-sm sm:leading-6">
+                  <p className="font-inter mt-5 max-w-[400px] text-xs leading-5 text-slate-200/65 sm:text-sm sm:leading-6">
                     {layer.description}
                   </p>
 
@@ -1104,6 +1078,7 @@ function Technology() {
                       <div
                         key={item}
                         className="
+                          font-inter
                           flex
                           items-center
                           gap-2.5
@@ -1144,19 +1119,19 @@ function Technology() {
           ==================================================== */}
 
           <div className="mt-5 hidden items-center justify-center gap-3 sm:flex">
-            <span className="font-mono text-[8px] uppercase tracking-[0.2em] text-slate-200/35">
+            <span className="font-orbitron text-[8px] uppercase tracking-[0.2em] text-slate-200/35">
               DATA
             </span>
 
             <FiArrowUpRight size={12} className="text-cyan-300/55" />
 
-            <span className="font-mono text-[8px] uppercase tracking-[0.2em] text-slate-200/35">
+            <span className="font-orbitron text-[8px] uppercase tracking-[0.2em] text-slate-200/35">
               COMPUTE
             </span>
 
             <FiArrowUpRight size={12} className="text-cyan-300/55" />
 
-            <span className="font-mono text-[8px] uppercase tracking-[0.2em] text-slate-200/35">
+            <span className="font-orbitron text-[8px] uppercase tracking-[0.2em] text-slate-200/35">
               INTELLIGENCE
             </span>
           </div>
@@ -1198,12 +1173,13 @@ function Technology() {
                 duration: 0.7,
               }}
             >
-              <p className="font-mono text-[9px] uppercase tracking-[0.3em] text-cyan-200/70">
+              <p className="font-orbitron text-[9px] uppercase tracking-[0.3em] text-cyan-200/70">
                 INSIDE ORBITGUARD
               </p>
 
               <h3
                 className="
+                  font-orbitron
                   mt-5
                   text-4xl
                   font-light
@@ -1220,7 +1196,7 @@ function Technology() {
                 </span>
               </h3>
 
-              <p className="mt-6 max-w-[450px] text-sm leading-6 text-slate-200/65">
+              <p className="font-inter mt-6 max-w-[450px] text-sm leading-6 text-slate-200/65">
                 A modern application architecture connects the user experience,
                 backend services, orbital computation, data storage, security,
                 visualization, and AI assistance.
@@ -1276,15 +1252,15 @@ function Technology() {
                         "
                       />
 
-                      <p className="mt-6 font-mono text-[10px] uppercase tracking-[0.18em] text-slate-200/50">
+                      <p className="font-orbitron mt-6 text-[10px] uppercase tracking-[0.18em] text-slate-200/50">
                         {item.title}
                       </p>
 
-                      <p className="mt-1 text-lg font-light text-white">
+                      <p className="font-inter mt-1 text-lg font-light text-white">
                         {item.value}
                       </p>
 
-                      <p className="mt-1 text-[11px] leading-4 text-slate-200/55">
+                      <p className="font-inter mt-1 text-[11px] leading-4 text-slate-200/55">
                         {item.description}
                       </p>
                     </motion.div>
@@ -1300,12 +1276,12 @@ function Technology() {
 
                   <span
                     className="
+                      font-orbitron
                       border
                       border-cyan-300/25
                       bg-[#050816]/80
                       px-3
                       py-1
-                      font-mono
                       text-[8px]
                       uppercase
                       tracking-[0.18em]
@@ -1369,11 +1345,11 @@ function Technology() {
                         />
 
                         <div>
-                          <p className="text-xs font-medium uppercase tracking-[0.08em] text-slate-100/80">
+                          <p className="font-orbitron text-xs font-medium uppercase tracking-[0.08em] text-slate-100/80">
                             {service.title}
                           </p>
 
-                          <p className="mt-1.5 text-[11px] leading-4 text-slate-200/55">
+                          <p className="font-inter mt-1.5 text-[11px] leading-4 text-slate-200/55">
                             {service.description}
                           </p>
                         </div>
@@ -1467,12 +1443,13 @@ function Technology() {
             "
           >
             <div>
-              <p className="font-mono text-[9px] uppercase tracking-[0.3em] text-cyan-200/70">
+              <p className="font-orbitron text-[9px] uppercase tracking-[0.3em] text-cyan-200/70">
                 TECHNOLOGY DRIVES A SAFER TOMORROW
               </p>
 
               <h3
                 className="
+                  font-orbitron
                   mt-5
                   max-w-[750px]
                   text-balance
@@ -1494,7 +1471,7 @@ function Technology() {
             </div>
 
             <div className="lg:justify-self-end">
-              <p className="max-w-[430px] text-sm leading-6 text-slate-200/65">
+              <p className="font-inter max-w-[430px] text-sm leading-6 text-slate-200/65">
                 Every layer of OrbitGuard is designed to turn complex orbital
                 information into something people can understand, analyze, and
                 act upon.
@@ -1508,7 +1485,7 @@ function Technology() {
                   inline-flex
                   items-center
                   gap-3
-                  font-mono
+                  font-orbitron
                   text-[9px]
                   uppercase
                   tracking-[0.2em]
@@ -1519,6 +1496,7 @@ function Technology() {
                 "
               >
                 Revisit capabilities
+
                 <span
                   className="
                     flex
