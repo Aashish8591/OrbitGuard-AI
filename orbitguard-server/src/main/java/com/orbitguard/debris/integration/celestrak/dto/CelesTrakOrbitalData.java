@@ -13,37 +13,87 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 public class CelesTrakOrbitalData {
 
+    /*
+     * --------------------------------------------------
+     * Identity
+     * --------------------------------------------------
+     */
+
     private String objectName;
 
     private String objectId;
 
     private Long noradCatalogId;
 
+
+    /*
+     * --------------------------------------------------
+     * TLE / orbital data
+     * --------------------------------------------------
+     */
+
+    /**
+     * TLE epoch in UTC.
+     */
     private LocalDateTime epoch;
 
-    private Double meanMotion;
+    private String classificationType;
 
-    private Double eccentricity;
-
-    private Double inclination;
-
-    private Double rightAscensionOfAscendingNode;
-
-    private Double argumentOfPericenter;
-
-    private Double meanAnomaly;
-
-    private Double bstar;
-
-    private Double meanMotionDot;
-
-    private Double meanMotionDdot;
+    private Integer ephemerisType;
 
     private Integer elementSetNumber;
 
     private Long revolutionAtEpoch;
 
-    private String classificationType;
 
-    private Integer ephemerisType;
+    /*
+     * --------------------------------------------------
+     * Orbital elements
+     * --------------------------------------------------
+     */
+
+    /**
+     * Mean motion in revolutions per day.
+     */
+    private Double meanMotion;
+
+    /**
+     * First derivative of mean motion.
+     */
+    private Double meanMotionDot;
+
+    /**
+     * Second derivative of mean motion.
+     */
+    private Double meanMotionDdot;
+
+    /**
+     * Orbital eccentricity.
+     */
+    private Double eccentricity;
+
+    /**
+     * Inclination in degrees.
+     */
+    private Double inclination;
+
+    /**
+     * Right ascension of ascending node in degrees.
+     */
+    private Double rightAscensionOfAscendingNode;
+
+    /**
+     * Argument of pericenter in degrees.
+     */
+    private Double argumentOfPericenter;
+
+    /**
+     * Mean anomaly in degrees.
+     */
+    private Double meanAnomaly;
+
+    /**
+     * BSTAR atmospheric drag term.
+     */
+    private Double bstar;
 }
