@@ -39,4 +39,7 @@ public class PropagatedOrbitalState {
      * Reference frame used for the propagated state.
      */
     private String frame;
+
+    private Double altitude;
+    private Double velocity;
 }

@@ -1,12 +1,15 @@
 package com.orbitguard.satellite.integration.celestrak.client;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.orbitguard.satellite.integration.celestrak.dto.CelesTrakSatelliteResponse;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.web.client.RestClient;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 class CelesTrakClientIntegrationTest {
 
@@ -14,7 +17,8 @@ class CelesTrakClientIntegrationTest {
             new CelesTrakClient(
                     RestClient.builder()
                             .baseUrl("https://celestrak.org")
-                            .build()
+                            .build(),
+                    new ObjectMapper()
             );
 
     @Test
@@ -24,6 +28,7 @@ class CelesTrakClientIntegrationTest {
                 celesTrakClient.getSatellitesByGroup("STATIONS");
 
         assertNotNull(result);
+
         assertFalse(
                 result.isEmpty(),
                 "CelesTrak STATIONS group should return satellite data."

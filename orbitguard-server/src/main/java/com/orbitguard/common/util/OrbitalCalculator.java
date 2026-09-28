@@ -6,56 +6,108 @@ import org.springframework.stereotype.Component;
 public class OrbitalCalculator {
 
     /**
-     * Calculates the closest approach distance between
-     * a satellite and a debris object.
+     * Calculates the 3D Euclidean distance between
+     * two propagated orbital position vectors.
      *
-     * Current Formula:
-     * |Satellite Altitude - Debris Altitude|
+     * Position unit: kilometers.
      *
-     * Future:
-     * Can be replaced with
-     * TLE / SGP4 / AI based calculation.
+     * Both vectors must be expressed in the same
+     * reference frame and at the same timestamp.
      *
-     * @param satelliteAltitude Satellite altitude (km)
-     * @param debrisAltitude Space debris altitude (km)
-     * @return Closest approach distance (km)
+     * @return distance in kilometers
      */
-    public double calculateClosestDistance(
-            Double satelliteAltitude,
-            Double debrisAltitude
+    public double calculateDistance(
+            Double satelliteX,
+            Double satelliteY,
+            Double satelliteZ,
+            Double debrisX,
+            Double debrisY,
+            Double debrisZ
     ) {
 
-        validateValue(satelliteAltitude, "Satellite altitude");
-        validateValue(debrisAltitude, "Debris altitude");
+        validateValue(satelliteX, "Satellite X");
+        validateValue(satelliteY, "Satellite Y");
+        validateValue(satelliteZ, "Satellite Z");
 
-        return Math.abs(satelliteAltitude - debrisAltitude);
+        validateValue(debrisX, "Debris X");
+        validateValue(debrisY, "Debris Y");
+        validateValue(debrisZ, "Debris Z");
+
+        double deltaX = satelliteX - debrisX;
+        double deltaY = satelliteY - debrisY;
+        double deltaZ = satelliteZ - debrisZ;
+
+        return Math.sqrt(
+                deltaX * deltaX
+                        + deltaY * deltaY
+                        + deltaZ * deltaZ
+        );
     }
 
     /**
-     * Calculates the relative velocity between
-     * a satellite and debris.
+     * Calculates relative velocity between
+     * two propagated velocity vectors.
      *
-     * Current Formula:
-     * |Satellite Velocity - Debris Velocity|
+     * Velocity unit: kilometers per second.
      *
-     * @param satelliteVelocity Satellite velocity (km/s)
-     * @param debrisVelocity Debris velocity (km/s)
-     * @return Relative velocity (km/s)
+     * Both vectors must be expressed in the same
+     * reference frame and at the same timestamp.
+     *
+     * @return relative velocity in km/s
      */
     public double calculateRelativeVelocity(
-            Double satelliteVelocity,
-            Double debrisVelocity
+            Double satelliteVx,
+            Double satelliteVy,
+            Double satelliteVz,
+            Double debrisVx,
+            Double debrisVy,
+            Double debrisVz
     ) {
 
-        validateValue(satelliteVelocity, "Satellite velocity");
-        validateValue(debrisVelocity, "Debris velocity");
+        validateValue(satelliteVx, "Satellite VX");
+        validateValue(satelliteVy, "Satellite VY");
+        validateValue(satelliteVz, "Satellite VZ");
 
-        return Math.abs(satelliteVelocity - debrisVelocity);
+        validateValue(debrisVx, "Debris VX");
+        validateValue(debrisVy, "Debris VY");
+        validateValue(debrisVz, "Debris VZ");
+
+        double deltaVx = satelliteVx - debrisVx;
+        double deltaVy = satelliteVy - debrisVy;
+        double deltaVz = satelliteVz - debrisVz;
+
+        return Math.sqrt(
+                deltaVx * deltaVx
+                        + deltaVy * deltaVy
+                        + deltaVz * deltaVz
+        );
     }
 
     /**
-     * Validates orbital values.
+     * Calculates scalar speed from a propagated
+     * velocity vector.
+     *
+     * Velocity unit: kilometers per second.
+     *
+     * @return speed in km/s
      */
+    public double calculateSpeed(
+            Double velocityX,
+            Double velocityY,
+            Double velocityZ
+    ) {
+
+        validateValue(velocityX, "Velocity X");
+        validateValue(velocityY, "Velocity Y");
+        validateValue(velocityZ, "Velocity Z");
+
+        return Math.sqrt(
+                velocityX * velocityX
+                        + velocityY * velocityY
+                        + velocityZ * velocityZ
+        );
+    }
+
     private void validateValue(
             Double value,
             String fieldName
@@ -67,11 +119,10 @@ public class OrbitalCalculator {
             );
         }
 
-        if (value < 0) {
+        if (!Double.isFinite(value)) {
             throw new IllegalArgumentException(
-                    fieldName + " cannot be negative."
+                    fieldName + " must be finite."
             );
         }
     }
-
 }
