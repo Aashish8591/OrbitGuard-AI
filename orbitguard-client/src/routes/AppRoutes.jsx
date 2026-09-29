@@ -7,6 +7,7 @@ import ProtectedRoute from "./ProtectedRoute";
 import AppLayout from "../components/layout/AppLayout";
 import Dashboard from "../pages/app/Dashboard";
 import AIAssistant from "../pages/app/AIAssistant";
+import Satellites from "../pages/app/Satellites";
 
 function AppRoutes() {
   return (
@@ -36,7 +37,7 @@ function AppRoutes() {
 
           <Route
             path="/satellites"
-            element={<div>Satellites</div>}
+            element={<Satellites/>}
           />
 
           <Route
