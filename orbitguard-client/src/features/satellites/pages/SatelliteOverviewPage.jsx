@@ -69,7 +69,7 @@ import { getApiErrorMessage } from "../../../services/api";
 /**
  * CelesTrak group used by the backend synchronization endpoint.
  */
-const CELESTRAK_GROUP = "active,inactive,decommissioned";
+const CELESTRAK_GROUP = "active";
 
 /**
  * Spring Boot pagination is 0-based.
@@ -107,10 +107,7 @@ const buildPageNumbers = (currentPage, totalPages) => {
   }
 
   if (totalPages <= 7) {
-    return Array.from(
-      { length: totalPages },
-      (_, index) => index + 1,
-    );
+    return Array.from({ length: totalPages }, (_, index) => index + 1);
   }
 
   const current = currentPage + 1;
@@ -222,9 +219,7 @@ const SatelliteOverviewPage = () => {
 
   const [sortBy, setSortBy] = useState(DEFAULT_SORT_BY);
 
-  const [sortDirection, setSortDirection] = useState(
-    DEFAULT_SORT_DIRECTION,
-  );
+  const [sortDirection, setSortDirection] = useState(DEFAULT_SORT_DIRECTION);
 
   /* ============================================================
      PAGINATION STATE
@@ -286,9 +281,7 @@ const SatelliteOverviewPage = () => {
            BACKEND PAGINATION CONTENT
         -------------------------------------------------------- */
 
-        const content = Array.isArray(result?.content)
-          ? result.content
-          : [];
+        const content = Array.isArray(result?.content) ? result.content : [];
 
         /*
          * IMPORTANT:
@@ -305,19 +298,15 @@ const SatelliteOverviewPage = () => {
         -------------------------------------------------------- */
 
         setPagination({
-          totalElements:
-            Number(result?.totalElements) || 0,
+          totalElements: Number(result?.totalElements) || 0,
 
-          totalPages:
-            Number(result?.totalPages) || 0,
+          totalPages: Number(result?.totalPages) || 0,
 
-          currentPage:
-            Number.isFinite(Number(result?.number))
-              ? Number(result.number)
-              : targetPage,
+          currentPage: Number.isFinite(Number(result?.number))
+            ? Number(result.number)
+            : targetPage,
 
-          pageSize:
-            Number(result?.size) || targetPageSize,
+          pageSize: Number(result?.size) || targetPageSize,
         });
       } catch (error) {
         const message = getApiErrorMessage(
@@ -348,13 +337,7 @@ const SatelliteOverviewPage = () => {
         }
       }
     },
-    [
-      page,
-      pageSize,
-      searchQuery,
-      sortBy,
-      sortDirection,
-    ],
+    [page, pageSize, searchQuery, sortBy, sortDirection],
   );
 
   /* ============================================================
@@ -369,29 +352,15 @@ const SatelliteOverviewPage = () => {
       targetSortDirection: sortDirection,
       targetPageSize: pageSize,
     });
-  }, [
-    page,
-    pageSize,
-    searchQuery,
-    sortBy,
-    sortDirection,
-    loadSatellites,
-  ]);
+  }, [page, pageSize, searchQuery, sortBy, sortDirection, loadSatellites]);
 
   /* ============================================================
      PAGE NUMBERS
   ============================================================ */
 
   const pageNumbers = useMemo(
-    () =>
-      buildPageNumbers(
-        pagination.currentPage,
-        pagination.totalPages,
-      ),
-    [
-      pagination.currentPage,
-      pagination.totalPages,
-    ],
+    () => buildPageNumbers(pagination.currentPage, pagination.totalPages),
+    [pagination.currentPage, pagination.totalPages],
   );
 
   /* ============================================================
@@ -462,10 +431,7 @@ const SatelliteOverviewPage = () => {
         return;
       }
 
-      if (
-        pagination.totalPages > 0 &&
-        nextPage >= pagination.totalPages
-      ) {
+      if (pagination.totalPages > 0 && nextPage >= pagination.totalPages) {
         return;
       }
 
@@ -479,12 +445,7 @@ const SatelliteOverviewPage = () => {
   ============================================================ */
 
   const handlePreviousPage = useCallback(() => {
-    setPage((currentPage) =>
-      Math.max(
-        DEFAULT_PAGE,
-        currentPage - 1,
-      ),
-    );
+    setPage((currentPage) => Math.max(DEFAULT_PAGE, currentPage - 1));
   }, []);
 
   /* ============================================================
@@ -497,10 +458,7 @@ const SatelliteOverviewPage = () => {
         return currentPage;
       }
 
-      return Math.min(
-        pagination.totalPages - 1,
-        currentPage + 1,
-      );
+      return Math.min(pagination.totalPages - 1, currentPage + 1);
     });
   }, [pagination.totalPages]);
 
@@ -531,13 +489,9 @@ const SatelliteOverviewPage = () => {
     setErrorMessage("");
 
     try {
-      await satelliteService.synchronizeSatellites(
-        CELESTRAK_GROUP,
-      );
+      await satelliteService.synchronizeSatellites(CELESTRAK_GROUP);
 
-      toast.success(
-        "Satellite data synchronized successfully.",
-      );
+      toast.success("Satellite data synchronized successfully.");
 
       /*
        * Reload the current backend page after
@@ -612,10 +566,7 @@ const SatelliteOverviewPage = () => {
    * DECOMMISSIONED = 0
    */
   const overviewStats = useMemo(
-    () =>
-      buildOverviewStats(
-        pagination.totalElements,
-      ),
+    () => buildOverviewStats(pagination.totalElements),
     [pagination.totalElements],
   );
 
@@ -625,9 +576,7 @@ const SatelliteOverviewPage = () => {
 
   const handleAddSatellite = useCallback(() => {
     if (import.meta.env.DEV) {
-      console.info(
-        "[SatelliteOverviewPage] Add Satellite requested.",
-      );
+      console.info("[SatelliteOverviewPage] Add Satellite requested.");
     }
   }, []);
 
@@ -637,10 +586,7 @@ const SatelliteOverviewPage = () => {
 
   const handleViewSatellite = useCallback((satellite) => {
     if (import.meta.env.DEV) {
-      console.info(
-        "[SatelliteOverviewPage] View satellite:",
-        satellite,
-      );
+      console.info("[SatelliteOverviewPage] View satellite:", satellite);
     }
   }, []);
 
@@ -650,10 +596,7 @@ const SatelliteOverviewPage = () => {
 
   const handleEditSatellite = useCallback((satellite) => {
     if (import.meta.env.DEV) {
-      console.info(
-        "[SatelliteOverviewPage] Edit satellite:",
-        satellite,
-      );
+      console.info("[SatelliteOverviewPage] Edit satellite:", satellite);
     }
   }, []);
 
@@ -668,13 +611,9 @@ const SatelliteOverviewPage = () => {
       }
 
       try {
-        await satelliteService.deleteSatellite(
-          satellite.id,
-        );
+        await satelliteService.deleteSatellite(satellite.id);
 
-        toast.success(
-          "Satellite deleted successfully.",
-        );
+        toast.success("Satellite deleted successfully.");
 
         await loadSatellites({
           targetPage: page,
@@ -693,21 +632,11 @@ const SatelliteOverviewPage = () => {
         toast.error(message);
 
         if (import.meta.env.DEV) {
-          console.error(
-            "[SatelliteOverviewPage] Delete failed:",
-            error,
-          );
+          console.error("[SatelliteOverviewPage] Delete failed:", error);
         }
       }
     },
-    [
-      loadSatellites,
-      page,
-      pageSize,
-      searchQuery,
-      sortBy,
-      sortDirection,
-    ],
+    [loadSatellites, page, pageSize, searchQuery, sortBy, sortDirection],
   );
 
   /* ============================================================
@@ -865,10 +794,7 @@ const SatelliteOverviewPage = () => {
             xl:px-8
           "
         >
-          <h2
-            id="satellite-overview-stats"
-            className="sr-only"
-          >
+          <h2 id="satellite-overview-stats" className="sr-only">
             Satellite Overview Statistics
           </h2>
 
@@ -882,9 +808,7 @@ const SatelliteOverviewPage = () => {
               backdrop-blur-[1px]
             "
           >
-            <SatelliteOverviewStats
-              stats={overviewStats}
-            />
+            <SatelliteOverviewStats stats={overviewStats} />
           </div>
         </section>
 
@@ -964,9 +888,8 @@ const SatelliteOverviewPage = () => {
                 sm:leading-6
               "
             >
-              Explore synchronized spacecraft, orbital
-              parameters, TLE-derived telemetry and mission
-              status across the OrbitGuard registry.
+              Explore synchronized spacecraft, orbital parameters, TLE-derived
+              telemetry and mission status across the OrbitGuard registry.
             </p>
           </div>
 
@@ -991,9 +914,7 @@ const SatelliteOverviewPage = () => {
               sortBy={sortBy}
               onSortChange={handleSortChange}
               sortDirection={sortDirection}
-              onSortDirectionChange={
-                handleSortDirectionChange
-              }
+              onSortDirectionChange={handleSortDirectionChange}
               onSync={handleSync}
               isSyncing={isSyncing}
               onAddSatellite={handleAddSatellite}
@@ -1010,9 +931,7 @@ const SatelliteOverviewPage = () => {
               isLoading={isLoading}
               onViewSatellite={handleViewSatellite}
               onEditSatellite={handleEditSatellite}
-              onDeleteSatellite={
-                handleDeleteSatellite
-              }
+              onDeleteSatellite={handleDeleteSatellite}
             />
           </div>
 
@@ -1052,9 +971,7 @@ const SatelliteOverviewPage = () => {
 
                 <button
                   type="button"
-                  disabled={
-                    pagination.currentPage <= 0
-                  }
+                  disabled={pagination.currentPage <= 0}
                   onClick={handlePreviousPage}
                   aria-label="Previous page"
                   className="
@@ -1094,13 +1011,12 @@ const SatelliteOverviewPage = () => {
                     gap-1
                   "
                 >
-                  {pageNumbers.map(
-                    (pageNumber, index) => {
-                      if (pageNumber === "...") {
-                        return (
-                          <span
-                            key={`ellipsis-${index}`}
-                            className="
+                  {pageNumbers.map((pageNumber, index) => {
+                    if (pageNumber === "...") {
+                      return (
+                        <span
+                          key={`ellipsis-${index}`}
+                          className="
                               flex
                               h-8
                               min-w-7
@@ -1111,35 +1027,24 @@ const SatelliteOverviewPage = () => {
                               text-[10px]
                               text-slate-600
                             "
-                          >
-                            …
-                          </span>
-                        );
-                      }
+                        >
+                          …
+                        </span>
+                      );
+                    }
 
-                      const pageIndex =
-                        pageNumber - 1;
+                    const pageIndex = pageNumber - 1;
 
-                      const isCurrentPage =
-                        pagination.currentPage ===
-                        pageIndex;
+                    const isCurrentPage = pagination.currentPage === pageIndex;
 
-                      return (
-                        <button
-                          key={pageNumber}
-                          type="button"
-                          aria-label={`Go to page ${pageNumber}`}
-                          aria-current={
-                            isCurrentPage
-                              ? "page"
-                              : undefined
-                          }
-                          onClick={() =>
-                            handlePageChange(
-                              pageIndex,
-                            )
-                          }
-                          className={`
+                    return (
+                      <button
+                        key={pageNumber}
+                        type="button"
+                        aria-label={`Go to page ${pageNumber}`}
+                        aria-current={isCurrentPage ? "page" : undefined}
+                        onClick={() => handlePageChange(pageIndex)}
+                        className={`
                             flex
                             h-8
                             min-w-8
@@ -1161,22 +1066,18 @@ const SatelliteOverviewPage = () => {
                                 : "border-transparent text-slate-400 hover:border-slate-700 hover:bg-slate-800/70 hover:text-slate-200"
                             }
                           `}
-                        >
-                          {pageNumber}
-                        </button>
-                      );
-                    },
-                  )}
+                      >
+                        {pageNumber}
+                      </button>
+                    );
+                  })}
                 </div>
 
                 {/* NEXT */}
 
                 <button
                   type="button"
-                  disabled={
-                    pagination.currentPage >=
-                    pagination.totalPages - 1
-                  }
+                  disabled={pagination.currentPage >= pagination.totalPages - 1}
                   onClick={handleNextPage}
                   aria-label="Next page"
                   className="
@@ -1263,20 +1164,18 @@ const SatelliteOverviewPage = () => {
                       focus:ring-cyan-400/20
                     "
                   >
-                    {PAGE_SIZE_OPTIONS.map(
-                      (option) => (
-                        <option
-                          key={option}
-                          value={option}
-                          className="
+                    {PAGE_SIZE_OPTIONS.map((option) => (
+                      <option
+                        key={option}
+                        value={option}
+                        className="
                             bg-slate-900
                             text-slate-200
                           "
-                        >
-                          {option}
-                        </option>
-                      ),
-                    )}
+                      >
+                        {option}
+                      </option>
+                    ))}
                   </select>
 
                   <span
