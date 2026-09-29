@@ -6,6 +6,7 @@ import com.orbitguard.common.exception.BadRequestException;
 import com.orbitguard.satellite.integration.celestrak.dto.CelesTrakSatelliteResponse;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
@@ -19,6 +20,7 @@ import java.util.List;
 
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class CelesTrakClient {
 
     private static final String GP_ENDPOINT =
@@ -31,23 +33,10 @@ public class CelesTrakClient {
 
     private final ObjectMapper objectMapper;
 
+
     /**
      * Fetch current GP orbital data from CelesTrak
      * using the NORAD catalog ID.
-     *
-     * Flow:
-     *
-     * CelesTrak
-     *      ↓
-     * RestClient
-     *      ↓
-     * Raw response body
-     *      ↓
-     * ObjectMapper
-     *      ↓
-     * CelesTrakSatelliteResponse[]
-     *      ↓
-     * List<CelesTrakSatelliteResponse>
      *
      * @param noradCatalogId NORAD catalog identification number
      * @return current GP orbital data returned by CelesTrak
@@ -77,11 +66,14 @@ public class CelesTrakClient {
                             .onStatus(
                                     HttpStatusCode::isError,
                                     (request, response) -> {
-                                        throw new IllegalStateException(
-                                                "CelesTrak returned HTTP "
-                                                        + response.getStatusCode()
-                                                        + " while fetching "
-                                                        + "NORAD catalog ID: "
+
+                                        String errorBody =
+                                                readErrorBody(response);
+
+                                        throw buildCelesTrakException(
+                                                response.getStatusCode(),
+                                                errorBody,
+                                                "NORAD catalog ID: "
                                                         + noradCatalogId
                                         );
                                     }
@@ -104,19 +96,18 @@ public class CelesTrakClient {
         }
     }
 
+
     /**
      * Fetch current GP orbital data for all satellites
      * belonging to a CelesTrak group.
      *
-     * Examples:
+     * IMPORTANT:
      *
-     * GROUP=CUBESATS
-     * GROUP=STATIONS
-     * GROUP=STARLINK
+     * CelesTrak limits GP group downloads to one successful
+     * download per data update cycle. The ACTIVE group is
+     * currently updated approximately every two hours.
      *
-     * The response is intentionally read as String first
-     * because CelesTrak may return JSON with a text/plain
-     * content type.
+     * Therefore this method does NOT retry failed requests.
      *
      * @param group CelesTrak group name
      * @return current GP orbital data returned by CelesTrak
@@ -149,11 +140,14 @@ public class CelesTrakClient {
                             .onStatus(
                                     HttpStatusCode::isError,
                                     (request, response) -> {
-                                        throw new IllegalStateException(
-                                                "CelesTrak returned HTTP "
-                                                        + response.getStatusCode()
-                                                        + " while fetching "
-                                                        + "group: "
+
+                                        String errorBody =
+                                                readErrorBody(response);
+
+                                        throw buildCelesTrakException(
+                                                response.getStatusCode(),
+                                                errorBody,
+                                                "group: "
                                                         + normalizedGroup
                                         );
                                     }
@@ -176,17 +170,103 @@ public class CelesTrakClient {
         }
     }
 
+
+    /**
+     * Read the response body returned by CelesTrak
+     * when an HTTP error occurs.
+     */
+    private String readErrorBody(
+            org.springframework.http.client.ClientHttpResponse response) {
+
+        try {
+
+            java.io.InputStream inputStream =
+                    response.getBody();
+
+            if (inputStream == null) {
+                return "";
+            }
+
+            return new String(
+                    inputStream.readAllBytes(),
+                    java.nio.charset.StandardCharsets.UTF_8
+            ).trim();
+
+        } catch (Exception exception) {
+
+            log.warn(
+                    "Could not read CelesTrak error response body.",
+                    exception
+            );
+
+            return "";
+        }
+    }
+
+
+    /**
+     * Builds an exception containing the actual CelesTrak
+     * HTTP status and response message.
+     *
+     * This is especially important for CelesTrak HTTP 403
+     * responses because the response body explains whether
+     * the request was blocked because the GP data has not
+     * changed yet.
+     */
+    private IllegalStateException buildCelesTrakException(
+            HttpStatusCode statusCode,
+            String responseBody,
+            String requestDescription) {
+
+        String cleanResponse =
+                responseBody == null
+                        ? ""
+                        : responseBody.trim();
+
+        /*
+         * CelesTrak uses HTTP 403 for the specific situation
+         * where the requested GP group has already been
+         * downloaded and the underlying data has not updated.
+         */
+        if (statusCode.value() == 403
+                && cleanResponse.toLowerCase()
+                .contains("gp data has not updated")) {
+
+            return new IllegalStateException(
+                    "CelesTrak GP data for "
+                            + requestDescription
+                            + " has not updated since the last "
+                            + "successful download. "
+                            + "CelesTrak allows GP data downloads "
+                            + "only once per update cycle. "
+                            + "Do not retry this request until the "
+                            + "next CelesTrak GP update.\n"
+                            + "CelesTrak response: "
+                            + cleanResponse
+            );
+        }
+
+        /*
+         * Generic CelesTrak error.
+         */
+        return new IllegalStateException(
+                "CelesTrak returned HTTP "
+                        + statusCode.value()
+                        + " "
+                        + statusCode
+                        + " while fetching "
+                        + requestDescription
+                        + "."
+                        + (cleanResponse.isBlank()
+                        ? ""
+                        : " Response: " + cleanResponse)
+        );
+    }
+
+
     /**
      * Parse the raw CelesTrak response into the external
      * CelesTrak response DTO.
-     *
-     * CelesTrak may return a JSON payload with a content type
-     * that is not application/json, therefore the response is
-     * deliberately received as String and parsed manually.
-     *
-     * @param responseBody raw response body
-     * @param requestDescription description of the originating request
-     * @return parsed CelesTrak satellite responses
      */
     private List<CelesTrakSatelliteResponse> parseSatelliteResponse(
             String responseBody,
@@ -202,9 +282,8 @@ public class CelesTrakClient {
                 responseBody.trim();
 
         /*
-         * CelesTrak can return a plain-text message instead
-         * of a JSON payload when data is unavailable or the
-         * request cannot be fulfilled.
+         * CelesTrak should return a JSON array when
+         * FORMAT=JSON is requested.
          */
         if (!normalizedResponse.startsWith("[")) {
 
@@ -242,6 +321,7 @@ public class CelesTrakClient {
         }
     }
 
+
     /**
      * Validate NORAD catalog ID before making
      * an external CelesTrak request.
@@ -257,6 +337,7 @@ public class CelesTrakClient {
             );
         }
     }
+
 
     /**
      * Validate CelesTrak group before making
