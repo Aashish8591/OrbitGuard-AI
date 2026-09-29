@@ -24,15 +24,41 @@ import { getApiErrorMessage } from "../../../services/api";
  * - Maintain rows-per-page state
  * - Trigger CelesTrak synchronization
  * - Provide data/actions to child components
+ * - Build overview statistics from backend-supported data
  *
  * Backend source of truth:
- * SatelliteResponse
+ * SatelliteResponse + paginated satellite response metadata
  *
  * IMPORTANT:
  * - Pagination remains SERVER-SIDE.
  * - Spring Boot page index remains 0-based.
  * - UI displays page numbers as 1-based.
  * - No dummy satellite data is created here.
+ * - The registry currently stores ACTIVE satellites only.
+ *
+ * CURRENT STATUS MODEL:
+ * ---------------------------------------------------------------
+ * The current backend does not expose an aggregate statistics
+ * endpoint.
+ *
+ * Current database state:
+ * - All stored satellites are ACTIVE.
+ * - No INACTIVE satellites are currently stored.
+ * - No DECOMMISSIONED satellites are currently stored.
+ *
+ * Therefore:
+ *
+ *   TOTAL          = backend totalElements
+ *   ACTIVE         = backend totalElements
+ *   INACTIVE       = 0
+ *   DECOMMISSIONED = 0
+ *
+ * IMPORTANT FUTURE CHANGE:
+ * When the backend supports aggregate mission-status counts,
+ * replace buildOverviewStats() with those backend-provided counts.
+ *
+ * Do NOT fetch the entire satellite registry just to calculate
+ * statistics. Pagination must remain server-side.
  * ================================================================
  */
 
@@ -43,7 +69,7 @@ import { getApiErrorMessage } from "../../../services/api";
 /**
  * CelesTrak group used by the backend synchronization endpoint.
  */
-const CELESTRAK_GROUP = "active";
+const CELESTRAK_GROUP = "active,inactive,decommissioned";
 
 /**
  * Spring Boot pagination is 0-based.
@@ -52,9 +78,6 @@ const DEFAULT_PAGE = 0;
 
 /**
  * Initial number of rows displayed.
- *
- * UI default:
- * 5 records per page.
  */
 const DEFAULT_PAGE_SIZE = 5;
 
@@ -76,20 +99,6 @@ const DEFAULT_SORT_DIRECTION = "desc";
 /**
  * Build a compact page-number sequence.
  *
- * Examples:
- *
- * Small number of pages:
- * [1, 2, 3, 4, 5]
- *
- * Large number of pages:
- * [1, 2, 3, 4, 5, "...", 250]
- *
- * Near the end:
- * [1, "...", 246, 247, 248, 249, 250]
- *
- * Current page in the middle:
- * [1, "...", 124, 125, 126, "...", 250]
- *
  * Returned page numbers are 1-based because they are UI values.
  */
 const buildPageNumbers = (currentPage, totalPages) => {
@@ -98,7 +107,10 @@ const buildPageNumbers = (currentPage, totalPages) => {
   }
 
   if (totalPages <= 7) {
-    return Array.from({ length: totalPages }, (_, index) => index + 1);
+    return Array.from(
+      { length: totalPages },
+      (_, index) => index + 1,
+    );
   }
 
   const current = currentPage + 1;
@@ -106,14 +118,14 @@ const buildPageNumbers = (currentPage, totalPages) => {
   const pages = [];
 
   /* ------------------------------------------------------------
-       Always show first page
-    ------------------------------------------------------------ */
+     Always show first page
+  ------------------------------------------------------------ */
 
   pages.push(1);
 
   /* ------------------------------------------------------------
-       Current page is near beginning
-    ------------------------------------------------------------ */
+     Current page is near beginning
+  ------------------------------------------------------------ */
 
   if (current <= 4) {
     pages.push(2);
@@ -127,8 +139,8 @@ const buildPageNumbers = (currentPage, totalPages) => {
   }
 
   /* ------------------------------------------------------------
-       Current page is near end
-    ------------------------------------------------------------ */
+     Current page is near end
+  ------------------------------------------------------------ */
 
   if (current >= totalPages - 3) {
     pages.push("...");
@@ -142,8 +154,8 @@ const buildPageNumbers = (currentPage, totalPages) => {
   }
 
   /* ------------------------------------------------------------
-       Current page is in the middle
-    ------------------------------------------------------------ */
+     Current page is in the middle
+  ------------------------------------------------------------ */
 
   pages.push("...");
   pages.push(current - 1);
@@ -156,13 +168,43 @@ const buildPageNumbers = (currentPage, totalPages) => {
 };
 
 /* ================================================================
+   OVERVIEW STATISTICS
+================================================================ */
+
+/**
+ * Build Satellite Registry overview statistics.
+ *
+ * IMPORTANT:
+ * This function intentionally does NOT count `satellites`.
+ *
+ * `satellites` only contains the currently loaded backend page.
+ * With a page size of 5, counting that array would incorrectly
+ * produce ACTIVE = 5.
+ *
+ * The backend currently stores only ACTIVE satellites, so the
+ * complete registry statistics are derived from totalElements.
+ *
+ * Future backend aggregate statistics should replace this helper.
+ */
+const buildOverviewStats = (totalElements) => {
+  const total = Math.max(0, Number(totalElements) || 0);
+
+  return {
+    total,
+    active: total,
+    inactive: 0,
+    decommissioned: 0,
+  };
+};
+
+/* ================================================================
    COMPONENT
 ================================================================ */
 
 const SatelliteOverviewPage = () => {
   /* ============================================================
-       SATELLITE DATA
-    ============================================================ */
+     SATELLITE DATA
+  ============================================================ */
 
   const [satellites, setSatellites] = useState([]);
 
@@ -173,18 +215,20 @@ const SatelliteOverviewPage = () => {
   const [errorMessage, setErrorMessage] = useState("");
 
   /* ============================================================
-       SERVER-SIDE QUERY STATE
-    ============================================================ */
+     SERVER-SIDE QUERY STATE
+  ============================================================ */
 
   const [searchQuery, setSearchQuery] = useState("");
 
   const [sortBy, setSortBy] = useState(DEFAULT_SORT_BY);
 
-  const [sortDirection, setSortDirection] = useState(DEFAULT_SORT_DIRECTION);
+  const [sortDirection, setSortDirection] = useState(
+    DEFAULT_SORT_DIRECTION,
+  );
 
   /* ============================================================
-       PAGINATION STATE
-    ============================================================ */
+     PAGINATION STATE
+  ============================================================ */
 
   /**
    * Backend page index.
@@ -200,8 +244,8 @@ const SatelliteOverviewPage = () => {
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
 
   /* ============================================================
-       PAGINATION METADATA
-    ============================================================ */
+     PAGINATION METADATA
+  ============================================================ */
 
   const [pagination, setPagination] = useState({
     totalElements: 0,
@@ -211,8 +255,8 @@ const SatelliteOverviewPage = () => {
   });
 
   /* ============================================================
-       LOAD SATELLITES
-    ============================================================ */
+     LOAD SATELLITES
+  ============================================================ */
 
   const loadSatellites = useCallback(
     async ({
@@ -238,35 +282,42 @@ const SatelliteOverviewPage = () => {
           keyword: targetSearch,
         });
 
-        /* ------------------------------------------------
-                   BACKEND PAGINATION RESPONSE
-                ------------------------------------------------ */
+        /* --------------------------------------------------------
+           BACKEND PAGINATION CONTENT
+        -------------------------------------------------------- */
 
-        const content = Array.isArray(result?.content) ? result.content : [];
+        const content = Array.isArray(result?.content)
+          ? result.content
+          : [];
 
-        /* ------------------------------------------------
-                   SATELLITE RESPONSE DATA
-                   
-                   No frontend mapping of orbital fields.
-                   Backend response is passed through.
-                ------------------------------------------------ */
-
+        /*
+         * IMPORTANT:
+         *
+         * This is only the CURRENT PAGE.
+         *
+         * Do not use this array to calculate global registry
+         * statistics.
+         */
         setSatellites(content);
 
-        /* ------------------------------------------------
-                   PAGINATION METADATA
-                ------------------------------------------------ */
+        /* --------------------------------------------------------
+           PAGINATION METADATA
+        -------------------------------------------------------- */
 
         setPagination({
-          totalElements: Number(result?.totalElements) || 0,
+          totalElements:
+            Number(result?.totalElements) || 0,
 
-          totalPages: Number(result?.totalPages) || 0,
+          totalPages:
+            Number(result?.totalPages) || 0,
 
-          currentPage: Number.isFinite(Number(result?.number))
-            ? Number(result.number)
-            : targetPage,
+          currentPage:
+            Number.isFinite(Number(result?.number))
+              ? Number(result.number)
+              : targetPage,
 
-          pageSize: Number(result?.size) || targetPageSize,
+          pageSize:
+            Number(result?.size) || targetPageSize,
         });
       } catch (error) {
         const message = getApiErrorMessage(
@@ -297,12 +348,18 @@ const SatelliteOverviewPage = () => {
         }
       }
     },
-    [page, pageSize, searchQuery, sortBy, sortDirection],
+    [
+      page,
+      pageSize,
+      searchQuery,
+      sortBy,
+      sortDirection,
+    ],
   );
 
   /* ============================================================
-       INITIAL / QUERY DATA LOAD
-    ============================================================ */
+     INITIAL / QUERY DATA LOAD
+  ============================================================ */
 
   useEffect(() => {
     loadSatellites({
@@ -312,20 +369,34 @@ const SatelliteOverviewPage = () => {
       targetSortDirection: sortDirection,
       targetPageSize: pageSize,
     });
-  }, [page, pageSize, searchQuery, sortBy, sortDirection, loadSatellites]);
+  }, [
+    page,
+    pageSize,
+    searchQuery,
+    sortBy,
+    sortDirection,
+    loadSatellites,
+  ]);
 
   /* ============================================================
-       PAGE NUMBERS
-    ============================================================ */
+     PAGE NUMBERS
+  ============================================================ */
 
   const pageNumbers = useMemo(
-    () => buildPageNumbers(pagination.currentPage, pagination.totalPages),
-    [pagination.currentPage, pagination.totalPages],
+    () =>
+      buildPageNumbers(
+        pagination.currentPage,
+        pagination.totalPages,
+      ),
+    [
+      pagination.currentPage,
+      pagination.totalPages,
+    ],
   );
 
   /* ============================================================
-       SEARCH
-    ============================================================ */
+     SEARCH
+  ============================================================ */
 
   const handleSearchChange = useCallback((value) => {
     setSearchQuery(value);
@@ -337,8 +408,8 @@ const SatelliteOverviewPage = () => {
   }, []);
 
   /* ============================================================
-       SORT
-    ============================================================ */
+     SORT
+  ============================================================ */
 
   const handleSortChange = useCallback((value) => {
     setSortBy(value);
@@ -350,22 +421,21 @@ const SatelliteOverviewPage = () => {
   }, []);
 
   /* ============================================================
-       SORT DIRECTION
-    ============================================================ */
+     SORT DIRECTION
+  ============================================================ */
 
   const handleSortDirectionChange = useCallback((value) => {
     setSortDirection(value);
 
     /*
-     * New sort direction starts
-     * from first page.
+     * New sort direction starts from first page.
      */
     setPage(DEFAULT_PAGE);
   }, []);
 
   /* ============================================================
-       ROWS PER PAGE
-    ============================================================ */
+     ROWS PER PAGE
+  ============================================================ */
 
   const handlePageSizeChange = useCallback((event) => {
     const nextPageSize = Number(event.target.value);
@@ -374,19 +444,13 @@ const SatelliteOverviewPage = () => {
       return;
     }
 
-    /*
-     * Changing page size changes the
-     * pagination structure.
-     *
-     * Therefore always return to page 1.
-     */
     setPageSize(nextPageSize);
     setPage(DEFAULT_PAGE);
   }, []);
 
   /* ============================================================
-       PAGE NAVIGATION
-    ============================================================ */
+     PAGE NAVIGATION
+  ============================================================ */
 
   const handlePageChange = useCallback(
     (nextPage) => {
@@ -398,7 +462,10 @@ const SatelliteOverviewPage = () => {
         return;
       }
 
-      if (pagination.totalPages > 0 && nextPage >= pagination.totalPages) {
+      if (
+        pagination.totalPages > 0 &&
+        nextPage >= pagination.totalPages
+      ) {
         return;
       }
 
@@ -408,16 +475,21 @@ const SatelliteOverviewPage = () => {
   );
 
   /* ============================================================
-       PREVIOUS PAGE
-    ============================================================ */
+     PREVIOUS PAGE
+  ============================================================ */
 
   const handlePreviousPage = useCallback(() => {
-    setPage((currentPage) => Math.max(DEFAULT_PAGE, currentPage - 1));
+    setPage((currentPage) =>
+      Math.max(
+        DEFAULT_PAGE,
+        currentPage - 1,
+      ),
+    );
   }, []);
 
   /* ============================================================
-       NEXT PAGE
-    ============================================================ */
+     NEXT PAGE
+  ============================================================ */
 
   const handleNextPage = useCallback(() => {
     setPage((currentPage) => {
@@ -425,13 +497,16 @@ const SatelliteOverviewPage = () => {
         return currentPage;
       }
 
-      return Math.min(pagination.totalPages - 1, currentPage + 1);
+      return Math.min(
+        pagination.totalPages - 1,
+        currentPage + 1,
+      );
     });
   }, [pagination.totalPages]);
 
   /* ============================================================
-       RESET FILTERS
-    ============================================================ */
+     RESET FILTERS
+  ============================================================ */
 
   const handleResetFilters = useCallback(() => {
     setSearchQuery("");
@@ -444,8 +519,8 @@ const SatelliteOverviewPage = () => {
   }, []);
 
   /* ============================================================
-       CELESTRAK SYNCHRONIZATION
-    ============================================================ */
+     CELESTRAK SYNCHRONIZATION
+  ============================================================ */
 
   const handleSync = useCallback(async () => {
     if (isSyncing) {
@@ -456,13 +531,17 @@ const SatelliteOverviewPage = () => {
     setErrorMessage("");
 
     try {
-      await satelliteService.synchronizeSatellites(CELESTRAK_GROUP);
+      await satelliteService.synchronizeSatellites(
+        CELESTRAK_GROUP,
+      );
 
-      toast.success("Satellite data synchronized successfully.");
+      toast.success(
+        "Satellite data synchronized successfully.",
+      );
 
       /*
-       * Reload the current backend page
-       * after synchronization.
+       * Reload the current backend page after
+       * synchronization.
        */
       await loadSatellites({
         targetPage: page,
@@ -502,84 +581,85 @@ const SatelliteOverviewPage = () => {
   ]);
 
   /* ============================================================
-       OVERVIEW STATISTICS
-    ============================================================ */
+     OVERVIEW STATISTICS
+  ============================================================ */
 
-  const overviewStats = useMemo(() => {
-    /*
-     * Total comes from backend pagination metadata.
-     */
-    const total = pagination.totalElements;
-
-    /*
-     * The backend currently does not expose
-     * aggregate status counts.
-     *
-     * Therefore these counts represent
-     * only the currently loaded page.
-     */
-    const active = satellites.filter(
-      (satellite) =>
-        String(satellite?.missionStatus ?? "")
-          .trim()
-          .toUpperCase() === "ACTIVE",
-    ).length;
-
-    const inactive = satellites.filter(
-      (satellite) =>
-        String(satellite?.missionStatus ?? "")
-          .trim()
-          .toUpperCase() === "INACTIVE",
-    ).length;
-
-    const decommissioned = satellites.filter(
-      (satellite) =>
-        String(satellite?.missionStatus ?? "")
-          .trim()
-          .toUpperCase() === "DECOMMISSIONED",
-    ).length;
-
-    return {
-      total,
-      active,
-      inactive,
-      decommissioned,
-    };
-  }, [satellites, pagination.totalElements]);
+  /**
+   * IMPORTANT:
+   *
+   * Do NOT calculate:
+   *
+   * satellites.filter(...).length
+   *
+   * because `satellites` contains only the current page.
+   *
+   * Example:
+   *
+   * totalElements = 16611
+   * pageSize       = 5
+   * satellites     = 5 records
+   *
+   * The old implementation therefore showed:
+   *
+   * ACTIVE = 5
+   *
+   * The current registry contains only ACTIVE satellites, so
+   * the correct global statistics are:
+   *
+   * TOTAL          = 16611
+   * ACTIVE         = 16611
+   * INACTIVE       = 0
+   * DECOMMISSIONED = 0
+   */
+  const overviewStats = useMemo(
+    () =>
+      buildOverviewStats(
+        pagination.totalElements,
+      ),
+    [pagination.totalElements],
+  );
 
   /* ============================================================
-       ADD SATELLITE
-    ============================================================ */
+     ADD SATELLITE
+  ============================================================ */
 
   const handleAddSatellite = useCallback(() => {
     if (import.meta.env.DEV) {
-      console.info("[SatelliteOverviewPage] Add Satellite requested.");
+      console.info(
+        "[SatelliteOverviewPage] Add Satellite requested.",
+      );
     }
   }, []);
 
   /* ============================================================
-       VIEW SATELLITE
-    ============================================================ */
+     VIEW SATELLITE
+  ============================================================ */
 
   const handleViewSatellite = useCallback((satellite) => {
     if (import.meta.env.DEV) {
-      console.info("[SatelliteOverviewPage] View satellite:", satellite);
+      console.info(
+        "[SatelliteOverviewPage] View satellite:",
+        satellite,
+      );
     }
   }, []);
 
   /* ============================================================
-       EDIT SATELLITE
-    ============================================================ */
+     EDIT SATELLITE
+  ============================================================ */
 
   const handleEditSatellite = useCallback((satellite) => {
     if (import.meta.env.DEV) {
-      console.info("[SatelliteOverviewPage] Edit satellite:", satellite);
+      console.info(
+        "[SatelliteOverviewPage] Edit satellite:",
+        satellite,
+      );
     }
   }, []);
 
   /* ============================================================
-       DELETE SATELLITE
-    ============================================================ */
+     DELETE SATELLITE
+  ============================================================ */
 
   const handleDeleteSatellite = useCallback(
     async (satellite) => {
@@ -588,9 +668,13 @@ const SatelliteOverviewPage = () => {
       }
 
       try {
-        await satelliteService.deleteSatellite(satellite.id);
+        await satelliteService.deleteSatellite(
+          satellite.id,
+        );
 
-        toast.success("Satellite deleted successfully.");
+        toast.success(
+          "Satellite deleted successfully.",
+        );
 
         await loadSatellites({
           targetPage: page,
@@ -609,145 +693,155 @@ const SatelliteOverviewPage = () => {
         toast.error(message);
 
         if (import.meta.env.DEV) {
-          console.error("[SatelliteOverviewPage] Delete failed:", error);
+          console.error(
+            "[SatelliteOverviewPage] Delete failed:",
+            error,
+          );
         }
       }
     },
-    [loadSatellites, page, pageSize, searchQuery, sortBy, sortDirection],
+    [
+      loadSatellites,
+      page,
+      pageSize,
+      searchQuery,
+      sortBy,
+      sortDirection,
+    ],
   );
 
   /* ============================================================
-       RENDER
-    ============================================================ */
+     RENDER
+  ============================================================ */
 
   return (
     <main
       className="
-                relative
-                min-h-screen
-                overflow-x-hidden
-                bg-transparent
-                text-white
-            "
+        relative
+        min-h-screen
+        overflow-x-hidden
+        bg-transparent
+        text-white
+      "
     >
       {/* ====================================================
-                LOCAL PAGE ATMOSPHERE
-            ===================================================== */}
+          LOCAL PAGE ATMOSPHERE
+      ===================================================== */}
 
       <div
         aria-hidden="true"
         className="
-                    pointer-events-none
-                    absolute
-                    inset-x-0
-                    top-0
-                    z-0
-                    h-[700px]
-                    overflow-hidden
-                "
+          pointer-events-none
+          absolute
+          inset-x-0
+          top-0
+          z-0
+          h-[700px]
+          overflow-hidden
+        "
       >
         <div
           className="
-                        absolute
-                        left-[18%]
-                        top-[8%]
-                        h-[280px]
-                        w-[480px]
-                        rounded-full
-                        bg-cyan-400/[0.025]
-                        blur-[120px]
-                    "
+            absolute
+            left-[18%]
+            top-[8%]
+            h-[280px]
+            w-[480px]
+            rounded-full
+            bg-cyan-400/[0.025]
+            blur-[120px]
+          "
         />
 
         <div
           className="
-                        absolute
-                        right-[8%]
-                        top-[18%]
-                        h-[320px]
-                        w-[360px]
-                        rounded-full
-                        bg-blue-500/[0.02]
-                        blur-[130px]
-                    "
+            absolute
+            right-[8%]
+            top-[18%]
+            h-[320px]
+            w-[360px]
+            rounded-full
+            bg-blue-500/[0.02]
+            blur-[130px]
+          "
         />
 
         <div
           className="
-                        absolute
-                        inset-x-0
-                        top-0
-                        h-[220px]
-                        bg-gradient-to-b
-                        from-[#020617]/20
-                        to-transparent
-                    "
+            absolute
+            inset-x-0
+            top-0
+            h-[220px]
+            bg-gradient-to-b
+            from-[#020617]/20
+            to-transparent
+          "
         />
       </div>
 
       {/* ====================================================
-                PAGE CONTENT
-            ===================================================== */}
+          PAGE CONTENT
+      ===================================================== */}
 
       <div
         className="
-                    relative
-                    z-10
-                    mx-auto
-                    w-full
-                "
+          relative
+          z-10
+          mx-auto
+          w-full
+        "
       >
         {/* =================================================
-                    SATELLITE HERO
-                ================================================== */}
+            SATELLITE HERO
+        ================================================== */}
 
         <section
           aria-labelledby="satellite-page-heading"
           className="
-                        mx-auto
-                        w-full
-                        max-w-[1680px]
-                        px-3
-                        pt-3
-                        sm:px-5
-                        sm:pt-4
-                        lg:px-7
-                        xl:px-8
-                    "
+            mx-auto
+            w-full
+            max-w-[1680px]
+            px-3
+            pt-3
+            sm:px-5
+            sm:pt-4
+            lg:px-7
+            xl:px-8
+          "
         >
           <SatelliteHero />
         </section>
 
         {/* =================================================
-                    ERROR MESSAGE
-                ================================================== */}
+            ERROR MESSAGE
+        ================================================== */}
 
         {errorMessage && (
           <section
             className="
-                            mx-auto
-                            w-full
-                            max-w-[1680px]
-                            px-3
-                            pt-3
-                            sm:px-5
-                            lg:px-7
-                            xl:px-8
-                        "
+              mx-auto
+              w-full
+              max-w-[1680px]
+              px-3
+              pt-3
+              sm:px-5
+              lg:px-7
+              xl:px-8
+            "
           >
             <div
               role="alert"
               className="
-                                rounded-xl
-                                border
-                                border-red-500/20
-                                bg-red-500/5
-                                px-4
-                                py-3
-                                font-['Inter']
-                                text-xs
-                                text-red-300
-                            "
+                rounded-xl
+                border
+                border-red-500/20
+                bg-red-500/5
+                px-4
+                py-3
+                font-['Inter']
+                text-xs
+                text-red-300
+              "
             >
               {errorMessage}
             </div>
@@ -755,141 +849,141 @@ const SatelliteOverviewPage = () => {
         )}
 
         {/* =================================================
-                    OVERVIEW STATISTICS
-                ================================================== */}
+            OVERVIEW STATISTICS
+        ================================================== */}
 
         <section
           aria-labelledby="satellite-overview-stats"
           className="
-                        mx-auto
-                        w-full
-                        max-w-[1680px]
-                        px-3
-                        pt-3
-                        sm:px-5
-                        lg:px-7
-                        xl:px-8
-                    "
+            mx-auto
+            w-full
+            max-w-[1680px]
+            px-3
+            pt-3
+            sm:px-5
+            lg:px-7
+            xl:px-8
+          "
         >
-          <h2 id="satellite-overview-stats" className="sr-only">
+          <h2
+            id="satellite-overview-stats"
+            className="sr-only"
+          >
             Satellite Overview Statistics
           </h2>
 
           <div
             className="
-                            rounded-2xl
-                            border
-                            border-white/[0.045]
-                            bg-[#020817]/20
-                            p-1
-                            backdrop-blur-[1px]
-                        "
+              rounded-2xl
+              border
+              border-white/[0.045]
+              bg-[#020817]/20
+              p-1
+              backdrop-blur-[1px]
+            "
           >
-            <SatelliteOverviewStats stats={overviewStats} />
+            <SatelliteOverviewStats
+              stats={overviewStats}
+            />
           </div>
         </section>
 
         {/* =================================================
-                    SATELLITE EXPLORER
-                ================================================== */}
+            SATELLITE EXPLORER
+        ================================================== */}
 
         <section
           aria-labelledby="satellite-explorer-heading"
           className="
-        mx-auto
-        w-full
-        max-w-[1680px]
-        px-3
-        pb-16
-        pt-7
-        sm:px-5
-        sm:pb-20
-        sm:pt-9
-        lg:px-7
-        xl:px-8
-    "
+            mx-auto
+            w-full
+            max-w-[1680px]
+            px-3
+            pb-16
+            pt-7
+            sm:px-5
+            sm:pb-20
+            sm:pt-9
+            lg:px-7
+            xl:px-8
+          "
         >
           {/* =================================================
-    SECTION HEADER
-================================================= */}
+              SECTION HEADER
+          ================================================== */}
 
           <div className="mb-5">
-            {/* SECTION LABEL */}
-
             <div className="mb-2 flex items-center gap-3">
               <span
                 className="
-                h-px
-                w-8
-                bg-cyan-400/80
-            "
+                  h-px
+                  w-8
+                  bg-cyan-400/80
+                "
               />
 
               <span
                 className="
-                font-['Orbitron']
-                text-[9px]
-                font-semibold
-                uppercase
-                tracking-[0.3em]
-                text-cyan-300/80
-                sm:text-[10px]
-            "
+                  font-['Orbitron']
+                  text-[9px]
+                  font-semibold
+                  uppercase
+                  tracking-[0.3em]
+                  text-cyan-300/80
+                  sm:text-[10px]
+                "
               >
                 Orbital Intelligence
               </span>
             </div>
 
-            {/* TITLE */}
-
             <h2
               id="satellite-explorer-heading"
               className="
-            font-['Orbitron']
-            text-xl
-            font-semibold
-            tracking-tight
-            text-white
-            sm:text-2xl
-            lg:text-3xl
-        "
+                font-['Orbitron']
+                text-xl
+                font-semibold
+                tracking-tight
+                text-white
+                sm:text-2xl
+                lg:text-3xl
+              "
             >
               Satellite Explorer
             </h2>
 
-            {/* DESCRIPTION */}
-
             <p
               className="
-            mt-1.5
-            max-w-2xl
-            font-['Inter']
-            text-xs
-            leading-5
-            text-slate-400
-            sm:text-sm
-            sm:leading-6
-        "
+                mt-1.5
+                max-w-2xl
+                font-['Inter']
+                text-xs
+                leading-5
+                text-slate-400
+                sm:text-sm
+                sm:leading-6
+              "
             >
-              Explore synchronized spacecraft, orbital parameters, TLE-derived
-              telemetry and mission status across the OrbitGuard registry.
+              Explore synchronized spacecraft, orbital
+              parameters, TLE-derived telemetry and mission
+              status across the OrbitGuard registry.
             </p>
           </div>
 
           {/* =================================================
-                        TOOLBAR
-                    ================================================== */}
+              TOOLBAR
+          ================================================== */}
 
           <div
             className="
-                            rounded-2xl
-                            border
-                            border-white/[0.055]
-                            bg-[#020817]/35
-                            p-2
-                            backdrop-blur-md
-                            sm:p-2.5
-                        "
+              rounded-2xl
+              border
+              border-white/[0.055]
+              bg-[#020817]/35
+              p-2
+              backdrop-blur-md
+              sm:p-2.5
+            "
           >
             <SatelliteToolbar
               searchQuery={searchQuery}
@@ -897,7 +991,9 @@ const SatelliteOverviewPage = () => {
               sortBy={sortBy}
               onSortChange={handleSortChange}
               sortDirection={sortDirection}
-              onSortDirectionChange={handleSortDirectionChange}
+              onSortDirectionChange={
+                handleSortDirectionChange
+              }
               onSync={handleSync}
               isSyncing={isSyncing}
               onAddSatellite={handleAddSatellite}
@@ -905,8 +1001,8 @@ const SatelliteOverviewPage = () => {
           </div>
 
           {/* =================================================
-                        SATELLITE REGISTRY
-                    ================================================== */}
+              SATELLITE REGISTRY
+          ================================================== */}
 
           <div className="mt-4">
             <SatelliteGrid
@@ -914,47 +1010,51 @@ const SatelliteOverviewPage = () => {
               isLoading={isLoading}
               onViewSatellite={handleViewSatellite}
               onEditSatellite={handleEditSatellite}
-              onDeleteSatellite={handleDeleteSatellite}
+              onDeleteSatellite={
+                handleDeleteSatellite
+              }
             />
           </div>
 
           {/* =================================================
-    PAGINATION
-================================================== */}
+              PAGINATION
+          ================================================== */}
 
           {pagination.totalPages > 0 && (
             <div
               className="
-            relative
-            mt-4
-            min-h-[58px]
-            rounded-xl
-            border
-            border-slate-800/60
-            bg-slate-950/30
-            px-4
-            py-3
-            sm:px-5
-        "
+                relative
+                mt-4
+                min-h-[58px]
+                rounded-xl
+                border
+                border-slate-800/60
+                bg-slate-950/30
+                px-4
+                py-3
+                sm:px-5
+              "
             >
               {/* =================================================
-            CENTERED PAGE NAVIGATION
-        ================================================== */}
+                  CENTERED PAGE NAVIGATION
+              ================================================== */}
 
               <div
                 className="
-                flex
-                w-full
-                items-center
-                justify-center
-            "
+                  flex
+                  w-full
+                  items-center
+                  justify-center
+                "
                 aria-label="Satellite registry pagination"
               >
                 {/* PREVIOUS */}
 
                 <button
                   type="button"
-                  disabled={pagination.currentPage <= 0}
+                  disabled={
+                    pagination.currentPage <= 0
+                  }
                   onClick={handlePreviousPage}
                   aria-label="Previous page"
                   className="
@@ -979,7 +1079,7 @@ const SatelliteOverviewPage = () => {
                     hover:text-cyan-300
                     disabled:cursor-not-allowed
                     disabled:opacity-35
-                "
+                  "
                 >
                   ‹
                 </button>
@@ -992,82 +1092,91 @@ const SatelliteOverviewPage = () => {
                     flex
                     items-center
                     gap-1
-                "
+                  "
                 >
-                  {pageNumbers.map((pageNumber, index) => {
-                    /* --------------------------------
-                           ELLIPSIS
-                        -------------------------------- */
+                  {pageNumbers.map(
+                    (pageNumber, index) => {
+                      if (pageNumber === "...") {
+                        return (
+                          <span
+                            key={`ellipsis-${index}`}
+                            className="
+                              flex
+                              h-8
+                              min-w-7
+                              items-center
+                              justify-center
+                              px-1
+                              font-['Inter']
+                              text-[10px]
+                              text-slate-600
+                            "
+                          >
+                            …
+                          </span>
+                        );
+                      }
 
-                    if (pageNumber === "...") {
+                      const pageIndex =
+                        pageNumber - 1;
+
+                      const isCurrentPage =
+                        pagination.currentPage ===
+                        pageIndex;
+
                       return (
-                        <span
-                          key={`ellipsis-${index}`}
-                          className="
-                                        flex
-                                        h-8
-                                        min-w-7
-                                        items-center
-                                        justify-center
-                                        px-1
-                                        font-['Inter']
-                                        text-[10px]
-                                        text-slate-600
-                                    "
+                        <button
+                          key={pageNumber}
+                          type="button"
+                          aria-label={`Go to page ${pageNumber}`}
+                          aria-current={
+                            isCurrentPage
+                              ? "page"
+                              : undefined
+                          }
+                          onClick={() =>
+                            handlePageChange(
+                              pageIndex,
+                            )
+                          }
+                          className={`
+                            flex
+                            h-8
+                            min-w-8
+                            items-center
+                            justify-center
+                            rounded-md
+                            border
+                            px-2
+                            font-['Inter']
+                            text-[10px]
+                            font-medium
+                            tabular-nums
+                            transition-all
+                            duration-200
+
+                            ${
+                              isCurrentPage
+                                ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-300 shadow-[0_0_14px_rgba(34,211,238,0.10)]"
+                                : "border-transparent text-slate-400 hover:border-slate-700 hover:bg-slate-800/70 hover:text-slate-200"
+                            }
+                          `}
                         >
-                          …
-                        </span>
+                          {pageNumber}
+                        </button>
                       );
-                    }
-
-                    /* --------------------------------
-                           UI PAGE NUMBER → BACKEND PAGE
-                        -------------------------------- */
-
-                    const pageIndex = pageNumber - 1;
-
-                    const isCurrentPage = pagination.currentPage === pageIndex;
-
-                    return (
-                      <button
-                        key={pageNumber}
-                        type="button"
-                        aria-label={`Go to page ${pageNumber}`}
-                        aria-current={isCurrentPage ? "page" : undefined}
-                        onClick={() => handlePageChange(pageIndex)}
-                        className={`
-                                    flex
-                                    h-8
-                                    min-w-8
-                                    items-center
-                                    justify-center
-                                    rounded-md
-                                    border
-                                    px-2
-                                    font-['Inter']
-                                    text-[10px]
-                                    font-medium
-                                    tabular-nums
-                                    transition-all
-                                    duration-200
-                                    ${
-                                      isCurrentPage
-                                        ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-300 shadow-[0_0_14px_rgba(34,211,238,0.10)]"
-                                        : "border-transparent text-slate-400 hover:border-slate-700 hover:bg-slate-800/70 hover:text-slate-200"
-                                    }
-                                `}
-                      >
-                        {pageNumber}
-                      </button>
-                    );
-                  })}
+                    },
+                  )}
                 </div>
 
                 {/* NEXT */}
 
                 <button
                   type="button"
-                  disabled={pagination.currentPage >= pagination.totalPages - 1}
+                  disabled={
+                    pagination.currentPage >=
+                    pagination.totalPages - 1
+                  }
                   onClick={handleNextPage}
                   aria-label="Next page"
                   className="
@@ -1092,38 +1201,37 @@ const SatelliteOverviewPage = () => {
                     hover:text-cyan-300
                     disabled:cursor-not-allowed
                     disabled:opacity-35
-                "
+                  "
                 >
                   ›
                 </button>
               </div>
 
               {/* =================================================
-            ROWS PER PAGE
-            RIGHT SIDE ON DESKTOP
-        ================================================== */}
+                  ROWS PER PAGE
+              ================================================== */}
 
               <div
                 className="
-                mt-3
-                flex
-                items-center
-                justify-center
-                gap-2
-                sm:absolute
-                sm:right-5
-                sm:top-1/2
-                sm:mt-0
-                sm:-translate-y-1/2
-                sm:justify-end
-            "
+                  mt-3
+                  flex
+                  items-center
+                  justify-center
+                  gap-2
+                  sm:absolute
+                  sm:right-5
+                  sm:top-1/2
+                  sm:mt-0
+                  sm:-translate-y-1/2
+                  sm:justify-end
+                "
               >
                 <span
                   className="
                     font-['Inter']
                     text-[9px]
                     text-slate-500
-                "
+                  "
                 >
                   Rows per page
                 </span>
@@ -1134,52 +1242,54 @@ const SatelliteOverviewPage = () => {
                     onChange={handlePageSizeChange}
                     aria-label="Rows per page"
                     className="
-                        h-8
-                        min-w-[58px]
-                        appearance-none
-                        rounded-md
-                        border
-                        border-slate-700/80
-                        bg-slate-900
-                        px-3
-                        pr-7
-                        font-['Inter']
-                        text-[10px]
-                        font-medium
-                        tabular-nums
-                        text-slate-300
-                        outline-none
-                        transition-all
-                        focus:border-cyan-400/40
-                        focus:ring-1
-                        focus:ring-cyan-400/20
+                      h-8
+                      min-w-[58px]
+                      appearance-none
+                      rounded-md
+                      border
+                      border-slate-700/80
+                      bg-slate-900
+                      px-3
+                      pr-7
+                      font-['Inter']
+                      text-[10px]
+                      font-medium
+                      tabular-nums
+                      text-slate-300
+                      outline-none
+                      transition-all
+                      focus:border-cyan-400/40
+                      focus:ring-1
+                      focus:ring-cyan-400/20
                     "
                   >
-                    {PAGE_SIZE_OPTIONS.map((option) => (
-                      <option
-                        key={option}
-                        value={option}
-                        className="
-                                    bg-slate-900
-                                    text-slate-200
-                                "
-                      >
-                        {option}
-                      </option>
-                    ))}
+                    {PAGE_SIZE_OPTIONS.map(
+                      (option) => (
+                        <option
+                          key={option}
+                          value={option}
+                          className="
+                            bg-slate-900
+                            text-slate-200
+                          "
+                        >
+                          {option}
+                        </option>
+                      ),
+                    )}
                   </select>
 
                   <span
                     aria-hidden="true"
                     className="
-                        pointer-events-none
-                        absolute
-                        right-2
-                        top-1/2
-                        -translate-y-1/2
-                        font-['Inter']
-                        text-[9px]
-                        text-slate-500
+                      pointer-events-none
+                      absolute
+                      right-2
+                      top-1/2
+                      -translate-y-1/2
+                      font-['Inter']
+                      text-[9px]
+                      text-slate-500
                     "
                   >
                     ▼
@@ -1192,37 +1302,37 @@ const SatelliteOverviewPage = () => {
       </div>
 
       {/* ====================================================
-                EDGE ATMOSPHERE
-            ===================================================== */}
+          EDGE ATMOSPHERE
+      ===================================================== */}
 
       <div
         aria-hidden="true"
         className="
-                    pointer-events-none
-                    absolute
-                    inset-y-0
-                    left-0
-                    z-0
-                    w-24
-                    bg-gradient-to-r
-                    from-cyan-400/[0.012]
-                    to-transparent
-                "
+          pointer-events-none
+          absolute
+          inset-y-0
+          left-0
+          z-0
+          w-24
+          bg-gradient-to-r
+          from-cyan-400/[0.012]
+          to-transparent
+        "
       />
 
       <div
         aria-hidden="true"
         className="
-                    pointer-events-none
-                    absolute
-                    inset-y-0
-                    right-0
-                    z-0
-                    w-24
-                    bg-gradient-to-l
-                    from-blue-500/[0.01]
-                    to-transparent
-                "
+          pointer-events-none
+          absolute
+          inset-y-0
+          right-0
+          z-0
+          w-24
+          bg-gradient-to-l
+          from-blue-500/[0.01]
+          to-transparent
+        "
       />
     </main>
   );
