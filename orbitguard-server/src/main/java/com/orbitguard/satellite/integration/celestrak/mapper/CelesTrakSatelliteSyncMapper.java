@@ -9,30 +9,48 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
+import java.util.function.Consumer;
 
 /**
- * Maps CelesTrak satellite GP data into the
- * OrbitGuard Satellite persistence model.
+ * Maps CelesTrak GP data into the OrbitGuard
+ * Satellite persistence model.
  *
+ * <p>
+ * Mapping flow:
+ *
+ * <pre>
+ * CelesTrak GP Response
+ *          ↓
+ * CelesTrakSatelliteResponse
+ *          ↓
+ * CelesTrakSatelliteSyncMapper
+ *          ↓
+ * Satellite
+ *          ↓
+ * MongoDB
+ * </pre>
+ *
+ * <p>
  * Responsibilities:
+ * <ul>
+ *     <li>Map CelesTrak-owned fields</li>
+ *     <li>Validate required CelesTrak identity fields</li>
+ *     <li>Convert CelesTrak epoch into UTC LocalDateTime</li>
+ *     <li>Create new Satellite entities</li>
+ *     <li>Update existing Satellite entities</li>
+ *     <li>Protect existing values from null CelesTrak fields</li>
+ * </ul>
  *
- * CelesTrak response
- *        ↓
- * Satellite MongoDB entity
- *
- * This mapper:
- * - maps CelesTrak-owned fields
- * - converts CelesTrak epoch into UTC LocalDateTime
- * - supports creation of new Satellite entities
- * - supports updating existing Satellite entities
- *
- * This mapper does not:
- * - perform propagation
- * - calculate altitude
- * - calculate velocity
- * - perform coordinate conversion
- * - call external APIs
- * - persist entities
+ * <p>
+ * This mapper does NOT:
+ * <ul>
+ *     <li>perform orbital propagation</li>
+ *     <li>calculate altitude</li>
+ *     <li>calculate velocity</li>
+ *     <li>perform coordinate conversion</li>
+ *     <li>call external APIs</li>
+ *     <li>persist entities</li>
+ * </ul>
  */
 @Component
 public class CelesTrakSatelliteSyncMapper {
@@ -41,25 +59,13 @@ public class CelesTrakSatelliteSyncMapper {
      * Converts a CelesTrak GP response into a new
      * Satellite persistence entity.
      *
-     * <p>
-     * All CelesTrak-provided identity and orbital/TLE
-     * fields are persisted.
-     * </p>
-     *
-     * <p>
-     * Application-managed fields are intentionally left
-     * to Satellite defaults or application logic.
-     * </p>
-     *
      * @param response CelesTrak GP response
-     * @return new Satellite entity, or null when response is null
+     * @return new Satellite entity
      */
     public Satellite toSatellite(
             CelesTrakSatelliteResponse response) {
 
-        if (response == null) {
-            return null;
-        }
+        validateResponse(response);
 
         Satellite satellite = new Satellite();
 
@@ -72,50 +78,31 @@ public class CelesTrakSatelliteSyncMapper {
     }
 
     /**
-     * Updates an existing Satellite entity using the
-     * latest CelesTrak GP response.
+     * Updates an existing Satellite entity using
+     * the latest CelesTrak GP response.
      *
      * <p>
-     * Only fields owned by the CelesTrak synchronization
-     * flow are modified.
-     * </p>
+     * Only CelesTrak-owned fields are updated.
+     * Application-managed fields remain untouched.
      *
      * <p>
-     * The following application-managed fields are NOT
-     * changed here:
-     * </p>
-     *
-     * <ul>
-     *     <li>id</li>
-     *     <li>operator</li>
-     *     <li>orbitType</li>
-     *     <li>altitude</li>
-     *     <li>velocity</li>
-     *     <li>launchDate</li>
-     *     <li>missionStatus</li>
-     *     <li>active</li>
-     *     <li>country</li>
-     *     <li>purpose</li>
-     *     <li>description</li>
-     *     <li>createdAt</li>
-     *     <li>updatedAt</li>
-     * </ul>
-     *
-     * <p>
-     * The synchronization service is responsible for
-     * active/updatedAt handling.
-     * </p>
+     * Null or blank values from CelesTrak do not
+     * overwrite existing MongoDB values.
      *
      * @param satellite existing Satellite entity
-     * @param response latest CelesTrak GP response
+     * @param response latest CelesTrak response
      */
     public void updateSatellite(
             Satellite satellite,
             CelesTrakSatelliteResponse response) {
 
-        if (satellite == null || response == null) {
-            return;
+        if (satellite == null) {
+            throw new IllegalArgumentException(
+                    "Satellite must not be null."
+            );
         }
+
+        validateResponse(response);
 
         mapCelesTrakFields(
                 satellite,
@@ -124,130 +111,211 @@ public class CelesTrakSatelliteSyncMapper {
     }
 
     /**
-     * Maps all fields that are owned by the
-     * CelesTrak synchronization flow.
+     * Maps all CelesTrak-owned fields.
      *
      * <p>
-     * This method is deliberately shared by both:
-     * </p>
-     *
-     * <pre>
-     * New satellite
-     *      ↓
-     * toSatellite()
-     *      ↓
-     * mapCelesTrakFields()
-     *
-     * Existing satellite
-     *      ↓
-     * updateSatellite()
-     *      ↓
-     * mapCelesTrakFields()
-     * </pre>
+     * This method is shared by both insert and update
+     * operations so that both paths remain consistent.
      *
      * <p>
-     * This prevents the insert and update paths from
-     * becoming inconsistent.
-     * </p>
+     * Important:
+     *
+     * <ul>
+     *     <li>Valid non-null values are mapped.</li>
+     *     <li>Blank String values are ignored.</li>
+     *     <li>Null numeric values are ignored.</li>
+     *     <li>Existing application-managed fields are never touched.</li>
+     * </ul>
      */
     private void mapCelesTrakFields(
             Satellite satellite,
             CelesTrakSatelliteResponse response) {
 
         /*
-         * --------------------------------------------------
-         * Identity / provider information
-         * --------------------------------------------------
+         * ==================================================
+         * OBJECT IDENTITY
+         * ==================================================
          */
 
-        satellite.setSatelliteName(
-                response.getObjectName()
-        );
-
-        satellite.setSatelliteCode(
-                response.getObjectId()
-        );
-
-        satellite.setNoradCatalogId(
-                response.getNoradCatalogId()
-        );
-
-        satellite.setObjectId(
-                response.getObjectId()
+        setIfNotBlank(
+                response.getObjectName(),
+                satellite::setSatelliteName
         );
 
         /*
-         * --------------------------------------------------
-         * TLE / orbital data
-         * --------------------------------------------------
+         * OBJECT_ID is currently used as the
+         * application satelliteCode.
+         */
+        setIfNotBlank(
+                response.getObjectId(),
+                satellite::setSatelliteCode
+        );
+
+        /*
+         * NORAD catalog ID is the primary external
+         * synchronization identity.
+         */
+        if (response.getNoradCatalogId() != null
+                && response.getNoradCatalogId() > 0) {
+
+            satellite.setNoradCatalogId(
+                    response.getNoradCatalogId()
+            );
+        }
+
+        /*
+         * Preserve OBJECT_ID separately as well.
+         */
+        setIfNotBlank(
+                response.getObjectId(),
+                satellite::setObjectId
+        );
+
+
+        /*
+         * ==================================================
+         * EPOCH
+         * ==================================================
          */
 
-        satellite.setEpoch(
-                parseEpoch(response.getEpoch())
+        LocalDateTime parsedEpoch =
+                parseEpoch(
+                        response.getEpoch()
+                );
+
+        if (parsedEpoch != null) {
+
+            satellite.setEpoch(
+                    parsedEpoch
+            );
+        }
+
+
+        /*
+         * ==================================================
+         * TLE / SGP4 METADATA
+         * ==================================================
+         */
+
+        setIfNotBlank(
+                response.getClassificationType(),
+                satellite::setClassificationType
         );
 
-        satellite.setClassificationType(
-                response.getClassificationType()
+        setIfPresent(
+                response.getEphemerisType(),
+                satellite::setEphemerisType
         );
 
-        satellite.setEphemerisType(
-                response.getEphemerisType()
+        setIfPresent(
+                response.getElementSetNumber(),
+                satellite::setElementSetNumber
         );
 
-        satellite.setElementSetNumber(
-                response.getElementSetNumber()
+        setIfPresent(
+                response.getRevolutionAtEpoch(),
+                satellite::setRevolutionAtEpoch
         );
 
-        satellite.setRevolutionAtEpoch(
-                response.getRevolutionAtEpoch()
+
+        /*
+         * ==================================================
+         * ORBITAL PARAMETERS
+         * ==================================================
+         */
+
+        setIfPresent(
+                response.getMeanMotion(),
+                satellite::setMeanMotion
         );
 
-        satellite.setMeanMotion(
-                response.getMeanMotion()
+        setIfPresent(
+                response.getMeanMotionDot(),
+                satellite::setMeanMotionDot
         );
 
-        satellite.setMeanMotionDot(
-                response.getMeanMotionDot()
+        setIfPresent(
+                response.getMeanMotionDdot(),
+                satellite::setMeanMotionDdot
         );
 
-        satellite.setMeanMotionDdot(
-                response.getMeanMotionDdot()
+        setIfPresent(
+                response.getEccentricity(),
+                satellite::setEccentricity
         );
 
-        satellite.setEccentricity(
-                response.getEccentricity()
+        setIfPresent(
+                response.getInclination(),
+                satellite::setInclination
         );
 
-        satellite.setInclination(
-                response.getInclination()
+        setIfPresent(
+                response.getRightAscensionOfAscendingNode(),
+                satellite::setRightAscensionOfAscendingNode
         );
 
-        satellite.setRightAscensionOfAscendingNode(
-                response.getRightAscensionOfAscendingNode()
+        setIfPresent(
+                response.getArgumentOfPericenter(),
+                satellite::setArgumentOfPericenter
         );
 
-        satellite.setArgumentOfPericenter(
-                response.getArgumentOfPericenter()
+        setIfPresent(
+                response.getMeanAnomaly(),
+                satellite::setMeanAnomaly
         );
 
-        satellite.setMeanAnomaly(
-                response.getMeanAnomaly()
-        );
-
-        satellite.setBstar(
-                response.getBstar()
+        setIfPresent(
+                response.getBstar(),
+                satellite::setBstar
         );
     }
 
+
     /**
-     * Converts the CelesTrak epoch into the
-     * LocalDateTime UTC representation used
-     * throughout the current OrbitGuard
-     * propagation flow.
+     * Validates the minimum identity information
+     * required for synchronization.
      *
      * <p>
-     * Supported formats:
-     * </p>
+     * NORAD catalog ID is the primary external identity.
+     * OBJECT_ID is also required because it is currently
+     * used as the Satellite satelliteCode/objectId.
+     */
+    private void validateResponse(
+            CelesTrakSatelliteResponse response) {
+
+        if (response == null) {
+
+            throw new IllegalArgumentException(
+                    "CelesTrak satellite response must not be null."
+            );
+        }
+
+        if (response.getNoradCatalogId() == null
+                || response.getNoradCatalogId() <= 0) {
+
+            throw new IllegalArgumentException(
+                    "CelesTrak satellite response must contain "
+                            + "a valid NORAD catalog ID."
+            );
+        }
+
+        if (isBlank(response.getObjectId())) {
+
+            throw new IllegalArgumentException(
+                    "CelesTrak satellite response must contain "
+                            + "a valid OBJECT_ID."
+            );
+        }
+    }
+
+
+    /**
+     * Converts the CelesTrak epoch into the
+     * UTC LocalDateTime representation used
+     * by OrbitGuard.
+     *
+     * <p>
+     * Supported examples:
      *
      * <ul>
      *     <li>2026-09-25T12:30:00</li>
@@ -258,21 +326,20 @@ public class CelesTrakSatelliteSyncMapper {
     private LocalDateTime parseEpoch(
             String epoch) {
 
-        if (epoch == null || epoch.isBlank()) {
+        if (isBlank(epoch)) {
             return null;
         }
 
         String normalizedEpoch =
                 epoch.trim();
 
+        /*
+         * --------------------------------------------------
+         * Try offset-aware timestamp first.
+         * --------------------------------------------------
+         */
         try {
 
-            /*
-             * Offset/Z timestamp:
-             *
-             * Convert it explicitly to UTC before
-             * removing the offset.
-             */
             return OffsetDateTime.parse(
                             normalizedEpoch
                     )
@@ -284,25 +351,78 @@ public class CelesTrakSatelliteSyncMapper {
         } catch (DateTimeParseException ignored) {
 
             /*
-             * Plain LocalDateTime without offset.
-             *
-             * CelesTrak epoch is treated as UTC by
-             * OrbitGuard's current data contract.
+             * Continue with plain LocalDateTime.
              */
-            try {
-
-                return LocalDateTime.parse(
-                        normalizedEpoch
-                );
-
-            } catch (DateTimeParseException exception) {
-
-                throw new IllegalArgumentException(
-                        "Invalid CelesTrak epoch format: "
-                                + epoch,
-                        exception
-                );
-            }
         }
+
+        /*
+         * --------------------------------------------------
+         * Try timestamp without an offset.
+         *
+         * OrbitGuard treats CelesTrak timestamps without
+         * an explicit offset as UTC.
+         * --------------------------------------------------
+         */
+        try {
+
+            return LocalDateTime.parse(
+                    normalizedEpoch
+            );
+
+        } catch (DateTimeParseException exception) {
+
+            throw new IllegalArgumentException(
+                    "Invalid CelesTrak epoch format: "
+                            + epoch,
+                    exception
+            );
+        }
+    }
+
+
+    /**
+     * Sets a String value only when it contains
+     * meaningful content.
+     */
+    private void setIfNotBlank(
+            String value,
+            Consumer<String> setter) {
+
+        if (!isBlank(value)) {
+
+            setter.accept(
+                    value.trim()
+            );
+        }
+    }
+
+
+    /**
+     * Sets a value only when it is not null.
+     *
+     * <p>
+     * This is used for numeric CelesTrak fields.
+     * Null values from a partial response therefore
+     * cannot erase an existing database value.
+     */
+    private <T> void setIfPresent(
+            T value,
+            Consumer<T> setter) {
+
+        if (value != null) {
+
+            setter.accept(value);
+        }
+    }
+
+
+    /**
+     * Checks whether a String is null or blank.
+     */
+    private boolean isBlank(
+            String value) {
+
+        return value == null
+                || value.isBlank();
     }
 }

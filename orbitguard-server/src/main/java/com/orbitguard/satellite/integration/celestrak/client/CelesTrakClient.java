@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -35,16 +36,22 @@ public class CelesTrakClient {
 
 
     /**
-     * Fetch current GP orbital data from CelesTrak
+     * Fetches current GP orbital data from CelesTrak
      * using the NORAD catalog ID.
      *
+     * CelesTrak GP JSON contains both orbital/TLE
+     * information and additional GP metadata.
+     *
      * @param noradCatalogId NORAD catalog identification number
-     * @return current GP orbital data returned by CelesTrak
+     * @return current GP data returned by CelesTrak
      */
     public List<CelesTrakSatelliteResponse> getSatelliteByNoradId(
             Integer noradCatalogId) {
 
         validateNoradCatalogId(noradCatalogId);
+
+        String requestDescription =
+                "NORAD catalog ID: " + noradCatalogId;
 
         try {
 
@@ -61,20 +68,23 @@ public class CelesTrakClient {
                                             FORMAT_JSON
                                     )
                                     .build())
-                            .accept(MediaType.APPLICATION_JSON)
+                            .accept(
+                                    MediaType.APPLICATION_JSON
+                            )
                             .retrieve()
                             .onStatus(
                                     HttpStatusCode::isError,
                                     (request, response) -> {
 
                                         String errorBody =
-                                                readErrorBody(response);
+                                                readErrorBody(
+                                                        response
+                                                );
 
                                         throw buildCelesTrakException(
                                                 response.getStatusCode(),
                                                 errorBody,
-                                                "NORAD catalog ID: "
-                                                        + noradCatalogId
+                                                requestDescription
                                         );
                                     }
                             )
@@ -82,15 +92,21 @@ public class CelesTrakClient {
 
             return parseSatelliteResponse(
                     responseBody,
-                    "NORAD catalog ID: " + noradCatalogId
+                    requestDescription
             );
 
         } catch (RestClientException exception) {
 
+            log.error(
+                    "CelesTrak request failed for {}.",
+                    requestDescription,
+                    exception
+            );
+
             throw new IllegalStateException(
-                    "Failed to retrieve satellite orbital data from CelesTrak "
-                            + "for NORAD catalog ID: "
-                            + noradCatalogId,
+                    "Failed to retrieve satellite orbital data "
+                            + "from CelesTrak for "
+                            + requestDescription,
                     exception
             );
         }
@@ -98,19 +114,16 @@ public class CelesTrakClient {
 
 
     /**
-     * Fetch current GP orbital data for all satellites
+     * Fetches current GP data for all satellites
      * belonging to a CelesTrak group.
      *
-     * IMPORTANT:
+     * CelesTrak limits GP downloads according to
+     * its update cycle and usage policy.
      *
-     * CelesTrak limits GP group downloads to one successful
-     * download per data update cycle. The ACTIVE group is
-     * currently updated approximately every two hours.
-     *
-     * Therefore this method does NOT retry failed requests.
+     * Therefore this method does not retry requests.
      *
      * @param group CelesTrak group name
-     * @return current GP orbital data returned by CelesTrak
+     * @return current GP data returned by CelesTrak
      */
     public List<CelesTrakSatelliteResponse> getSatellitesByGroup(
             String group) {
@@ -119,6 +132,9 @@ public class CelesTrakClient {
 
         String normalizedGroup =
                 group.trim().toUpperCase();
+
+        String requestDescription =
+                "group: " + normalizedGroup;
 
         try {
 
@@ -135,20 +151,23 @@ public class CelesTrakClient {
                                             FORMAT_JSON
                                     )
                                     .build())
-                            .accept(MediaType.APPLICATION_JSON)
+                            .accept(
+                                    MediaType.APPLICATION_JSON
+                            )
                             .retrieve()
                             .onStatus(
                                     HttpStatusCode::isError,
                                     (request, response) -> {
 
                                         String errorBody =
-                                                readErrorBody(response);
+                                                readErrorBody(
+                                                        response
+                                                );
 
                                         throw buildCelesTrakException(
                                                 response.getStatusCode(),
                                                 errorBody,
-                                                "group: "
-                                                        + normalizedGroup
+                                                requestDescription
                                         );
                                     }
                             )
@@ -156,15 +175,21 @@ public class CelesTrakClient {
 
             return parseSatelliteResponse(
                     responseBody,
-                    "group: " + normalizedGroup
+                    requestDescription
             );
 
         } catch (RestClientException exception) {
 
+            log.error(
+                    "CelesTrak request failed for {}.",
+                    requestDescription,
+                    exception
+            );
+
             throw new IllegalStateException(
-                    "Failed to retrieve satellite data from CelesTrak "
-                            + "for group: "
-                            + normalizedGroup,
+                    "Failed to retrieve satellite data "
+                            + "from CelesTrak for "
+                            + requestDescription,
                     exception
             );
         }
@@ -172,7 +197,7 @@ public class CelesTrakClient {
 
 
     /**
-     * Read the response body returned by CelesTrak
+     * Reads the response body returned by CelesTrak
      * when an HTTP error occurs.
      */
     private String readErrorBody(
@@ -180,16 +205,15 @@ public class CelesTrakClient {
 
         try {
 
-            java.io.InputStream inputStream =
-                    response.getBody();
+            if (response == null
+                    || response.getBody() == null) {
 
-            if (inputStream == null) {
                 return "";
             }
 
             return new String(
-                    inputStream.readAllBytes(),
-                    java.nio.charset.StandardCharsets.UTF_8
+                    response.getBody().readAllBytes(),
+                    StandardCharsets.UTF_8
             ).trim();
 
         } catch (Exception exception) {
@@ -205,13 +229,12 @@ public class CelesTrakClient {
 
 
     /**
-     * Builds an exception containing the actual CelesTrak
-     * HTTP status and response message.
+     * Builds a descriptive exception for a CelesTrak
+     * HTTP error response.
      *
-     * This is especially important for CelesTrak HTTP 403
-     * responses because the response body explains whether
-     * the request was blocked because the GP data has not
-     * changed yet.
+     * CelesTrak may return HTTP 403 when the GP data
+     * has already been downloaded during the current
+     * update cycle and has not changed.
      */
     private IllegalStateException buildCelesTrakException(
             HttpStatusCode statusCode,
@@ -223,31 +246,37 @@ public class CelesTrakClient {
                         ? ""
                         : responseBody.trim();
 
+        String lowerCaseResponse =
+                cleanResponse.toLowerCase();
+
         /*
-         * CelesTrak uses HTTP 403 for the specific situation
-         * where the requested GP group has already been
-         * downloaded and the underlying data has not updated.
+         * --------------------------------------------------
+         * CelesTrak GP update-cycle protection
+         * --------------------------------------------------
          */
         if (statusCode.value() == 403
-                && cleanResponse.toLowerCase()
-                .contains("gp data has not updated")) {
+                && lowerCaseResponse.contains(
+                "gp data has not updated"
+        )) {
 
             return new IllegalStateException(
                     "CelesTrak GP data for "
                             + requestDescription
                             + " has not updated since the last "
                             + "successful download. "
-                            + "CelesTrak allows GP data downloads "
-                            + "only once per update cycle. "
-                            + "Do not retry this request until the "
-                            + "next CelesTrak GP update.\n"
-                            + "CelesTrak response: "
-                            + cleanResponse
+                            + "Do not retry this request until "
+                            + "the next CelesTrak GP update cycle."
+                            + (cleanResponse.isBlank()
+                            ? ""
+                            : " CelesTrak response: "
+                            + cleanResponse)
             );
         }
 
         /*
-         * Generic CelesTrak error.
+         * --------------------------------------------------
+         * Generic CelesTrak HTTP error
+         * --------------------------------------------------
          */
         return new IllegalStateException(
                 "CelesTrak returned HTTP "
@@ -259,21 +288,41 @@ public class CelesTrakClient {
                         + "."
                         + (cleanResponse.isBlank()
                         ? ""
-                        : " Response: " + cleanResponse)
+                        : " Response: "
+                        + cleanResponse)
         );
     }
 
 
     /**
-     * Parse the raw CelesTrak response into the external
-     * CelesTrak response DTO.
+     * Parses the raw CelesTrak JSON response into
+     * the integration DTO.
+     *
+     * The DTO is responsible for representing the
+     * external CelesTrak payload.
+     *
+     * This method does not perform:
+     * - entity mapping
+     * - business logic
+     * - propagation
+     * - database operations
      */
     private List<CelesTrakSatelliteResponse> parseSatelliteResponse(
             String responseBody,
             String requestDescription) {
 
+        /*
+         * --------------------------------------------------
+         * Empty response
+         * --------------------------------------------------
+         */
         if (responseBody == null
                 || responseBody.isBlank()) {
+
+            log.warn(
+                    "CelesTrak returned an empty response for {}.",
+                    requestDescription
+            );
 
             return Collections.emptyList();
         }
@@ -282,16 +331,23 @@ public class CelesTrakClient {
                 responseBody.trim();
 
         /*
-         * CelesTrak should return a JSON array when
-         * FORMAT=JSON is requested.
+         * --------------------------------------------------
+         * JSON validation
+         * --------------------------------------------------
          */
-        if (!normalizedResponse.startsWith("[")) {
+        if (!normalizedResponse.startsWith("[")
+                || !normalizedResponse.endsWith("]")) {
+
+            log.error(
+                    "Unexpected CelesTrak response for {}: {}",
+                    requestDescription,
+                    normalizedResponse
+            );
 
             throw new IllegalStateException(
-                    "CelesTrak returned a non-JSON response for "
+                    "CelesTrak returned an invalid JSON array "
+                            + "response for "
                             + requestDescription
-                            + ": "
-                            + normalizedResponse
             );
         }
 
@@ -313,8 +369,16 @@ public class CelesTrakClient {
 
         } catch (JsonProcessingException exception) {
 
+            log.error(
+                    "Failed to deserialize CelesTrak JSON "
+                            + "response for {}.",
+                    requestDescription,
+                    exception
+            );
+
             throw new IllegalStateException(
-                    "Failed to parse CelesTrak JSON response for "
+                    "Failed to parse CelesTrak JSON response "
+                            + "for "
                             + requestDescription,
                     exception
             );
@@ -323,7 +387,7 @@ public class CelesTrakClient {
 
 
     /**
-     * Validate NORAD catalog ID before making
+     * Validates the NORAD catalog ID before making
      * an external CelesTrak request.
      */
     private void validateNoradCatalogId(
@@ -340,10 +404,11 @@ public class CelesTrakClient {
 
 
     /**
-     * Validate CelesTrak group before making
+     * Validates the CelesTrak group before making
      * an external request.
      */
-    private void validateGroup(String group) {
+    private void validateGroup(
+            String group) {
 
         if (group == null
                 || group.isBlank()) {

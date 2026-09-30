@@ -27,11 +27,10 @@ public class SatelliteSynchronizationServiceImpl
         implements SatelliteSynchronizationService {
 
     /**
-     * Mean Earth radius used for deriving geocentric
-     * altitude from the propagated Earth-centered
-     * position.
+     * Mean Earth radius in kilometers.
      *
-     * Unit: kilometers.
+     * Used for deriving approximate geocentric altitude
+     * from the propagated Earth-centered position vector.
      */
     private static final double EARTH_RADIUS_KM = 6371.0088;
 
@@ -44,58 +43,57 @@ public class SatelliteSynchronizationServiceImpl
     private final OrbitalPropagationService orbitalPropagationService;
 
     /**
-     * Synchronizes satellite records from a CelesTrak group
-     * into the local MongoDB satellite collection.
+     * Synchronizes satellite GP data from CelesTrak.
      *
-     * <p>
-     * NORAD catalog ID is used as the external identity
-     * of a satellite.
-     * </p>
+     * Synchronization identity:
      *
-     * <pre>
+     * NORAD catalog ID
+     *
+     * Flow:
+     *
      * CelesTrak
-     *      ↓
-     * CelesTrakService
      *      ↓
      * CelesTrakSatelliteResponse
      *      ↓
      * Validate NORAD ID
      *      ↓
-     * Find by NORAD ID
+     * Find existing satellite
      *      ↓
-     * ┌─────────────────────┐
-     * │ Existing satellite? │
-     * └──────────┬──────────┘
-     *            │
-     *       ┌────┴────┐
-     *       │         │
-     *      YES        NO
-     *       │         │
-     *       ↓         ↓
-     *    Update     Insert
-     *       │         │
-     *       └────┬────┘
-     *            ↓
-     *    SGP4 / Orekit propagation
-     *            ↓
-     *    Position + velocity
-     *            ↓
-     *    Calculate altitude + velocity
-     *            ↓
-     *    Save Satellite
-     * </pre>
+     * ┌─────────────────────────┐
+     * │ Existing satellite?     │
+     * └────────────┬────────────┘
+     *              │
+     *        ┌─────┴─────┐
+     *        │           │
+     *       YES          NO
+     *        │           │
+     *        ↓           ↓
+     *     Update       Insert
+     *        │           │
+     *        └─────┬─────┘
+     *              ↓
+     *      SGP4 / Orekit propagation
+     *              ↓
+     *      Calculate altitude
+     *      Calculate velocity
+     *              ↓
+     *           Save
      *
-     * <p>
-     * CelesTrak is the source of truth for all orbital/TLE
-     * fields supplied by the GP response.
-     * </p>
+     * CelesTrak-owned fields are updated through the mapper.
      *
-     * <p>
-     * Application-managed fields such as operator, mission
-     * status, country, purpose and description are preserved.
-     * Altitude and velocity are derived from orbital propagation.
+     * Application-managed fields such as:
      *
-     * @param group CelesTrak group name
+     * - operator
+     * - orbitType
+     * - launchDate
+     * - missionStatus
+     * - country
+     * - purpose
+     * - description
+     *
+     * are preserved.
+     *
+     * @param group CelesTrak group
      */
     @Override
     public void synchronizeSatellites(String group) {
@@ -105,18 +103,41 @@ public class SatelliteSynchronizationServiceImpl
         String normalizedGroup =
                 group.trim().toUpperCase();
 
+        log.info(
+                "Starting satellite synchronization for CelesTrak group: {}",
+                normalizedGroup
+        );
+
         List<CelesTrakSatelliteResponse> responses =
                 celesTrakService.fetchSatellitesByGroup(
                         normalizedGroup
                 );
 
         if (responses == null || responses.isEmpty()) {
+
+            log.warn(
+                    "No satellite data returned from CelesTrak for group: {}",
+                    normalizedGroup
+            );
+
             return;
         }
+
+        int processed = 0;
+        int inserted = 0;
+        int updated = 0;
+        int skipped = 0;
 
         for (CelesTrakSatelliteResponse response : responses) {
 
             if (response == null) {
+
+                skipped++;
+
+                log.warn(
+                        "Skipping null CelesTrak satellite response."
+                );
+
                 continue;
             }
 
@@ -124,41 +145,88 @@ public class SatelliteSynchronizationServiceImpl
                     response.getNoradCatalogId();
 
             /*
-             * NORAD catalog ID is the external identity
-             * used to synchronize satellite records.
-             *
-             * Records without a valid NORAD ID cannot be
-             * safely synchronized.
+             * NORAD ID is the synchronization identity.
              */
             if (noradCatalogId == null
                     || noradCatalogId <= 0) {
+
+                skipped++;
+
+                log.warn(
+                        "Skipping CelesTrak satellite because "
+                                + "NORAD catalog ID is missing or invalid."
+                );
+
                 continue;
             }
 
-            satelliteRepository
-                    .findByNoradCatalogId(noradCatalogId)
-                    .ifPresentOrElse(
+            try {
 
-                            existingSatellite ->
-                                    updateExistingSatellite(
-                                            existingSatellite,
-                                            response
-                                    ),
+                Satellite existingSatellite =
+                        satelliteRepository
+                                .findByNoradCatalogId(
+                                        noradCatalogId
+                                )
+                                .orElse(null);
 
-                            () ->
-                                    insertNewSatellite(response)
+                if (existingSatellite != null) {
+
+                    updateExistingSatellite(
+                            existingSatellite,
+                            response
                     );
+
+                    updated++;
+
+                } else {
+
+                    Satellite satellite =
+                            insertNewSatellite(
+                                    response
+                            );
+
+                    if (satellite != null) {
+                        inserted++;
+                    } else {
+                        skipped++;
+                    }
+                }
+
+                processed++;
+
+            } catch (Exception exception) {
+
+                /*
+                 * One bad satellite must not stop the complete
+                 * synchronization operation.
+                 */
+                skipped++;
+
+                log.error(
+                        "Failed to synchronize satellite NORAD {}.",
+                        noradCatalogId,
+                        exception
+                );
+            }
         }
+
+        log.info(
+                "Satellite synchronization completed for group {}. "
+                        + "Processed={}, Inserted={}, Updated={}, Skipped={}",
+                normalizedGroup,
+                processed,
+                inserted,
+                updated,
+                skipped
+        );
     }
 
     /**
      * Updates an existing satellite.
      *
-     * <p>
-     * CelesTrak-owned orbital/TLE fields are updated first.
-     * The latest propagated altitude and velocity are then
-     * calculated using the SGP4/Orekit propagation service.
-     * </p>
+     * CelesTrak fields are updated through the mapper.
+     *
+     * Existing application-managed metadata is preserved.
      */
     private void updateExistingSatellite(
             Satellite existingSatellite,
@@ -166,13 +234,17 @@ public class SatelliteSynchronizationServiceImpl
 
         if (existingSatellite == null
                 || response == null) {
+
             return;
         }
 
         /*
          * --------------------------------------------------
-         * Update CelesTrak-owned orbital/TLE fields
+         * 1. Update CelesTrak-owned fields
          * --------------------------------------------------
+         *
+         * The mapper intentionally does not overwrite
+         * existing values with null values.
          */
         syncMapper.updateSatellite(
                 existingSatellite,
@@ -181,129 +253,147 @@ public class SatelliteSynchronizationServiceImpl
 
         /*
          * --------------------------------------------------
-         * Calculate current derived orbital values
+         * 2. Propagate current orbital state
          * --------------------------------------------------
          *
-         * Altitude and velocity are not provided directly
-         * by the CelesTrak GP synchronization response.
-         *
-         * They are calculated from SGP4 propagation.
+         * Only valid calculated values will replace
+         * existing altitude and velocity.
          */
         propagateAndSetDerivedValues(
                 existingSatellite
         );
 
         /*
-         * The satellite appeared in the latest
-         * synchronization result.
+         * --------------------------------------------------
+         * 3. Synchronization metadata
+         * --------------------------------------------------
          */
         existingSatellite.setActive(true);
 
-        /*
-         * Preserve createdAt.
-         * Only update modification timestamp.
-         */
         existingSatellite.setUpdatedAt(
-                LocalDateTime.now()
+                LocalDateTime.now(ZoneOffset.UTC)
         );
+
+        /*
+         * --------------------------------------------------
+         * 4. Preserve application-managed fields
+         * --------------------------------------------------
+         *
+         * We intentionally do NOT modify:
+         *
+         * operator
+         * orbitType
+         * launchDate
+         * missionStatus
+         * country
+         * purpose
+         * description
+         * createdAt
+         */
 
         satelliteRepository.save(
                 existingSatellite
         );
+
+        log.debug(
+                "Updated satellite NORAD {}.",
+                existingSatellite.getNoradCatalogId()
+        );
     }
 
     /**
-     * Inserts a new satellite received from CelesTrak.
+     * Inserts a new satellite.
+     *
+     * @return saved Satellite or null when insertion is skipped
      */
-    private void insertNewSatellite(
+    private Satellite insertNewSatellite(
             CelesTrakSatelliteResponse response) {
 
         if (response == null) {
-            return;
+            return null;
         }
 
         /*
-         * Mapper creates the Satellite entity and maps
-         * all CelesTrak-owned fields.
+         * --------------------------------------------------
+         * 1. Map CelesTrak data
+         * --------------------------------------------------
          */
         Satellite satellite =
-                syncMapper.toSatellite(response);
+                syncMapper.toSatellite(
+                        response
+                );
 
         if (satellite == null) {
-            return;
+            return null;
         }
 
         Integer noradCatalogId =
                 satellite.getNoradCatalogId();
 
         /*
-         * A synchronized satellite must always have
-         * a valid NORAD catalog ID.
+         * --------------------------------------------------
+         * 2. Validate synchronization identity
+         * --------------------------------------------------
          */
         if (noradCatalogId == null
                 || noradCatalogId <= 0) {
-            return;
+
+            log.warn(
+                    "Skipping new satellite because NORAD ID is invalid."
+            );
+
+            return null;
         }
 
         /*
          * --------------------------------------------------
-         * Calculate current derived orbital values
+         * 3. Propagate current orbital state
          * --------------------------------------------------
          */
         propagateAndSetDerivedValues(
                 satellite
         );
 
-        LocalDateTime now =
-                LocalDateTime.now();
-
         /*
-         * New synchronized records are active.
+         * --------------------------------------------------
+         * 4. Initialize synchronization metadata
+         * --------------------------------------------------
          */
+        LocalDateTime now =
+                LocalDateTime.now(ZoneOffset.UTC);
+
         satellite.setActive(true);
 
-        /*
-         * Explicitly initialize timestamps.
-         */
         satellite.setCreatedAt(now);
+
         satellite.setUpdatedAt(now);
 
-        satelliteRepository.save(
-                satellite
+        /*
+         * --------------------------------------------------
+         * 5. Save
+         * --------------------------------------------------
+         */
+        Satellite savedSatellite =
+                satelliteRepository.save(
+                        satellite
+                );
+
+        log.debug(
+                "Inserted new satellite NORAD {}.",
+                noradCatalogId
         );
+
+        return savedSatellite;
     }
 
     /**
      * Propagates the satellite's current orbital state
-     * using the latest synchronized TLE/orbital data.
+     * using SGP4/Orekit.
      *
-     * <p>
-     * The propagation target is the current UTC time.
-     * </p>
+     * Important:
      *
-     * <p>
-     * The returned propagated state contains:
-     * </p>
-     *
-     * <ul>
-     *     <li>Position X/Y/Z in kilometers</li>
-     *     <li>Velocity X/Y/Z in kilometers/second</li>
-     * </ul>
-     *
-     * <p>
-     * From these values this method derives:
-     * </p>
-     *
-     * <ul>
-     *     <li>Altitude in kilometers</li>
-     *     <li>Velocity magnitude in kilometers/second</li>
-     * </ul>
-     *
-     * <p>
-     * If propagation fails for an individual satellite,
-     * synchronization is not stopped. Existing derived values
-     * are preserved.
-     * </p>
+     * Existing altitude and velocity are preserved when
+     * propagation cannot produce valid values.
      */
     private void propagateAndSetDerivedValues(
             Satellite satellite) {
@@ -312,11 +402,30 @@ public class SatelliteSynchronizationServiceImpl
             return;
         }
 
+        Integer noradCatalogId =
+                satellite.getNoradCatalogId();
+
         try {
 
             /*
              * --------------------------------------------------
-             * Build normalized propagation input
+             * Validate propagation input
+             * --------------------------------------------------
+             */
+            if (!hasRequiredPropagationData(satellite)) {
+
+                log.warn(
+                        "Skipping propagation for NORAD {} because "
+                                + "required orbital data is incomplete.",
+                        noradCatalogId
+                );
+
+                return;
+            }
+
+            /*
+             * --------------------------------------------------
+             * Build propagation input
              * --------------------------------------------------
              */
             OrbitalPropagationInput input =
@@ -324,9 +433,19 @@ public class SatelliteSynchronizationServiceImpl
                             satellite
                     );
 
+            if (input == null) {
+
+                log.warn(
+                        "Could not build propagation input for NORAD {}.",
+                        noradCatalogId
+                );
+
+                return;
+            }
+
             /*
              * --------------------------------------------------
-             * Propagate using SGP4 / Orekit
+             * Propagate
              * --------------------------------------------------
              */
             PropagatedOrbitalState state =
@@ -335,71 +454,60 @@ public class SatelliteSynchronizationServiceImpl
                     );
 
             if (state == null) {
+
                 log.warn(
-                        "Propagation returned null for NORAD {}",
-                        satellite.getNoradCatalogId()
+                        "Propagation returned null for NORAD {}. "
+                                + "Existing altitude and velocity preserved.",
+                        noradCatalogId
                 );
+
                 return;
             }
 
             /*
              * --------------------------------------------------
-             * Calculate velocity magnitude
+             * Calculate derived values
              * --------------------------------------------------
-             *
-             * Velocity vector:
-             *
-             * V = (Vx, Vy, Vz)
-             *
-             * Magnitude:
-             *
-             * |V| = sqrt(Vx² + Vy² + Vz²)
-             *
-             * Unit: km/s
              */
             Double velocity =
                     calculateVelocityMagnitude(
                             state
                     );
 
-            /*
-             * --------------------------------------------------
-             * Calculate geocentric altitude
-             * --------------------------------------------------
-             *
-             * Position vector:
-             *
-             * R = (X, Y, Z)
-             *
-             * Distance from Earth's center:
-             *
-             * |R| = sqrt(X² + Y² + Z²)
-             *
-             * Altitude:
-             *
-             * altitude = |R| - Earth radius
-             *
-             * Unit: km
-             */
             Double altitude =
                     calculateAltitude(
                             state
                     );
 
             /*
-             * Store calculated values in Satellite entity.
+             * --------------------------------------------------
+             * IMPORTANT:
+             *
+             * Do not blindly write null.
+             *
+             * If only altitude is valid, update altitude.
+             * If only velocity is valid, update velocity.
+             * Existing values are preserved otherwise.
+             * --------------------------------------------------
              */
-            satellite.setVelocity(
-                    velocity
-            );
+            if (velocity != null) {
 
-            satellite.setAltitude(
-                    altitude
-            );
+                satellite.setVelocity(
+                        velocity
+                );
+            }
+
+            if (altitude != null) {
+
+                satellite.setAltitude(
+                        altitude
+                );
+            }
 
             log.debug(
-                    "Propagation successful for NORAD {}: altitude={} km, velocity={} km/s",
-                    satellite.getNoradCatalogId(),
+                    "Propagation completed for NORAD {}: "
+                            + "altitude={} km, velocity={} km/s",
+                    noradCatalogId,
                     altitude,
                     velocity
             );
@@ -407,33 +515,57 @@ public class SatelliteSynchronizationServiceImpl
         } catch (Exception exception) {
 
             /*
-             * Do not stop the complete synchronization because
-             * one satellite has invalid/incomplete propagation
-             * data.
-             *
-             * Existing altitude/velocity values are preserved.
+             * Propagation failure must not destroy an otherwise
+             * valid synchronized satellite record.
              */
             log.warn(
-                    "Could not propagate satellite NORAD {}. "
-                            + "Derived altitude/velocity were not updated.",
-                    satellite.getNoradCatalogId(),
+                    "Propagation failed for NORAD {}. "
+                            + "Existing altitude/velocity preserved.",
+                    noradCatalogId,
                     exception
             );
         }
     }
 
     /**
-     * Builds the normalized orbital propagation input
-     * from the synchronized Satellite entity.
+     * Checks whether the minimum orbital information
+     * required by the current propagation contract exists.
+     *
+     * The propagation implementation may require more fields;
+     * this check prevents obviously incomplete records from
+     * being sent unnecessarily.
+     */
+    private boolean hasRequiredPropagationData(
+            Satellite satellite) {
+
+        if (satellite == null) {
+            return false;
+        }
+
+        return satellite.getNoradCatalogId() != null
+                && satellite.getNoradCatalogId() > 0
+                && satellite.getEpoch() != null
+                && satellite.getMeanMotion() != null
+                && satellite.getEccentricity() != null
+                && satellite.getInclination() != null
+                && satellite.getRightAscensionOfAscendingNode() != null
+                && satellite.getArgumentOfPericenter() != null
+                && satellite.getMeanAnomaly() != null;
+    }
+
+    /**
+     * Builds the propagation input from the Satellite entity.
      */
     private OrbitalPropagationInput buildPropagationInput(
             Satellite satellite) {
 
+        if (satellite == null) {
+            return null;
+        }
+
         /*
-         * Propagation target is current UTC time.
-         *
-         * The existing OrbitGuard propagation contract
-         * treats LocalDateTime values as UTC.
+         * The OrbitGuard propagation contract currently
+         * treats LocalDateTime as UTC.
          */
         LocalDateTime targetTime =
                 LocalDateTime.now(ZoneOffset.UTC);
@@ -443,7 +575,8 @@ public class SatelliteSynchronizationServiceImpl
                 .noradCatalogId(
                         satellite.getNoradCatalogId()
                                 != null
-                                ? satellite.getNoradCatalogId().longValue()
+                                ? satellite.getNoradCatalogId()
+                                .longValue()
                                 : null
                 )
 
@@ -506,7 +639,8 @@ public class SatelliteSynchronizationServiceImpl
                 .revolutionAtEpoch(
                         satellite.getRevolutionAtEpoch()
                                 != null
-                                ? satellite.getRevolutionAtEpoch().longValue()
+                                ? satellite.getRevolutionAtEpoch()
+                                .longValue()
                                 : null
                 )
 
@@ -521,8 +655,7 @@ public class SatelliteSynchronizationServiceImpl
      * Calculates velocity magnitude from the propagated
      * velocity vector.
      *
-     * @param state propagated orbital state
-     * @return velocity magnitude in km/s
+     * Unit: km/s
      */
     private Double calculateVelocityMagnitude(
             PropagatedOrbitalState state) {
@@ -551,7 +684,9 @@ public class SatelliteSynchronizationServiceImpl
                                 + velocityZ * velocityZ
                 );
 
-        if (!Double.isFinite(velocity)) {
+        if (!Double.isFinite(velocity)
+                || velocity <= 0.0) {
+
             return null;
         }
 
@@ -562,8 +697,7 @@ public class SatelliteSynchronizationServiceImpl
      * Calculates geocentric altitude from the propagated
      * Earth-centered position.
      *
-     * @param state propagated orbital state
-     * @return altitude in kilometers
+     * Unit: km.
      */
     private Double calculateAltitude(
             PropagatedOrbitalState state) {
@@ -592,6 +726,12 @@ public class SatelliteSynchronizationServiceImpl
                                 + positionZ * positionZ
                 );
 
+        if (!Double.isFinite(distanceFromEarthCenter)
+                || distanceFromEarthCenter <= 0.0) {
+
+            return null;
+        }
+
         double altitude =
                 distanceFromEarthCenter
                         - EARTH_RADIUS_KM;
@@ -604,12 +744,13 @@ public class SatelliteSynchronizationServiceImpl
     }
 
     /**
-     * Validates the CelesTrak group before contacting
-     * the external service.
+     * Validates the CelesTrak group.
      */
-    private void validateGroup(String group) {
+    private void validateGroup(
+            String group) {
 
-        if (group == null || group.isBlank()) {
+        if (group == null
+                || group.isBlank()) {
 
             throw new BadRequestException(
                     "CelesTrak group must not be blank."

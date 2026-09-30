@@ -1,5 +1,6 @@
 package com.orbitguard.satellite.integration.celestrak.service.impl;
 
+import com.orbitguard.orbit.propagation.service.OrbitalPropagationService;
 import com.orbitguard.satellite.entity.Satellite;
 import com.orbitguard.satellite.integration.celestrak.dto.CelesTrakSatelliteResponse;
 import com.orbitguard.satellite.integration.celestrak.mapper.CelesTrakSatelliteSyncMapper;
@@ -35,6 +36,9 @@ class SatelliteSynchronizationServiceImplTest {
     private CelesTrakService celesTrakService;
 
     @Mock
+    private OrbitalPropagationService orbitalPropagationService;
+
+    @Mock
     private SatelliteRepository satelliteRepository;
 
     @Mock
@@ -44,6 +48,7 @@ class SatelliteSynchronizationServiceImplTest {
     private SatelliteSynchronizationServiceImpl synchronizationService;
 
     private CelesTrakSatelliteResponse response;
+
 
     @BeforeEach
     void setUp() {
@@ -416,7 +421,7 @@ class SatelliteSynchronizationServiceImplTest {
     }
 
     @Test
-    void synchronizeSatellites_shouldNotCallMapperForExistingSatellite() {
+    void synchronizeSatellites_shouldUpdateExistingSatelliteUsingMapper() {
 
         Satellite existingSatellite =
                 Satellite.builder()
@@ -432,12 +437,22 @@ class SatelliteSynchronizationServiceImplTest {
 
         synchronizationService.synchronizeSatellites("STATIONS");
 
+        verify(celesTrakService)
+                .fetchSatellitesByGroup("STATIONS");
+
         verify(satelliteRepository)
                 .findByNoradCatalogId(25544);
+
+        verify(syncMapper)
+                .updateSatellite(
+                        existingSatellite,
+                        response
+                );
 
         verify(satelliteRepository)
                 .save(existingSatellite);
 
-        verifyNoInteractions(syncMapper);
+        verify(syncMapper, never())
+                .toSatellite(any(CelesTrakSatelliteResponse.class));
     }
 }

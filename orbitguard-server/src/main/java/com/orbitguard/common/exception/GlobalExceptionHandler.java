@@ -149,6 +149,30 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Handle Illegal State Exceptions
+     *
+     * Used by integrations such as CelesTrak when the requested
+     * operation cannot currently be performed because of an
+     * external service state/update cycle.
+     */
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<ErrorResponse> handleIllegalStateException(
+            IllegalStateException ex) {
+
+        log.warn("Illegal state during request: {}", ex.getMessage());
+
+        ErrorResponse response = ErrorResponse.builder()
+                .success(false)
+                .message(ex.getMessage())
+                .status(HttpStatus.SERVICE_UNAVAILABLE.value())
+                .timestamp(LocalDateTime.now())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(response);
+    }
+
+    /**
      * Handle All Unexpected Exceptions
      */
     @ExceptionHandler(Exception.class)
