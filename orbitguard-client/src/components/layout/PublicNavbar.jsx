@@ -337,7 +337,7 @@ function PublicNavbar() {
           ================================================== */}
 
           <Link
-            to="/register"
+            to="/login"
             onClick={handleNavigation}
             className="group hidden items-center gap-2 rounded-full bg-gradient-to-r from-cyan-400 via-blue-500 to-violet-500 p-[1px] lg:flex"
           >

@@ -1,254 +1,390 @@
-import { useMemo } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import {
+  FiAlertCircle,
+  FiArrowLeft,
+  FiRefreshCw,
+} from "react-icons/fi";
+
+import api, { getApiErrorMessage } from "../../../services/api";
 
 import SatelliteDetailHero from "../components/SatelliteDetailHero";
-import SatelliteIdentity from "../components/SatelliteIdentity";
-import SatelliteOrbitalInformation from "../components/SatelliteOrbitalInformation";
-import SatelliteMissionInformation from "../components/SatelliteMissionInformation";
-import SatelliteOrbitalData from "../components/SatelliteOrbitalData";
-import SatelliteDetailActions from "../components/SatelliteDetailActions";
+import SatelliteInformationCard from "../components/SatelliteInformationCard";
+import SatelliteOrbitalView from "../components/SatelliteOrbitalView";
+import SatelliteOrbitalParameters from "../components/SatelliteOrbitalParameters";
+import SatelliteStatusCard from "../components/SatelliteStatusCard";
 
-/**
- * Satellite Detail Page
- *
- * Responsibility:
- * - Compose the complete satellite detail experience
- * - Read the satellite identifier from the route
- * - Provide the data contract required by child components
- * - Keep page-level layout/state separate from individual UI sections
- *
- * Backend integration will be added after the complete satellite
- * Overview + Detail UI has been finalized.
- *
- * Expected backend endpoint:
- *
- * GET /api/satellites/{satelliteId}
- *
- * Expected response:
- *
- * SatelliteResponse
- */
-const SatelliteDetailPage = () => {
-    const { satelliteId } = useParams();
 
-    /*
-     * UI development contract.
-     *
-     * This object represents the shape of SatelliteResponse
-     * already defined by our Spring Boot backend.
-     *
-     * IMPORTANT:
-     * This is only the page contract while we are building UI.
-     * It will NOT remain as hard-coded data when API integration begins.
-     */
-    const satellite = useMemo(
-        () => ({
-            id: satelliteId,
+/* ================================================================
+ * Loading Skeleton
+ * ================================================================ */
 
-            satelliteName: "",
-            satelliteCode: "",
-            operator: "",
+const SatelliteDetailSkeleton = () => {
+  return (
+    <div className="space-y-5 animate-pulse">
 
-            orbitType: null,
+      {/* Hero skeleton */}
+      <div className="h-[250px] rounded-2xl border border-slate-800/80 bg-slate-950/70" />
 
-            altitude: null,
-            velocity: null,
+      {/* Main cards */}
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
 
-            noradCatalogId: null,
+        <div className="h-[300px] rounded-2xl border border-slate-800/80 bg-slate-950/70 xl:col-span-4" />
 
-            launchDate: null,
+        <div className="h-[300px] rounded-2xl border border-slate-800/80 bg-slate-950/70 xl:col-span-4" />
 
-            missionStatus: null,
+        <div className="h-[300px] rounded-2xl border border-slate-800/80 bg-slate-950/70 xl:col-span-4" />
+      </div>
 
-            country: "",
-            purpose: "",
-            description: "",
-
-            active: null,
-
-            createdAt: null,
-            updatedAt: null,
-        }),
-        [satelliteId]
-    );
-
-    /*
-     * Orbital data is intentionally separated from SatelliteResponse.
-     *
-     * It will later come from:
-     *
-     * GET /api/satellites/{noradCatalogId}/orbital-data
-     *
-     * Backend DTO:
-     * CelesTrakOrbitalData
-     */
-    const orbitalData = useMemo(
-        () => null,
-        []
-    );
-
-    return (
-        <main className="relative min-h-screen overflow-hidden bg-[#020617] text-white">
-            {/* =========================================================
-                SATELLITE DETAIL BACKGROUND
-            ========================================================== */}
-
-            <div className="pointer-events-none absolute inset-0 -z-10">
-                <img
-                    src="/images/satellite/satellite-detail-bg.png"
-                    alt=""
-                    className="h-full w-full object-cover object-center"
-                />
-
-                {/* Main cinematic darkness */}
-                <div className="absolute inset-0 bg-[#020617]/76" />
-
-                {/* Top atmospheric fade */}
-                <div className="absolute inset-x-0 top-0 h-[440px] bg-gradient-to-b from-[#020617]/20 via-[#020617]/55 to-transparent" />
-
-                {/* Bottom fade */}
-                <div className="absolute inset-x-0 bottom-0 h-[420px] bg-gradient-to-t from-[#020617] via-[#020617]/80 to-transparent" />
-
-                {/* Center orbital glow */}
-                <div className="absolute left-1/2 top-[18%] h-[520px] w-[760px] -translate-x-1/2 rounded-full bg-cyan-400/[0.035] blur-[140px]" />
-            </div>
-
-            {/* =========================================================
-                CONTENT
-            ========================================================== */}
-
-            <div className="relative z-10">
-                {/* =====================================================
-                    BACK NAVIGATION
-                ====================================================== */}
-
-                <div className="mx-auto w-full max-w-[1600px] px-4 pt-24 sm:px-6 lg:px-8">
-                    <Link
-                        to="/satellites"
-                        className="
-                            group
-                            inline-flex
-                            items-center
-                            gap-2
-                            rounded-lg
-                            border
-                            border-white/10
-                            bg-slate-950/45
-                            px-3
-                            py-2
-                            font-['Inter']
-                            text-xs
-                            font-medium
-                            text-slate-400
-                            backdrop-blur-xl
-                            transition-all
-                            duration-300
-                            hover:border-cyan-400/30
-                            hover:bg-cyan-400/[0.06]
-                            hover:text-cyan-300
-                        "
-                    >
-                        <span
-                            aria-hidden="true"
-                            className="transition-transform duration-300 group-hover:-translate-x-1"
-                        >
-                            ←
-                        </span>
-
-                        Back to Satellite Explorer
-                    </Link>
-                </div>
-
-                {/* =====================================================
-                    SATELLITE HERO
-                ====================================================== */}
-
-                <section className="mx-auto w-full max-w-[1600px] px-4 pt-8 sm:px-6 lg:px-8">
-                    <SatelliteDetailHero
-                        satellite={satellite}
-                    />
-                </section>
-
-                {/* =====================================================
-                    MAIN SATELLITE INFORMATION
-                ====================================================== */}
-
-                <section
-                    aria-labelledby="satellite-information-heading"
-                    className="
-                        mx-auto
-                        w-full
-                        max-w-[1600px]
-                        px-4
-                        pb-20
-                        pt-10
-                        sm:px-6
-                        lg:px-8
-                    "
-                >
-                    <h2
-                        id="satellite-information-heading"
-                        className="sr-only"
-                    >
-                        Satellite Information
-                    </h2>
-
-                    <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
-                        {/* =================================================
-                            IDENTITY
-                        ================================================== */}
-
-                        <div className="xl:col-span-4">
-                            <SatelliteIdentity
-                                satellite={satellite}
-                            />
-                        </div>
-
-                        {/* =================================================
-                            ORBITAL INFORMATION
-                        ================================================== */}
-
-                        <div className="xl:col-span-8">
-                            <SatelliteOrbitalInformation
-                                satellite={satellite}
-                            />
-                        </div>
-
-                        {/* =================================================
-                            MISSION INFORMATION
-                        ================================================== */}
-
-                        <div className="xl:col-span-5">
-                            <SatelliteMissionInformation
-                                satellite={satellite}
-                            />
-                        </div>
-
-                        {/* =================================================
-                            CURRENT ORBITAL DATA
-                        ================================================== */}
-
-                        <div className="xl:col-span-7">
-                            <SatelliteOrbitalData
-                                satellite={satellite}
-                                orbitalData={orbitalData}
-                            />
-                        </div>
-                    </div>
-
-                    {/* =====================================================
-                        ACTIONS
-                    ====================================================== */}
-
-                    <div className="mt-6">
-                        <SatelliteDetailActions
-                            satellite={satellite}
-                        />
-                    </div>
-                </section>
-            </div>
-        </main>
-    );
+      {/* Orbital parameters */}
+      <div className="h-[250px] rounded-2xl border border-slate-800/80 bg-slate-950/70" />
+    </div>
+  );
 };
+
+
+/* ================================================================
+ * Error State
+ * ================================================================ */
+
+const SatelliteDetailError = ({
+  message,
+  onRetry,
+  onBack,
+}) => {
+  return (
+    <div className="flex min-h-[65vh] items-center justify-center px-4">
+
+      <div className="w-full max-w-lg rounded-2xl border border-red-500/20 bg-[#07111f]/90 p-6 text-center shadow-2xl shadow-black/30">
+
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-red-500/30 bg-red-500/10">
+          <FiAlertCircle className="text-2xl text-red-400" />
+        </div>
+
+        <h2 className="font-['Orbitron'] text-lg font-semibold tracking-wide text-white">
+          SATELLITE DATA UNAVAILABLE
+        </h2>
+
+        <p className="mt-3 text-sm leading-6 text-slate-400">
+          {message || "Unable to retrieve satellite information."}
+        </p>
+
+        <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
+
+          <button
+            type="button"
+            onClick={onRetry}
+            className="
+              inline-flex items-center justify-center gap-2
+              rounded-lg border border-cyan-400/30
+              bg-cyan-400/10
+              px-4 py-2.5
+              text-sm font-medium text-cyan-300
+              transition
+              hover:border-cyan-300/50
+              hover:bg-cyan-400/15
+            "
+          >
+            <FiRefreshCw />
+            Retry
+          </button>
+
+          <button
+            type="button"
+            onClick={onBack}
+            className="
+              inline-flex items-center justify-center gap-2
+              rounded-lg border border-slate-700
+              bg-slate-900/70
+              px-4 py-2.5
+              text-sm font-medium text-slate-300
+              transition
+              hover:border-slate-600
+              hover:bg-slate-800
+            "
+          >
+            <FiArrowLeft />
+            Back to Satellites
+          </button>
+
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+/* ================================================================
+ * Satellite Detail Page
+ * ================================================================ */
+
+const SatelliteDetailPage = () => {
+
+  const { satelliteId } = useParams();
+
+  const navigate = useNavigate();
+
+  const [satellite, setSatellite] = useState(null);
+
+  const [loading, setLoading] = useState(true);
+
+  const [error, setError] = useState("");
+
+
+  /* ==============================================================
+   * Fetch Satellite
+   * ============================================================== */
+
+  const fetchSatellite = useCallback(async () => {
+
+    if (!satelliteId) {
+      setError("Satellite ID is missing.");
+      setLoading(false);
+      return;
+    }
+
+    try {
+
+      setLoading(true);
+      setError("");
+
+      /*
+       * Backend endpoint:
+       *
+       * GET /api/satellites/{satelliteId}
+       *
+       * Controller returns:
+       *
+       * ApiResponse<SatelliteResponse>
+       */
+
+      const response = await api.get(
+        `/api/satellites/${encodeURIComponent(satelliteId)}`
+      );
+
+      const responseBody = response?.data;
+
+      /*
+       * Expected backend structure is approximately:
+       *
+       * {
+       *   success: true,
+       *   message: "...",
+       *   data: {
+       *      id: "...",
+       *      satelliteName: "...",
+       *      satelliteCode: "...",
+       *      noradCatalogId: 25544,
+       *      ...
+       *   }
+       * }
+       *
+       * We only use the actual SatelliteResponse object.
+       */
+
+      const satelliteData =
+        responseBody?.data ??
+        responseBody?.result ??
+        null;
+
+      if (!satelliteData) {
+        throw new Error(
+          "Satellite data was not returned by the backend."
+        );
+      }
+
+      setSatellite(satelliteData);
+
+    } catch (requestError) {
+
+      console.error(
+        "[SatelliteDetailPage] Failed to load satellite:",
+        requestError
+      );
+
+      setSatellite(null);
+
+      setError(
+        getApiErrorMessage(
+          requestError,
+          "Unable to load satellite details. Please try again."
+        )
+      );
+
+    } finally {
+
+      setLoading(false);
+    }
+
+  }, [satelliteId]);
+
+
+  /* ==============================================================
+   * Initial / ID-change fetch
+   * ============================================================== */
+
+  useEffect(() => {
+    fetchSatellite();
+  }, [fetchSatellite]);
+
+
+  /* ==============================================================
+   * Navigation
+   * ============================================================== */
+
+  const handleBack = () => {
+    navigate("/satellites");
+  };
+
+
+  /* ==============================================================
+   * Loading
+   * ============================================================== */
+
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-[#020914] px-3 py-5 text-slate-100 sm:px-5 lg:px-6">
+        <SatelliteDetailSkeleton />
+      </main>
+    );
+  }
+
+
+  /* ==============================================================
+   * Error
+   * ============================================================== */
+
+  if (error || !satellite) {
+    return (
+      <main className="min-h-screen bg-[#020914] text-slate-100">
+
+        <SatelliteDetailError
+          message={error}
+          onRetry={fetchSatellite}
+          onBack={handleBack}
+        />
+
+      </main>
+    );
+  }
+
+
+  /* ==============================================================
+   * Page
+   * ============================================================== */
+
+  return (
+    <main className="min-h-screen bg-[#020914] text-slate-100">
+
+      <div
+        className="
+          mx-auto
+          w-full
+          max-w-[1800px]
+          px-3
+          pb-8
+          pt-4
+          sm:px-5
+          md:px-6
+          lg:px-8
+        "
+      >
+
+        {/* ======================================================
+         * HERO
+         * ====================================================== */}
+
+        <SatelliteDetailHero
+          satellite={satellite}
+          onBack={handleBack}
+        />
+
+
+        {/* ======================================================
+         * STATUS
+         *
+         * Small operational summary.
+         * ====================================================== */}
+
+        <div className="mt-4">
+          <SatelliteStatusCard
+            satellite={satellite}
+          />
+        </div>
+
+
+        {/* ======================================================
+         * INFORMATION + ORBITAL VIEW
+         *
+         * Desktop:
+         *
+         * Information | Status | Orbital View
+         *
+         * Mobile:
+         *
+         * Information
+         * Status
+         * Orbital View
+         * ====================================================== */}
+
+        <section
+          className="
+            mt-5
+            grid
+            grid-cols-1
+            gap-5
+            xl:grid-cols-12
+          "
+        >
+
+          {/* Satellite information */}
+
+          <div className="xl:col-span-4">
+            <SatelliteInformationCard
+              satellite={satellite}
+            />
+          </div>
+
+
+          {/* Mission / status information */}
+
+          <div className="xl:col-span-4">
+            <SatelliteStatusCard
+              satellite={satellite}
+              detailed
+            />
+          </div>
+
+
+          {/* Orbital visualization */}
+
+          <div className="min-h-[320px] xl:col-span-4">
+            <SatelliteOrbitalView
+              satellite={satellite}
+            />
+          </div>
+
+        </section>
+
+
+        {/* ======================================================
+         * ORBITAL PARAMETERS
+         *
+         * TLE / SGP4 values returned by SatelliteResponse.
+         * ====================================================== */}
+
+        <section className="mt-5">
+
+          <SatelliteOrbitalParameters
+            satellite={satellite}
+          />
+
+        </section>
+
+      </div>
+    </main>
+  );
+};
+
 
 export default SatelliteDetailPage;

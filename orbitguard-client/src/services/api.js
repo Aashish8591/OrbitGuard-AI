@@ -5,31 +5,15 @@ import axios from "axios";
  * OrbitGuard AI - Shared API Client
  * ================================================================
  *
- * Central Axios client used by all frontend API services.
+ * Central Axios client for all frontend API services.
  *
  * Responsibilities:
- * - Configure backend base URL
- * - Attach JWT authentication
- * - Configure standard HTTP headers
- * - Provide one shared HTTP client
- * - Preserve backend response/error objects
- *
- * This file contains NO module-specific endpoints.
+ * - Configure backend URL
+ * - Attach JWT
+ * - Configure common headers
+ * - Provide shared Axios instance
+ * - Extract backend error messages
  * ================================================================
- */
-
-
-/**
- * ----------------------------------------------------------------
- * API BASE URL
- * ----------------------------------------------------------------
- *
- * Expected:
- *
- * VITE_API_BASE_URL=http://localhost:8080
- *
- * Do NOT include /api here.
- * ----------------------------------------------------------------
  */
 
 const API_BASE_URL =
@@ -37,20 +21,15 @@ const API_BASE_URL =
     ?.trim()
     .replace(/\/+$/, "");
 
-
 if (!API_BASE_URL && import.meta.env.DEV) {
   console.warn(
-    "[OrbitGuard API] VITE_API_BASE_URL is not configured.",
+    "[OrbitGuard API] VITE_API_BASE_URL is not configured."
   );
 }
 
-
 /**
- * ----------------------------------------------------------------
- * SHARED AXIOS INSTANCE
- * ----------------------------------------------------------------
+ * Shared Axios instance
  */
-
 const api = axios.create({
   baseURL: API_BASE_URL,
 
@@ -59,24 +38,25 @@ const api = axios.create({
     "Content-Type": "application/json",
   },
 
-  timeout: 95000,
+  timeout: 195000,
 });
 
-
 /**
- * ----------------------------------------------------------------
+ * ================================================================
  * REQUEST INTERCEPTOR
- * ----------------------------------------------------------------
+ * ================================================================
  *
- * Reads the existing OrbitGuard authentication object:
+ * Reads:
  *
  * {
  *   token: "...",
  *   tokenType: "Bearer"
  * }
  *
- * No redirect / logout / refresh logic belongs here yet.
- * ----------------------------------------------------------------
+ * from localStorage and attaches:
+ *
+ * Authorization: Bearer <token>
+ * ================================================================
  */
 
 api.interceptors.request.use(
@@ -89,8 +69,7 @@ api.interceptors.request.use(
         return config;
       }
 
-      const authData =
-        JSON.parse(storedAuth);
+      const authData = JSON.parse(storedAuth);
 
       const token =
         typeof authData?.token === "string"
@@ -107,8 +86,7 @@ api.interceptors.request.use(
           ? authData.tokenType.trim()
           : "Bearer";
 
-      config.headers =
-        config.headers ?? {};
+      config.headers = config.headers ?? {};
 
       config.headers.Authorization =
         `${tokenType} ${token}`;
@@ -117,62 +95,81 @@ api.interceptors.request.use(
     } catch {
       if (import.meta.env.DEV) {
         console.warn(
-          "[OrbitGuard API] Invalid stored authentication data.",
+          "[OrbitGuard API] Invalid stored authentication data."
         );
       }
 
       return config;
     }
   },
-  (error) => Promise.reject(error),
+  (error) => Promise.reject(error)
 );
 
-
 /**
- * ----------------------------------------------------------------
+ * ================================================================
  * RESPONSE INTERCEPTOR
- * ----------------------------------------------------------------
+ * ================================================================
  *
- * Do not transform successful responses.
- *
+ * Do not modify successful responses.
  * Do not automatically logout or redirect.
- * ----------------------------------------------------------------
+ * ================================================================
  */
 
 api.interceptors.response.use(
   (response) => response,
-  (error) => Promise.reject(error),
+  (error) => Promise.reject(error)
 );
-
 
 /**
  * ================================================================
- * BACKEND ERROR MESSAGE HELPER
+ * ERROR MESSAGE HELPER
  * ================================================================
  *
- * Supports the common OrbitGuard ApiResponse structure:
+ * Extracts the actual message returned by the backend.
+ *
+ * Supported responses:
  *
  * {
  *   success: false,
- *   message: "...",
- *   data: null
+ *   message: "CelesTrak ACTIVE satellite data has not updated yet..."
  * }
  *
- * It also supports common Axios/backend error structures.
+ * OR
+ *
+ * {
+ *   error: "Some error"
+ * }
+ *
+ * OR
+ *
+ * {
+ *   errors: [...]
+ * }
+ *
+ * OR plain-text response.
  * ================================================================
  */
 
 export const getApiErrorMessage = (
   error,
-  fallback = "Something went wrong. Please try again.",
+  fallback = "Something went wrong. Please try again."
 ) => {
-  const responseData =
-    error?.response?.data;
+  const responseData = error?.response?.data;
 
   /**
-   * Standard OrbitGuard ApiResponse:
+   * Plain-text backend response
+   */
+  if (
+    typeof responseData === "string" &&
+    responseData.trim()
+  ) {
+    return responseData.trim();
+  }
+
+  /**
+   * Backend message
    *
-   * response.data.message
+   * This is the important one for OrbitGuard.
    */
   if (
     typeof responseData?.message === "string" &&
@@ -182,9 +179,7 @@ export const getApiErrorMessage = (
   }
 
   /**
-   * Some backend errors may expose:
-   *
-   * response.data.error
+   * Backend error field
    */
   if (
     typeof responseData?.error === "string" &&
@@ -194,16 +189,13 @@ export const getApiErrorMessage = (
   }
 
   /**
-   * Validation errors sometimes expose:
-   *
-   * response.data.errors
+   * Validation errors
    */
   if (
     Array.isArray(responseData?.errors) &&
     responseData.errors.length > 0
   ) {
-    const firstError =
-      responseData.errors[0];
+    const firstError = responseData.errors[0];
 
     if (
       typeof firstError === "string" &&
@@ -221,7 +213,17 @@ export const getApiErrorMessage = (
   }
 
   /**
-   * Axios-generated error.
+   * Backend details
+   */
+  if (
+    typeof responseData?.details === "string" &&
+    responseData.details.trim()
+  ) {
+    return responseData.details.trim();
+  }
+
+  /**
+   * Axios error
    */
   if (
     typeof error?.message === "string" &&
@@ -230,8 +232,10 @@ export const getApiErrorMessage = (
     return error.message.trim();
   }
 
+  /**
+   * Final fallback
+   */
   return fallback;
 };
-
 
 export default api;

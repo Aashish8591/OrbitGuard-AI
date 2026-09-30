@@ -6,21 +6,13 @@ import { FaArrowLeft, FaSatellite } from "react-icons/fa";
  *
  * Presentation-only component for the Satellite Registry.
  *
- * Responsibilities:
- * - Display satellite module identity
- * - Display breadcrumb navigation
- * - Display page title and description
- * - Display satellite registry telemetry
- * - Display satellite-themed visual background
+ * Backend/API responsibility:
+ * - None.
+ * - SatelliteOverviewPage is responsible for obtaining backend data.
  *
- * This component intentionally does NOT:
- * - Call APIs
- * - Import satelliteService
- * - Manage backend state
- * - Perform data fetching
- * - Contain satellite business logic
- *
- * Backend data is provided by SatelliteOverviewPage through props.
+ * Expected props:
+ * - totalSatellites: total satellites available from backend
+ * - activeSatellites: active satellites available from backend
  */
 const SatelliteHero = ({
   totalSatellites = 0,
@@ -44,7 +36,7 @@ const SatelliteHero = ({
     >
       {/* ============================================================
           BACKGROUND IMAGE
-          ============================================================ */}
+      ============================================================ */}
 
       <div
         className="
@@ -64,7 +56,7 @@ const SatelliteHero = ({
 
       {/* ============================================================
           DARK SPACE OVERLAY
-          ============================================================ */}
+      ============================================================ */}
 
       <div
         className="
@@ -79,7 +71,7 @@ const SatelliteHero = ({
         aria-hidden="true"
       />
 
-      {/* Bottom fade into the page */}
+      {/* Bottom fade */}
 
       <div
         className="
@@ -95,7 +87,7 @@ const SatelliteHero = ({
         aria-hidden="true"
       />
 
-      {/* Subtle top atmospheric glow */}
+      {/* Atmospheric glow */}
 
       <div
         className="
@@ -115,13 +107,12 @@ const SatelliteHero = ({
 
       {/* ============================================================
           CONTENT
-          ============================================================ */}
+      ============================================================ */}
 
       <div
         className="
           relative
           flex
-          h-full
           min-h-[190px]
           flex-col
           justify-between
@@ -136,7 +127,7 @@ const SatelliteHero = ({
       >
         {/* ============================================================
             BREADCRUMB
-            ============================================================ */}
+        ============================================================ */}
 
         <nav
           aria-label="Breadcrumb"
@@ -174,7 +165,12 @@ const SatelliteHero = ({
             />
           </Link>
 
-          <span className="text-slate-700">›</span>
+          <span
+            className="text-slate-700"
+            aria-hidden="true"
+          >
+            ›
+          </span>
 
           <span className="text-slate-300">
             Satellites
@@ -183,14 +179,14 @@ const SatelliteHero = ({
 
         {/* ============================================================
             MAIN HERO CONTENT
-            ============================================================ */}
+        ============================================================ */}
 
         <div className="flex items-end justify-between gap-6">
-          {/* Left content */}
+          {/* LEFT CONTENT */}
 
           <div className="max-w-2xl">
             <div className="flex items-start gap-3 sm:gap-4">
-              {/* Satellite module icon */}
+              {/* Satellite icon */}
 
               <div
                 className="
@@ -247,15 +243,14 @@ const SatelliteHero = ({
                     sm:text-sm
                   "
                 >
-                  Monitor and manage tracked orbital assets across
-                  Earth&apos;s orbits
+                  Monitor and manage tracked orbital assets
+                  across Earth&apos;s orbits
                 </p>
 
                 {/* ====================================================
                     LIVE REGISTRY TELEMETRY
 
-                    Values come from the Spring Boot backend through
-                    SatelliteOverviewPage.
+                    These values are received from the parent page.
                 ==================================================== */}
 
                 <div
@@ -275,6 +270,8 @@ const SatelliteHero = ({
                   "
                   aria-label="Satellite registry status"
                 >
+                  {/* Total tracked */}
+
                   <span className="inline-flex items-center gap-1.5">
                     <span
                       className="
@@ -287,12 +284,19 @@ const SatelliteHero = ({
                       aria-hidden="true"
                     />
 
-                    {totalSatellites} TRACKED
+                    <span>
+                      {totalSatellites} TRACKED
+                    </span>
                   </span>
 
-                  <span className="text-slate-700">
+                  <span
+                    className="text-slate-700"
+                    aria-hidden="true"
+                  >
                     /
                   </span>
+
+                  {/* Active satellites */}
 
                   <span className="text-cyan-300/80">
                     {activeSatellites} ACTIVE
@@ -304,7 +308,7 @@ const SatelliteHero = ({
 
           {/* ========================================================
               RIGHT-SIDE ORBITGUARD IDENTITY
-              ======================================================== */}
+          ======================================================== */}
 
           <div
             className="
@@ -331,7 +335,7 @@ const SatelliteHero = ({
 
       {/* ============================================================
           BOTTOM ACCENT LINE
-          ============================================================ */}
+      ============================================================ */}
 
       <div
         className="
@@ -352,7 +356,7 @@ const SatelliteHero = ({
 };
 
 /**
- * Right-side hero identity line.
+ * Right-side OrbitGuard identity line.
  */
 const HeroIdentityLine = ({ text }) => {
   return (
@@ -377,6 +381,7 @@ const HeroIdentityLine = ({ text }) => {
           bg-cyan-400
           shadow-[0_0_8px_rgba(34,211,238,0.8)]
         "
+        aria-hidden="true"
       />
 
       <span>{text}</span>

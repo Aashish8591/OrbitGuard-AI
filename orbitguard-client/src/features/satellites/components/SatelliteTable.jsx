@@ -1,9 +1,9 @@
 import PropTypes from "prop-types";
+import { useNavigate } from "react-router-dom";
 
 import {
   FaArrowUpRightFromSquare,
   FaCircle,
-  FaEllipsisVertical,
   FaSatellite,
 } from "react-icons/fa6";
 
@@ -12,52 +12,24 @@ import {
  * OrbitGuard AI - Satellite Table
  * ================================================================
  *
- * Presentation component for the Satellite Registry.
+ * Responsibilities:
+ * - Display satellite registry data
+ * - Navigate to satellite detail page
  *
- * Visible table columns:
- * - Satellite
- * - NORAD ID
- * - Object ID
- * - Mean Motion
- * - Inclination
- * - Altitude
- * - Velocity
- * - Status
- * - Active
- * - Epoch
- * - Actions
+ * Navigation:
+ * - View Satellite -> /satellites/:satelliteId
  *
- * Hidden ONLY from UI:
- * - Eccentricity
- * - Classification
+ * Edit action:
+ * - Removed intentionally
  *
- * IMPORTANT:
- * These fields are NOT removed from:
- * - Backend
- * - MongoDB
- * - API response
- * - Entity
- * - PropTypes
+ * This component does NOT:
+ * - call Axios
+ * - call satelliteService
+ * - fetch backend data
+ * - perform filtering
+ * - calculate orbital values
  *
- * FONT SYSTEM:
- * - Orbitron: headings, labels, system identifiers
- * - Inter: readable text and numeric telemetry
- * - tabular-nums: consistent numeric alignment
- *
- * SATELLITE IMAGES:
- * - Images are loaded from /public/images/satellite/
- * - Seven satellite images are available
- * - Image selection is deterministic
- * - Same satellite keeps the same image after re-render
- *
- * This component:
- * - does NOT call Axios
- * - does NOT call satelliteService
- * - does NOT fetch backend data
- * - does NOT perform backend filtering
- * - does NOT calculate orbital business values
- *
- * Parent/container owns data fetching and state.
+ * Parent/container owns satellite data.
  * ================================================================
  */
 
@@ -65,20 +37,6 @@ import {
 /* ================================================================
    SATELLITE IMAGE CONFIGURATION
 ================================================================ */
-
-/**
- * Store these files inside:
- *
- * public/images/satellite/
- *
- * satellite-01.png
- * satellite-02.png
- * satellite-03.png
- * satellite-04.png
- * satellite-05.png
- * satellite-06.png
- * satellite-07.png
- */
 
 const SATELLITE_IMAGES = [
   "/images/satellite/satellite-01.png",
@@ -91,17 +49,10 @@ const SATELLITE_IMAGES = [
 ];
 
 
-/**
- * Returns a stable image for a satellite.
- *
- * We intentionally DO NOT use Math.random().
- *
- * Math.random() would cause the image to potentially change
- * whenever the component re-renders.
- *
- * Instead, the satellite ID / NORAD ID is converted into
- * a deterministic index.
- */
+/* ================================================================
+   SATELLITE IMAGE
+================================================================ */
+
 const getSatelliteImage = (satellite) => {
   const identifier =
     satellite?.id ??
@@ -114,7 +65,11 @@ const getSatelliteImage = (satellite) => {
 
   let hash = 0;
 
-  for (let index = 0; index < identifierString.length; index += 1) {
+  for (
+    let index = 0;
+    index < identifierString.length;
+    index += 1
+  ) {
     hash =
       (hash * 31 +
         identifierString.charCodeAt(index)) %
@@ -261,9 +216,6 @@ ActiveBadge.propTypes = {
    FORMATTERS
 ================================================================ */
 
-/**
- * Format backend LocalDateTime / date values.
- */
 const formatDateTime = (date) => {
   if (!date) {
     return "—";
@@ -286,12 +238,6 @@ const formatDateTime = (date) => {
 };
 
 
-/**
- * Format numeric backend values.
- *
- * Inter is used for numbers because it provides
- * cleaner and more readable telemetry digits.
- */
 const formatNumber = (value, decimals = 1) => {
   if (
     value === null ||
@@ -314,9 +260,6 @@ const formatNumber = (value, decimals = 1) => {
 };
 
 
-/**
- * Format orbital angle.
- */
 const formatAngle = (value, decimals = 2) => {
   if (
     value === null ||
@@ -396,9 +339,61 @@ TableHeader.propTypes = {
 const SatelliteTable = ({
   satellites = [],
   isLoading = false,
-  onViewSatellite,
-  onEditSatellite,
 }) => {
+  const navigate = useNavigate();
+
+
+  /* ==============================================================
+     VIEW SATELLITE
+  ============================================================== */
+
+  const handleViewSatellite = (satellite) => {
+    if (!satellite) {
+      console.warn(
+        "Cannot open satellite detail: satellite object is missing."
+      );
+
+      return;
+    }
+
+    /*
+     * IMPORTANT:
+     * The current route uses the backend satellite `id`.
+     *
+     * Do not silently fall back to NORAD here because the
+     * detail endpoint must use the identifier expected by
+     * SatelliteDetailPage / satelliteService.
+     */
+    const satelliteId = satellite.id;
+
+    if (
+      satelliteId === null ||
+      satelliteId === undefined ||
+      satelliteId === ""
+    ) {
+      console.warn(
+        "Cannot open satellite detail: satellite.id is missing.",
+        satellite
+      );
+
+      return;
+    }
+
+    const targetPath =
+      `/satellites/${encodeURIComponent(
+        String(satelliteId)
+      )}`;
+
+    console.log(
+      "Opening satellite detail:",
+      targetPath,
+      satellite
+    );
+
+    navigate(targetPath);
+  };
+
+
   return (
     <section
       className="
@@ -484,9 +479,6 @@ const SatelliteTable = ({
 
         </div>
 
-
-        {/* RECORD COUNT */}
-
         <div
           className="
             font-['Inter']
@@ -505,7 +497,7 @@ const SatelliteTable = ({
 
 
       {/* ==========================================================
-          TABLE CONTAINER
+          TABLE
       =========================================================== */}
 
       <div className="overflow-x-auto">
@@ -518,21 +510,13 @@ const SatelliteTable = ({
           "
         >
 
-          {/* ========================================================
-              TABLE HEAD
-          ========================================================= */}
-
           <thead>
-            <tr className="bg-slate-900/35">
 
-              {/* SATELLITE */}
+            <tr className="bg-slate-900/35">
 
               <TableHeader>
                 SATELLITE
               </TableHeader>
-
-
-              {/* NORAD */}
 
               <TableHeader>
                 NORAD
@@ -540,15 +524,9 @@ const SatelliteTable = ({
                 ID
               </TableHeader>
 
-
-              {/* OBJECT ID */}
-
               <TableHeader>
                 OBJECT ID
               </TableHeader>
-
-
-              {/* MEAN MOTION */}
 
               <TableHeader align="right">
                 MEAN
@@ -556,60 +534,29 @@ const SatelliteTable = ({
                 MOTION
               </TableHeader>
 
-
-              {/* ==================================================
-                  ECCENTRICITY INTENTIONALLY HIDDEN
-              =================================================== */}
-
-
-              {/* ==================================================
-                  CLASSIFICATION INTENTIONALLY HIDDEN
-              =================================================== */}
-
-
-              {/* INCLINATION */}
-
               <TableHeader align="right">
                 INCLINATION
               </TableHeader>
-
-
-              {/* ALTITUDE */}
 
               <TableHeader align="right">
                 ALTITUDE
               </TableHeader>
 
-
-              {/* VELOCITY */}
-
               <TableHeader align="right">
                 VELOCITY
               </TableHeader>
-
-
-              {/* STATUS */}
 
               <TableHeader>
                 STATUS
               </TableHeader>
 
-
-              {/* ACTIVE */}
-
               <TableHeader>
                 ACTIVE
               </TableHeader>
 
-
-              {/* EPOCH */}
-
               <TableHeader>
                 EPOCH
               </TableHeader>
-
-
-              {/* ACTIONS */}
 
               <TableHeader
                 align="right"
@@ -619,12 +566,9 @@ const SatelliteTable = ({
               </TableHeader>
 
             </tr>
+
           </thead>
 
-
-          {/* ========================================================
-              TABLE BODY
-          ========================================================= */}
 
           <tbody>
 
@@ -649,10 +593,7 @@ const SatelliteTable = ({
                       (_, cellIndex) => (
                         <td
                           key={`skeleton-cell-${cellIndex}`}
-                          className="
-                            px-4
-                            py-4
-                          "
+                          className="px-4 py-4"
                         >
                           <div
                             className="
@@ -681,11 +622,7 @@ const SatelliteTable = ({
 
                   <td
                     colSpan={11}
-                    className="
-                      px-6
-                      py-20
-                      text-center
-                    "
+                    className="px-6 py-20 text-center"
                   >
 
                     <div
@@ -757,7 +694,7 @@ const SatelliteTable = ({
             ======================================================= */}
 
             {!isLoading &&
-              satellites.map((satellite) => {
+              satellites.map((satellite, index) => {
 
                 const satelliteName =
                   satellite.satelliteName ??
@@ -766,9 +703,19 @@ const SatelliteTable = ({
                 const satelliteImage =
                   getSatelliteImage(satellite);
 
+                /*
+                 * Prefer backend id for React key.
+                 * Fall back only for rendering safety.
+                 */
+                const rowKey =
+                  satellite.id ??
+                  satellite.noradCatalogId ??
+                  satellite.satelliteCode ??
+                  `satellite-${index}`;
+
                 return (
                   <tr
-                    key={satellite.id}
+                    key={rowKey}
                     className="
                       group
                       border-b
@@ -788,7 +735,9 @@ const SatelliteTable = ({
                       <button
                         type="button"
                         onClick={() =>
-                          onViewSatellite?.(satellite)
+                          handleViewSatellite(
+                            satellite
+                          )
                         }
                         className="
                           flex
@@ -799,8 +748,6 @@ const SatelliteTable = ({
                           outline-none
                         "
                       >
-
-                        {/* SATELLITE IMAGE */}
 
                         <div
                           className="
@@ -840,12 +787,7 @@ const SatelliteTable = ({
 
                         </div>
 
-
-                        {/* SATELLITE INFORMATION */}
-
                         <div className="min-w-0">
-
-                          {/* SATELLITE NAME */}
 
                           <p
                             className="
@@ -860,9 +802,6 @@ const SatelliteTable = ({
                           >
                             {satelliteName}
                           </p>
-
-
-                          {/* SATELLITE CODE */}
 
                           <p
                             className="
@@ -885,12 +824,9 @@ const SatelliteTable = ({
                     </td>
 
 
-                    {/* ==================================================
-                        NORAD ID
-                    =================================================== */}
+                    {/* NORAD */}
 
                     <td className="px-4 py-4">
-
                       <span
                         className="
                           whitespace-nowrap
@@ -898,22 +834,17 @@ const SatelliteTable = ({
                           tabular-nums
                           text-[11px]
                           font-medium
-                          tracking-[0.02em]
                           text-slate-300
                         "
                       >
                         {satellite.noradCatalogId ?? "—"}
                       </span>
-
                     </td>
 
 
-                    {/* ==================================================
-                        OBJECT ID
-                    =================================================== */}
+                    {/* OBJECT ID */}
 
                     <td className="px-4 py-4">
-
                       <span
                         className="
                           whitespace-nowrap
@@ -921,22 +852,17 @@ const SatelliteTable = ({
                           tabular-nums
                           text-[10px]
                           font-medium
-                          tracking-[0.01em]
                           text-slate-400
                         "
                       >
                         {satellite.objectId ?? "—"}
                       </span>
-
                     </td>
 
 
-                    {/* ==================================================
-                        MEAN MOTION
-                    =================================================== */}
+                    {/* MEAN MOTION */}
 
                     <td className="px-4 py-4 text-right">
-
                       <div className="whitespace-nowrap">
 
                         <span
@@ -966,26 +892,12 @@ const SatelliteTable = ({
                         </span>
 
                       </div>
-
                     </td>
 
 
-                    {/* ==================================================
-                        ECCENTRICITY REMOVED FROM UI
-                    =================================================== */}
-
-
-                    {/* ==================================================
-                        CLASSIFICATION REMOVED FROM UI
-                    =================================================== */}
-
-
-                    {/* ==================================================
-                        INCLINATION
-                    =================================================== */}
+                    {/* INCLINATION */}
 
                     <td className="px-4 py-4 text-right">
-
                       <div className="whitespace-nowrap">
 
                         <span
@@ -1015,16 +927,12 @@ const SatelliteTable = ({
                         </span>
 
                       </div>
-
                     </td>
 
 
-                    {/* ==================================================
-                        ALTITUDE
-                    =================================================== */}
+                    {/* ALTITUDE */}
 
                     <td className="px-4 py-4 text-right">
-
                       <div className="whitespace-nowrap">
 
                         <span
@@ -1054,16 +962,12 @@ const SatelliteTable = ({
                         </span>
 
                       </div>
-
                     </td>
 
 
-                    {/* ==================================================
-                        VELOCITY
-                    =================================================== */}
+                    {/* VELOCITY */}
 
                     <td className="px-4 py-4 text-right">
-
                       <div className="whitespace-nowrap">
 
                         <span
@@ -1093,44 +997,32 @@ const SatelliteTable = ({
                         </span>
 
                       </div>
-
                     </td>
 
 
-                    {/* ==================================================
-                        MISSION STATUS
-                    =================================================== */}
+                    {/* STATUS */}
 
                     <td className="px-4 py-4">
-
                       <MissionStatusBadge
                         status={
                           satellite.missionStatus
                         }
                       />
-
                     </td>
 
 
-                    {/* ==================================================
-                        ACTIVE
-                    =================================================== */}
+                    {/* ACTIVE */}
 
                     <td className="px-4 py-4">
-
                       <ActiveBadge
                         active={satellite.active}
                       />
-
                     </td>
 
 
-                    {/* ==================================================
-                        EPOCH
-                    =================================================== */}
+                    {/* EPOCH */}
 
                     <td className="px-4 py-4">
-
                       <span
                         className="
                           whitespace-nowrap
@@ -1144,12 +1036,11 @@ const SatelliteTable = ({
                           satellite.epoch
                         )}
                       </span>
-
                     </td>
 
 
                     {/* ==================================================
-                        ACTIONS
+                        ACTION
                     =================================================== */}
 
                     <td
@@ -1167,20 +1058,12 @@ const SatelliteTable = ({
                       "
                     >
 
-                      <div
-                        className="
-                          flex
-                          justify-end
-                          gap-1
-                        "
-                      >
-
-                        {/* VIEW */}
+                      <div className="flex justify-end">
 
                         <button
                           type="button"
                           onClick={() =>
-                            onViewSatellite?.(
+                            handleViewSatellite(
                               satellite
                             )
                           }
@@ -1208,44 +1091,6 @@ const SatelliteTable = ({
                         >
                           <FaArrowUpRightFromSquare
                             className="text-[10px]"
-                            aria-hidden="true"
-                          />
-                        </button>
-
-
-                        {/* EDIT / MORE */}
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onEditSatellite?.(
-                              satellite
-                            )
-                          }
-                          title="Edit satellite"
-                          aria-label={`Edit ${satelliteName}`}
-                          className="
-                            flex
-                            h-8
-                            w-8
-                            items-center
-                            justify-center
-                            rounded-md
-                            border
-                            border-transparent
-                            text-slate-500
-                            transition-all
-                            duration-200
-                            hover:border-slate-600
-                            hover:bg-slate-800
-                            hover:text-slate-200
-                            focus:outline-none
-                            focus:ring-2
-                            focus:ring-slate-600
-                          "
-                        >
-                          <FaEllipsisVertical
-                            className="text-[11px]"
                             aria-hidden="true"
                           />
                         </button>
@@ -1303,8 +1148,6 @@ SatelliteTable.propTypes = {
   satellites: PropTypes.arrayOf(
     PropTypes.shape({
 
-      /* Identity */
-
       id: PropTypes.oneOfType([
         PropTypes.string,
         PropTypes.number,
@@ -1320,9 +1163,6 @@ SatelliteTable.propTypes = {
       ]),
 
       objectId: PropTypes.string,
-
-
-      /* CelesTrak / TLE */
 
       epoch: PropTypes.string,
 
@@ -1360,9 +1200,6 @@ SatelliteTable.propTypes = {
         PropTypes.number,
       ]),
 
-
-      /* Kept in API contract even though hidden from table */
-
       eccentricity: PropTypes.oneOfType([
         PropTypes.string,
         PropTypes.number,
@@ -1395,9 +1232,6 @@ SatelliteTable.propTypes = {
         PropTypes.number,
       ]),
 
-
-      /* Propagation */
-
       altitude: PropTypes.oneOfType([
         PropTypes.string,
         PropTypes.number,
@@ -1408,15 +1242,9 @@ SatelliteTable.propTypes = {
         PropTypes.number,
       ]),
 
-
-      /* State */
-
       missionStatus: PropTypes.string,
 
       active: PropTypes.bool,
-
-
-      /* Timestamps */
 
       createdAt: PropTypes.string,
 
@@ -1425,10 +1253,6 @@ SatelliteTable.propTypes = {
   ),
 
   isLoading: PropTypes.bool,
-
-  onViewSatellite: PropTypes.func,
-
-  onEditSatellite: PropTypes.func,
 };
 
 

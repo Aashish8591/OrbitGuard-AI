@@ -8,6 +8,7 @@ import AppLayout from "../components/layout/AppLayout";
 import Dashboard from "../pages/app/Dashboard";
 import AIAssistant from "../pages/app/AIAssistant";
 import Satellites from "../pages/app/Satellites";
+import SatelliteDetails from "../pages/app/SatelliteDetails";
 
 function AppRoutes() {
   return (
@@ -28,88 +29,52 @@ function AppRoutes() {
         <Route element={<AppLayout />}>
           {/* Dashboard */}
 
-          <Route
-            path="/dashboard"
-            element={<Dashboard/>}
-          />
+          <Route path="/dashboard" element={<Dashboard />} />
 
           {/* Satellites */}
 
-          <Route
-            path="/satellites"
-            element={<Satellites/>}
-          />
+          <Route path="/satellites" element={<Satellites />} />
 
           <Route
-            path="/satellites/:id"
-            element={<div>Satellite Details</div>}
+            path="/satellites/:satelliteId"
+            element={<SatelliteDetails />}
           />
 
           {/* Debris */}
 
-          <Route
-            path="/debris"
-            element={<div>Debris</div>}
-          />
+          <Route path="/debris" element={<div>Debris</div>} />
 
-          <Route
-            path="/debris/:id"
-            element={<div>Debris Details</div>}
-          />
+          <Route path="/debris/:id" element={<div>Debris Details</div>} />
 
           {/* Risks */}
 
-          <Route
-            path="/risks"
-            element={<div>Risks</div>}
-          />
+          <Route path="/risks" element={<div>Risks</div>} />
 
-          <Route
-            path="/risks/:id"
-            element={<div>Risk Details</div>}
-          />
+          <Route path="/risks/:id" element={<div>Risk Details</div>} />
 
           {/* Visualization */}
 
-          <Route
-            path="/visualization"
-            element={<div>Visualization</div>}
-          />
+          <Route path="/visualization" element={<div>Visualization</div>} />
 
           {/* Alerts */}
 
-          <Route
-            path="/alerts"
-            element={<div>Alerts</div>}
-          />
+          <Route path="/alerts" element={<div>Alerts</div>} />
 
           {/* Notifications */}
 
-          <Route
-            path="/notifications"
-            element={<div>Notifications</div>}
-          />
+          <Route path="/notifications" element={<div>Notifications</div>} />
 
           {/* Reports */}
 
-          <Route
-            path="/reports"
-            element={<div>Reports</div>}
-          />
+          <Route path="/reports" element={<div>Reports</div>} />
 
           {/* AI Assistant */}
 
-          <Route
-            path="/ai-assistant"
-            element={<AIAssistant/>}
-          />
+          <Route path="/ai-assistant" element={<AIAssistant />} />
 
           {/* Settings */}
 
-          <Route
-            path="/settings"
-            element={<div>Settings</div>}
-          />
+          <Route path="/settings" element={<div>Settings</div>} />
         </Route>
       </Route>
 
@@ -117,10 +82,7 @@ function AppRoutes() {
           FALLBACK
           ========================================================= */}
 
-      <Route
-        path="*"
-        element={<div>Page Not Found</div>}
-      />
+      <Route path="*" element={<div>Page Not Found</div>} />
     </Routes>
   );
 }
