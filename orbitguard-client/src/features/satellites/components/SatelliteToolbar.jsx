@@ -10,7 +10,6 @@ import { createPortal } from "react-dom";
 import {
     FaCloudArrowDown,
     FaMagnifyingGlass,
-    FaPlus,
     FaRotate,
     FaChevronDown,
 } from "react-icons/fa6";
@@ -24,29 +23,6 @@ import {
  * Custom dropdown used for:
  * - Satellite sort field
  * - Sort direction
- *
- * WHY CUSTOM DROPDOWN?
- *
- * Native <select> menus are controlled by the browser / operating
- * system. On mobile devices, their popup cannot be reliably
- * controlled by the application.
- *
- * This custom dropdown provides complete control over:
- * - Position
- * - Width
- * - Height
- * - Scrolling
- * - Z-index
- * - Mobile behavior
- * - Outside click
- * - Escape key
- *
- * IMPORTANT:
- * The dropdown menu is rendered through a React Portal into
- * document.body.
- *
- * This prevents the menu from being hidden behind the Satellite
- * Registry/table or affected by parent overflow/stacking contexts.
  *
  * ================================================================
  */
@@ -100,9 +76,6 @@ const ToolbarDropdown = ({
         const viewportPadding = 12;
         const menuGap = 6;
 
-        /*
-         * Keep the dropdown within the viewport horizontally.
-         */
         const availableWidth =
             viewportWidth - viewportPadding * 2;
 
@@ -113,9 +86,6 @@ const ToolbarDropdown = ({
 
         let left = rect.left;
 
-        /*
-         * Prevent the menu from going outside the right edge.
-         */
         if (
             left + menuWidth >
             viewportWidth - viewportPadding
@@ -126,9 +96,6 @@ const ToolbarDropdown = ({
                 menuWidth;
         }
 
-        /*
-         * Prevent the menu from going outside the left edge.
-         */
         if (left < viewportPadding) {
             left = viewportPadding;
         }
@@ -149,12 +116,6 @@ const ToolbarDropdown = ({
             menuGap -
             viewportPadding;
 
-        /*
-         * Maximum menu height.
-         *
-         * On small screens we keep the menu compact enough to
-         * remain usable without taking over the entire screen.
-         */
         const preferredMaxHeight = Math.min(
             288,
             Math.max(
@@ -163,10 +124,6 @@ const ToolbarDropdown = ({
             )
         );
 
-        /*
-         * Open upward only when there is substantially more room
-         * above than below.
-         */
         const shouldOpenUpward =
             spaceBelow < 180 &&
             spaceAbove > spaceBelow;
@@ -195,9 +152,6 @@ const ToolbarDropdown = ({
         }
 
 
-        /*
-         * Normal downward placement.
-         */
         const maxHeight = Math.min(
             preferredMaxHeight,
             Math.max(
@@ -231,10 +185,6 @@ const ToolbarDropdown = ({
             updateMenuPosition();
         };
 
-        /*
-         * Capture scrolling from any scrollable parent as well as
-         * the window.
-         */
         window.addEventListener(
             "scroll",
             handleViewportChange,
@@ -351,10 +301,6 @@ const ToolbarDropdown = ({
 
     const handleToggle = () => {
         if (!isOpen) {
-            /*
-             * Calculate immediately so the first frame already
-             * has the correct position.
-             */
             requestAnimationFrame(() => {
                 updateMenuPosition();
             });
@@ -428,8 +374,6 @@ const ToolbarDropdown = ({
                         sm:h-12
                     `}
                 >
-                    {/* SELECTED VALUE */}
-
                     <span
                         className="
                             min-w-0
@@ -439,9 +383,6 @@ const ToolbarDropdown = ({
                     >
                         {selectedOption?.label}
                     </span>
-
-
-                    {/* CUSTOM CHEVRON */}
 
                     <FaChevronDown
                         aria-hidden="true"
@@ -484,21 +425,15 @@ const ToolbarDropdown = ({
                         }}
                         className="
                             z-[99999]
-
                             overflow-x-hidden
                             overflow-y-auto
                             overscroll-contain
-
                             rounded-lg
                             border
                             border-slate-700/90
-
                             bg-[#020817]
-
                             p-1
-
                             shadow-[0_16px_40px_rgba(0,0,0,0.65)]
-
                             scrollbar-thin
                             scrollbar-track-transparent
                             scrollbar-thumb-slate-700
@@ -524,17 +459,12 @@ const ToolbarDropdown = ({
                                         min-h-10
                                         w-full
                                         items-center
-
                                         rounded-md
-
                                         px-3
                                         py-2
-
                                         text-left
-
                                         font-['Inter']
                                         text-xs
-
                                         transition-colors
                                         duration-150
 
@@ -577,11 +507,15 @@ const ToolbarDropdown = ({
  * - Render satellite search control
  * - Render backend-compatible sorting controls
  * - Trigger CelesTrak synchronization
- * - Trigger Add Satellite
  *
  * IMPORTANT:
  * - This component does NOT communicate with the backend.
  * - Pagination state belongs to SatelliteOverviewPage.
+ *
+ * NOTE:
+ * - Manual "Add Satellite" has intentionally been removed.
+ * - OrbitGuard satellites are synchronized from CelesTrak.
+ *
  * ================================================================
  */
 
@@ -611,13 +545,6 @@ const SatelliteToolbar = ({
 
     onSync,
     isSyncing = false,
-
-
-    /* ============================================================
-       CREATE
-    ============================================================ */
-
-    onAddSatellite,
 }) => {
     const searchId = useId();
     const sortId = useId();
@@ -704,11 +631,6 @@ const SatelliteToolbar = ({
     };
 
 
-    const handleAddSatellite = () => {
-        onAddSatellite?.();
-    };
-
-
     return (
         <section
             aria-label="Satellite registry controls"
@@ -779,7 +701,6 @@ const SatelliteToolbar = ({
                                 top-1/2
                                 z-10
                                 -translate-y-1/2
-
                                 text-sm
                                 text-slate-400
                             "
@@ -798,33 +719,23 @@ const SatelliteToolbar = ({
                                 h-11
                                 w-full
                                 rounded-lg
-
                                 border
                                 border-slate-700/80
-
                                 bg-slate-950/70
-
                                 pl-11
                                 pr-4
-
                                 font-['Inter']
                                 text-sm
                                 text-slate-200
-
                                 outline-none
-
                                 placeholder:text-slate-500
-
                                 transition-all
                                 duration-200
-
                                 hover:border-slate-600
-
                                 focus:border-cyan-400/60
                                 focus:bg-slate-950
                                 focus:ring-2
                                 focus:ring-cyan-400/10
-
                                 sm:h-12
                             "
                         />
@@ -873,18 +784,13 @@ const SatelliteToolbar = ({
 
 
                 {/* ====================================================
-                    RIGHT ACTIONS
-                ===================================================== */}
+                    RIGHT ACTION
+                ==================================================== */}
 
                 <div
                     className="
                         flex
                         w-full
-                        flex-col
-                        gap-3
-
-                        sm:flex-row
-
                         lg:w-auto
                         lg:shrink-0
                     "
@@ -901,43 +807,30 @@ const SatelliteToolbar = ({
                         className="
                             group
                             inline-flex
-
                             h-11
                             w-full
-
                             items-center
                             justify-center
                             gap-3
-
                             rounded-lg
-
                             border
                             border-cyan-500/70
-
                             bg-cyan-500/5
-
                             px-5
-
                             text-left
-
                             transition-all
                             duration-200
-
                             hover:border-cyan-400
                             hover:bg-cyan-500/10
                             hover:shadow-[0_0_24px_rgba(34,211,238,0.10)]
-
                             focus:outline-none
                             focus:ring-2
                             focus:ring-cyan-400/40
-
                             disabled:cursor-not-allowed
                             disabled:opacity-60
-
                             sm:h-12
                             sm:w-auto
                             sm:min-w-[210px]
-
                             lg:min-w-[205px]
                         "
                     >
@@ -949,16 +842,11 @@ const SatelliteToolbar = ({
                                 shrink-0
                                 items-center
                                 justify-center
-
                                 rounded-full
-
                                 bg-cyan-400/10
-
                                 text-cyan-400
-
                                 transition-transform
                                 duration-300
-
                                 group-hover:scale-105
                             "
                         >
@@ -974,7 +862,6 @@ const SatelliteToolbar = ({
                                 />
                             )}
                         </span>
-
 
                         <span
                             className="
@@ -1009,72 +896,6 @@ const SatelliteToolbar = ({
                                     ? "Importing satellite data..."
                                     : "Import satellites from CelesTrak"}
                             </span>
-                        </span>
-                    </button>
-
-
-                    {/* ==================================================
-                        ADD SATELLITE
-                    ================================================== */}
-
-                    <button
-                        type="button"
-                        onClick={handleAddSatellite}
-                        className="
-                            inline-flex
-
-                            h-11
-                            w-full
-
-                            items-center
-                            justify-center
-                            gap-2
-
-                            rounded-lg
-
-                            border
-                            border-cyan-300/30
-
-                            bg-gradient-to-r
-                            from-cyan-500
-                            to-sky-500
-
-                            px-6
-
-                            font-['Orbitron']
-                            text-[10px]
-                            font-semibold
-                            tracking-[0.05em]
-
-                            text-slate-950
-
-                            shadow-[0_0_20px_rgba(34,211,238,0.12)]
-
-                            transition-all
-                            duration-200
-
-                            hover:from-cyan-400
-                            hover:to-sky-400
-                            hover:shadow-[0_0_28px_rgba(34,211,238,0.22)]
-
-                            focus:outline-none
-                            focus:ring-2
-                            focus:ring-cyan-300/50
-
-                            sm:h-12
-                            sm:w-auto
-                            sm:min-w-[145px]
-
-                            lg:min-w-[145px]
-                        "
-                    >
-                        <FaPlus
-                            className="text-sm"
-                            aria-hidden="true"
-                        />
-
-                        <span>
-                            ADD SATELLITE
                         </span>
                     </button>
                 </div>

@@ -9,6 +9,7 @@ import Dashboard from "../pages/app/Dashboard";
 import AIAssistant from "../pages/app/AIAssistant";
 import Satellites from "../pages/app/Satellites";
 import SatelliteDetails from "../pages/app/SatelliteDetails";
+import Debris from "../pages/app/Debris";
 
 function AppRoutes() {
   return (
@@ -42,7 +43,7 @@ function AppRoutes() {
 
           {/* Debris */}
 
-          <Route path="/debris" element={<div>Debris</div>} />
+          <Route path="/debris" element={<Debris />} />
 
           <Route path="/debris/:id" element={<div>Debris Details</div>} />
 
