@@ -3,13 +3,18 @@ import { Routes, Route } from "react-router-dom";
 import Landing from "../pages/public/Landing";
 import Register from "../pages/public/Register";
 import Login from "../pages/public/Login";
+
 import ProtectedRoute from "./ProtectedRoute";
 import AppLayout from "../components/layout/AppLayout";
+
 import Dashboard from "../pages/app/Dashboard";
 import AIAssistant from "../pages/app/AIAssistant";
+
 import Satellites from "../pages/app/Satellites";
 import SatelliteDetails from "../pages/app/SatelliteDetails";
+
 import Debris from "../pages/app/Debris";
+import DebrisDetails from "../pages/app/DebrisDetails";
 
 function AppRoutes() {
   return (
@@ -18,9 +23,20 @@ function AppRoutes() {
           PUBLIC ROUTES
           ========================================================= */}
 
-      <Route path="/" element={<Landing />} />
-      <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
+      <Route
+        path="/"
+        element={<Landing />}
+      />
+
+      <Route
+        path="/login"
+        element={<Login />}
+      />
+
+      <Route
+        path="/register"
+        element={<Register />}
+      />
 
       {/* =========================================================
           PROTECTED APPLICATION
@@ -28,54 +44,112 @@ function AppRoutes() {
 
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
-          {/* Dashboard */}
 
-          <Route path="/dashboard" element={<Dashboard />} />
+          {/* =====================================================
+              DASHBOARD
+              ===================================================== */}
 
-          {/* Satellites */}
+          <Route
+            path="/dashboard"
+            element={<Dashboard />}
+          />
 
-          <Route path="/satellites" element={<Satellites />} />
+          {/* =====================================================
+              SATELLITES
+              ===================================================== */}
+
+          <Route
+            path="/satellites"
+            element={<Satellites />}
+          />
 
           <Route
             path="/satellites/:satelliteId"
             element={<SatelliteDetails />}
           />
 
-          {/* Debris */}
+          {/* =====================================================
+              DEBRIS
+              ===================================================== */}
 
-          <Route path="/debris" element={<Debris />} />
+          <Route
+            path="/debris"
+            element={<Debris />}
+          />
 
-          <Route path="/debris/:id" element={<div>Debris Details</div>} />
+          <Route
+            path="/debris/:debrisId"
+            element={<DebrisDetails />}
+          />
 
-          {/* Risks */}
+          {/* =====================================================
+              RISKS
+              ===================================================== */}
 
-          <Route path="/risks" element={<div>Risks</div>} />
+          <Route
+            path="/risks"
+            element={<div>Risks</div>}
+          />
 
-          <Route path="/risks/:id" element={<div>Risk Details</div>} />
+          <Route
+            path="/risks/:id"
+            element={<div>Risk Details</div>}
+          />
 
-          {/* Visualization */}
+          {/* =====================================================
+              VISUALIZATION
+              ===================================================== */}
 
-          <Route path="/visualization" element={<div>Visualization</div>} />
+          <Route
+            path="/visualization"
+            element={<div>Visualization</div>}
+          />
 
-          {/* Alerts */}
+          {/* =====================================================
+              ALERTS
+              ===================================================== */}
 
-          <Route path="/alerts" element={<div>Alerts</div>} />
+          <Route
+            path="/alerts"
+            element={<div>Alerts</div>}
+          />
 
-          {/* Notifications */}
+          {/* =====================================================
+              NOTIFICATIONS
+              ===================================================== */}
 
-          <Route path="/notifications" element={<div>Notifications</div>} />
+          <Route
+            path="/notifications"
+            element={<div>Notifications</div>}
+          />
 
-          {/* Reports */}
+          {/* =====================================================
+              REPORTS
+              ===================================================== */}
 
-          <Route path="/reports" element={<div>Reports</div>} />
+          <Route
+            path="/reports"
+            element={<div>Reports</div>}
+          />
 
-          {/* AI Assistant */}
+          {/* =====================================================
+              AI ASSISTANT
+              ===================================================== */}
 
-          <Route path="/ai-assistant" element={<AIAssistant />} />
+          <Route
+            path="/ai-assistant"
+            element={<AIAssistant />}
+          />
 
-          {/* Settings */}
+          {/* =====================================================
+              SETTINGS
+              ===================================================== */}
 
-          <Route path="/settings" element={<div>Settings</div>} />
+          <Route
+            path="/settings"
+            element={<div>Settings</div>}
+          />
+
         </Route>
       </Route>
 
@@ -83,7 +157,10 @@ function AppRoutes() {
           FALLBACK
           ========================================================= */}
 
-      <Route path="*" element={<div>Page Not Found</div>} />
+      <Route
+        path="*"
+        element={<div>Page Not Found</div>}
+      />
     </Routes>
   );
 }
