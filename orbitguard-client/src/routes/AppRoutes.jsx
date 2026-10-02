@@ -16,6 +16,8 @@ import SatelliteDetails from "../pages/app/SatelliteDetails";
 import Debris from "../pages/app/Debris";
 import DebrisDetails from "../pages/app/DebrisDetails";
 
+import Risk from "../pages/app/Risks";
+
 function AppRoutes() {
   return (
     <Routes>
@@ -88,7 +90,7 @@ function AppRoutes() {
 
           <Route
             path="/risks"
-            element={<div>Risks</div>}
+            element={<Risks />}
           />
 
           <Route
