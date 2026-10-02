@@ -10,23 +10,32 @@ import {
  * OrbitGuard AI - Debris Status Badge
  * ================================================================
  *
- * Presentation-only component for rendering the debris status.
+ * Presentation-only component.
  *
- * Responsibilities:
- * - Normalize the received status value for presentation
- * - Render the appropriate visual state
- * - Keep status styling consistent across the Debris module
+ * Backend flow:
  *
- * This component intentionally does NOT:
- * - Call APIs
- * - Fetch debris data
- * - Modify debris state
- * - Calculate status
- * - Apply business rules
+ * Spring Boot Debris API
+ *        ↓
+ * DebrisOverviewPage
+ *        ↓
+ * DebrisGrid
+ *        ↓
+ * DebrisStatusBadge
+ *
+ * This component does NOT:
+ * - call the backend
+ * - fetch data
+ * - modify debris state
+ * - calculate debris status
+ * - apply backend business rules
  *
  * The backend remains the source of truth.
  * ================================================================
  */
+
+/* ================================================================
+   STATUS CONFIGURATION
+================================================================ */
 
 const STATUS_CONFIG = {
   ACTIVE: {
@@ -57,18 +66,17 @@ const STATUS_CONFIG = {
   },
 };
 
-/**
- * ================================================================
- * UNKNOWN STATUS
- * ================================================================
- *
- * Unknown values must NOT be treated as INACTIVE.
- *
- * This prevents the UI from incorrectly representing the
- * actual backend state.
- * ================================================================
- */
+/* ================================================================
+   UNKNOWN STATUS
+================================================================ */
 
+/**
+ * Unknown backend values are intentionally NOT mapped to
+ * INACTIVE or any other known state.
+ *
+ * This prevents the frontend from making a false assumption
+ * about the actual backend state.
+ */
 const UNKNOWN_STATUS_CONFIG = {
   label: "UNKNOWN",
   icon: FaTriangleExclamation,
@@ -78,11 +86,9 @@ const UNKNOWN_STATUS_CONFIG = {
     "bg-slate-400 shadow-[0_0_8px_rgba(148,163,184,0.6)]",
 };
 
-/**
- * ================================================================
- * SIZE CONFIGURATION
- * ================================================================
- */
+/* ================================================================
+   SIZE CONFIGURATION
+================================================================ */
 
 const SIZE_CONFIG = {
   sm: {
@@ -98,25 +104,22 @@ const SIZE_CONFIG = {
   },
 };
 
+/* ================================================================
+   STATUS NORMALIZATION
+================================================================ */
+
 /**
- * ================================================================
- * STATUS NORMALIZATION
- * ================================================================
+ * Normalize only for presentation lookup.
  *
  * Examples:
  *
- * "ACTIVE"
- * " active "
- * "active"
- *
- * are normalized to:
- *
- * "ACTIVE"
+ * "ACTIVE"       → "ACTIVE"
+ * "active"       → "ACTIVE"
+ * " active "     → "ACTIVE"
+ * "Inactive"     → "INACTIVE"
  *
  * The original backend value is never modified.
- * ================================================================
  */
-
 const normalizeStatus = (status) => {
   if (typeof status !== "string") {
     return "";
@@ -125,33 +128,47 @@ const normalizeStatus = (status) => {
   return status.trim().toUpperCase();
 };
 
+/* ================================================================
+   DEBRIS STATUS BADGE
+================================================================ */
+
 /**
- * ================================================================
- * DEBRIS STATUS BADGE
- * ================================================================
- *
  * @param {Object} props
  * @param {string} props.status
  * @param {"sm"|"md"} [props.size="sm"]
  * @param {boolean} [props.showIcon=false]
- * ================================================================
  */
-
 const DebrisStatusBadge = ({
-  status,
+  status = "",
   size = "sm",
   showIcon = false,
 }) => {
+  /* --------------------------------------------------------------
+     Normalize backend value for UI lookup
+  -------------------------------------------------------------- */
+
   const normalizedStatus = normalizeStatus(status);
+
+  /* --------------------------------------------------------------
+     Resolve status configuration
+  -------------------------------------------------------------- */
 
   const config =
     STATUS_CONFIG[normalizedStatus] ??
     UNKNOWN_STATUS_CONFIG;
 
+  /* --------------------------------------------------------------
+     Resolve visual size
+  -------------------------------------------------------------- */
+
   const selectedSize =
     SIZE_CONFIG[size] ?? SIZE_CONFIG.sm;
 
   const Icon = config.icon;
+
+  /* --------------------------------------------------------------
+     Render
+  -------------------------------------------------------------- */
 
   return (
     <span
@@ -160,12 +177,12 @@ const DebrisStatusBadge = ({
         w-fit
         items-center
         gap-1.5
+        whitespace-nowrap
         rounded-full
         border
         font-['Orbitron']
         font-medium
         tracking-[0.08em]
-        whitespace-nowrap
         ${selectedSize.wrapper}
         ${config.className}
       `}
@@ -173,7 +190,7 @@ const DebrisStatusBadge = ({
       aria-label={`Debris status: ${config.label}`}
     >
       {/* ==========================================================
-          STATUS INDICATOR
+          STATUS DOT
       =========================================================== */}
 
       <span
@@ -209,38 +226,33 @@ const DebrisStatusBadge = ({
   );
 };
 
-/**
- * ================================================================
- * PROP TYPES
- * ================================================================
- */
+/* ================================================================
+   PROP TYPES
+================================================================ */
 
 DebrisStatusBadge.propTypes = {
   /**
-   * Status received by the Debris UI.
+   * Status received from the backend through the parent component.
    *
-   * Expected values:
+   * Expected backend values:
+   *
    * ACTIVE
    * INACTIVE
    * DECOMMISSIONED
+   *
+   * Any other value is displayed as UNKNOWN.
    */
   status: PropTypes.string,
 
   /**
-   * Visual size only.
+   * Visual size.
    */
   size: PropTypes.oneOf(["sm", "md"]),
 
   /**
-   * Whether the status icon should be displayed.
+   * Display the status icon in addition to the status dot.
    */
   showIcon: PropTypes.bool,
-};
-
-DebrisStatusBadge.defaultProps = {
-  status: "",
-  size: "sm",
-  showIcon: false,
 };
 
 export default DebrisStatusBadge;

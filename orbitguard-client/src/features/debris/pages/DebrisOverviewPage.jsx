@@ -1,40 +1,48 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import DebrisHero from "../components/DebrisHero";
 import DebrisOverviewStats from "../components/DebrisStats";
 import DebrisToolbar from "../components/DebrisToolbar";
 import DebrisGrid from "../components/DebrisTable";
 
+import debrisService from "../../../services/debrisService";
+
 /**
  * ================================================================
  * OrbitGuard AI - Debris Overview Page
  * ================================================================
  *
- * UI / presentation orchestration layer for the Debris Registry.
+ * Debris Registry presentation + backend orchestration layer.
  *
- * IMPORTANT:
- * ---------------------------------------------------------------
- * This is the FIRST UI phase for the Debris module.
+ * Backend:
+ *   GET    /api/v1/debris
+ *   GET    /api/v1/debris/{id}
+ *   POST   /api/v1/debris
+ *   PUT    /api/v1/debris/{id}
+ *   DELETE /api/v1/debris/{id}
+ *   POST   /api/v1/debris/synchronize?group={group}
  *
- * Backend connection is intentionally NOT implemented yet.
+ * Backend list response:
  *
- * The visual structure is designed to follow the existing
- * Satellite Registry page.
+ * {
+ *   success: true,
+ *   message: "...",
+ *   data: {
+ *     content: [],
+ *     page: 0,
+ *     size: 5,
+ *     totalElements: 113,
+ *     totalPages: 23,
+ *     last: false
+ *   }
+ * }
  *
- * Satellite UI = visual source of truth.
- *
- * Later phase:
- * - Connect debrisService
- * - Connect Spring Boot pagination
- * - Connect search
- * - Connect sorting
- * - Connect CelesTrak synchronization
- * - Connect real debris statistics
- *
- * Current phase:
- * - UI only
- * - Same layout language as Satellite Registry
- * - No dummy backend data
+ * Important:
+ * - Backend owns pagination.
+ * - Backend owns search.
+ * - Backend owns sorting.
+ * - Current page contains only active debris records.
+ * - No dummy debris data is used.
  * ================================================================
  */
 
@@ -42,68 +50,42 @@ import DebrisGrid from "../components/DebrisTable";
    UI CONFIGURATION
 ================================================================ */
 
-/**
- * Initial UI page.
- *
- * We keep the same 0-based page convention that will later be
- * used by the Spring Boot backend.
- */
 const DEFAULT_PAGE = 0;
 
-/**
- * Initial rows per page.
- */
 const DEFAULT_PAGE_SIZE = 5;
 
-/**
- * Available rows-per-page options.
- */
 const PAGE_SIZE_OPTIONS = [5, 10, 25, 50];
 
-/**
- * Default sorting configuration.
- *
- * These are UI values for now.
- * They will be connected to the backend later.
- */
 const DEFAULT_SORT_BY = "createdAt";
+
 const DEFAULT_SORT_DIRECTION = "desc";
+
+/**
+ * CelesTrak group used by the backend synchronization endpoint.
+ *
+ * Keep this value aligned with the group accepted by your backend
+ * CelesTrak debris synchronization service.
+ */
+const DEFAULT_SYNC_GROUP = "DEB";
 
 /* ================================================================
    PAGINATION HELPERS
 ================================================================ */
 
-/**
- * Build compact pagination numbers.
- *
- * UI page numbers are 1-based.
- * Backend page index will remain 0-based.
- */
 const buildPageNumbers = (currentPage, totalPages) => {
   if (totalPages <= 0) {
     return [];
   }
 
   if (totalPages <= 7) {
-    return Array.from(
-      { length: totalPages },
-      (_, index) => index + 1,
-    );
+    return Array.from({ length: totalPages }, (_, index) => index + 1);
   }
 
   const current = currentPage + 1;
 
   const pages = [];
 
-  /* ------------------------------------------------------------
-     Always show first page
-  ------------------------------------------------------------ */
-
   pages.push(1);
-
-  /* ------------------------------------------------------------
-     Current page near beginning
-  ------------------------------------------------------------ */
 
   if (current <= 4) {
     pages.push(2);
@@ -116,10 +98,6 @@ const buildPageNumbers = (currentPage, totalPages) => {
     return pages;
   }
 
-  /* ------------------------------------------------------------
-     Current page near end
-  ------------------------------------------------------------ */
-
   if (current >= totalPages - 3) {
     pages.push("...");
     pages.push(totalPages - 4);
@@ -130,10 +108,6 @@ const buildPageNumbers = (currentPage, totalPages) => {
 
     return pages;
   }
-
-  /* ------------------------------------------------------------
-     Current page in middle
-  ------------------------------------------------------------ */
 
   pages.push("...");
   pages.push(current - 1);
@@ -146,55 +120,69 @@ const buildPageNumbers = (currentPage, totalPages) => {
 };
 
 /* ================================================================
+   ERROR HELPER
+================================================================ */
+
+/**
+ * Convert Axios/service errors into a readable UI message.
+ *
+ * This does not change the service contract.
+ */
+const getErrorMessage = (error, fallbackMessage) => {
+  if (!error) {
+    return fallbackMessage;
+  }
+
+  const responseMessage = error?.response?.data?.message;
+
+  if (typeof responseMessage === "string" && responseMessage.trim()) {
+    return responseMessage;
+  }
+
+  if (typeof error?.message === "string" && error.message.trim()) {
+    return error.message;
+  }
+
+  return fallbackMessage;
+};
+
+/* ================================================================
    COMPONENT
 ================================================================ */
 
 const DebrisOverviewPage = () => {
   /* ============================================================
-     DEBRIS UI STATE
+     DEBRIS DATA
   ============================================================ */
 
-  /**
-   * No backend data yet.
-   *
-   * This will later be populated by debrisService.
-   */
   const [debris, setDebris] = useState([]);
 
-  /**
-   * UI loading state.
-   *
-   * Kept here so DebrisGrid can already support the same loading
-   * behavior as SatelliteGrid.
-   */
+  /* ============================================================
+     LOADING
+  ============================================================ */
+
   const [isLoading, setIsLoading] = useState(false);
 
-  /**
-   * CelesTrak synchronization state.
-   *
-   * Backend connection will be added later.
-   */
   const [isSyncing, setIsSyncing] = useState(false);
 
-  /**
-   * Error state.
-   */
+  /* ============================================================
+     ERROR
+  ============================================================ */
+
   const [errorMessage, setErrorMessage] = useState("");
 
   /* ============================================================
-     SEARCH / SORT STATE
+     SEARCH / SORT
   ============================================================ */
 
   const [searchQuery, setSearchQuery] = useState("");
 
   const [sortBy, setSortBy] = useState(DEFAULT_SORT_BY);
 
-  const [sortDirection, setSortDirection] = useState(
-    DEFAULT_SORT_DIRECTION,
-  );
+  const [sortDirection, setSortDirection] = useState(DEFAULT_SORT_DIRECTION);
 
   /* ============================================================
-     PAGINATION STATE
+     PAGINATION
   ============================================================ */
 
   const [page, setPage] = useState(DEFAULT_PAGE);
@@ -202,15 +190,17 @@ const DebrisOverviewPage = () => {
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
 
   /**
-   * Pagination metadata.
+   * Backend pagination metadata.
    *
-   * These values will later come directly from the backend.
+   * This is intentionally state rather than a constant because
+   * these values come from Spring Boot.
    */
-  const [pagination] = useState({
+  const [pagination, setPagination] = useState({
     totalElements: 0,
     totalPages: 0,
-    currentPage: 0,
+    currentPage: DEFAULT_PAGE,
     pageSize: DEFAULT_PAGE_SIZE,
+    last: true,
   });
 
   /* ============================================================
@@ -218,13 +208,81 @@ const DebrisOverviewPage = () => {
   ============================================================ */
 
   const pageNumbers = useMemo(
-    () =>
-      buildPageNumbers(
-        pagination.currentPage,
-        pagination.totalPages,
-      ),
+    () => buildPageNumbers(pagination.currentPage, pagination.totalPages),
     [pagination.currentPage, pagination.totalPages],
   );
+
+  /* ============================================================
+     LOAD DEBRIS
+  ============================================================ */
+
+  const loadDebris = useCallback(async () => {
+    setIsLoading(true);
+    setErrorMessage("");
+
+    try {
+      const response = await debrisService.getDebris({
+        search: searchQuery.trim(),
+        page,
+        size: pageSize,
+        sort: `${sortBy},${sortDirection}`,
+      });
+
+      /**
+       * Expected service response:
+       *
+       * {
+       *   content,
+       *   page,
+       *   size,
+       *   totalElements,
+       *   totalPages,
+       *   last
+       * }
+       */
+      const content = Array.isArray(response?.content) ? response.content : [];
+
+      setDebris(content);
+
+      setPagination({
+        totalElements: Number(response?.totalElements) || 0,
+
+        totalPages: Number(response?.totalPages) || 0,
+
+        currentPage: Number.isInteger(response?.page) ? response.page : page,
+
+        pageSize: Number(response?.size) || pageSize,
+
+        last: Boolean(response?.last),
+      });
+    } catch (error) {
+      console.error("[DebrisOverviewPage] Failed to load debris:", error);
+
+      setDebris([]);
+
+      setPagination({
+        totalElements: 0,
+        totalPages: 0,
+        currentPage: page,
+        pageSize,
+        last: true,
+      });
+
+      setErrorMessage(
+        getErrorMessage(error, "Unable to load debris registry."),
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }, [page, pageSize, searchQuery, sortBy, sortDirection]);
+
+  /* ============================================================
+     INITIAL LOAD + QUERY CHANGES
+  ============================================================ */
+
+  useEffect(() => {
+    loadDebris();
+  }, [loadDebris]);
 
   /* ============================================================
      SEARCH
@@ -232,10 +290,6 @@ const DebrisOverviewPage = () => {
 
   const handleSearchChange = useCallback((value) => {
     setSearchQuery(value);
-
-    /**
-     * New search starts from first page.
-     */
     setPage(DEFAULT_PAGE);
   }, []);
 
@@ -245,10 +299,6 @@ const DebrisOverviewPage = () => {
 
   const handleSortChange = useCallback((value) => {
     setSortBy(value);
-
-    /**
-     * New sorting starts from first page.
-     */
     setPage(DEFAULT_PAGE);
   }, []);
 
@@ -258,10 +308,6 @@ const DebrisOverviewPage = () => {
 
   const handleSortDirectionChange = useCallback((value) => {
     setSortDirection(value);
-
-    /**
-     * New sorting direction starts from first page.
-     */
     setPage(DEFAULT_PAGE);
   }, []);
 
@@ -294,10 +340,7 @@ const DebrisOverviewPage = () => {
         return;
       }
 
-      if (
-        pagination.totalPages > 0 &&
-        nextPage >= pagination.totalPages
-      ) {
+      if (pagination.totalPages > 0 && nextPage >= pagination.totalPages) {
         return;
       }
 
@@ -311,9 +354,7 @@ const DebrisOverviewPage = () => {
   ============================================================ */
 
   const handlePreviousPage = useCallback(() => {
-    setPage((currentPage) =>
-      Math.max(DEFAULT_PAGE, currentPage - 1),
-    );
+    setPage((currentPage) => Math.max(DEFAULT_PAGE, currentPage - 1));
   }, []);
 
   /* ============================================================
@@ -326,10 +367,7 @@ const DebrisOverviewPage = () => {
         return currentPage;
       }
 
-      return Math.min(
-        pagination.totalPages - 1,
-        currentPage + 1,
-      );
+      return Math.min(pagination.totalPages - 1, currentPage + 1);
     });
   }, [pagination.totalPages]);
 
@@ -351,12 +389,6 @@ const DebrisOverviewPage = () => {
      CELESTRAK SYNCHRONIZATION
   ============================================================ */
 
-  /**
-   * UI-only for now.
-   *
-   * Real debris synchronization will be connected after the
-   * complete Debris UI is finished.
-   */
   const handleSync = useCallback(async () => {
     if (isSyncing) {
       return;
@@ -365,20 +397,36 @@ const DebrisOverviewPage = () => {
     setIsSyncing(true);
     setErrorMessage("");
 
-    /**
-     * Backend connection intentionally omitted.
-     *
-     * Later:
-     *
-     * await debrisService.synchronizeDebris(...);
-     *
-     * then reload the debris registry.
-     */
+    try {
+      /**
+       * Existing backend contract:
+       *
+       * POST /api/v1/debris/synchronize?group=...
+       */
+      await debrisService.synchronizeDebris();
 
-    setTimeout(() => {
+      /**
+       * After synchronization, reload the current
+       * registry from MongoDB through Spring Boot.
+       *
+       * We intentionally do not insert the synchronized
+       * response directly into frontend state.
+       *
+       * MongoDB -> Spring Boot -> debrisService -> UI
+       * remains the source-of-truth flow.
+       */
+      await loadDebris();
+    } catch (error) {
+      console.error(
+        "[DebrisOverviewPage] Debris synchronization failed:",
+        error,
+      );
+
+      setErrorMessage(getErrorMessage(error, "Debris synchronization failed."));
+    } finally {
       setIsSyncing(false);
-    }, 700);
-  }, [isSyncing]);
+    }
+  }, [isSyncing, loadDebris]);
 
   /* ============================================================
      VIEW DEBRIS
@@ -386,11 +434,13 @@ const DebrisOverviewPage = () => {
 
   const handleViewDebris = useCallback((debrisObject) => {
     if (import.meta.env.DEV) {
-      console.info(
-        "[DebrisOverviewPage] View debris:",
-        debrisObject,
-      );
+      console.info("[DebrisOverviewPage] View debris:", debrisObject);
     }
+
+    /**
+     * Keep this connected to the existing detail
+     * implementation when the Debris detail view is wired.
+     */
   }, []);
 
   /* ============================================================
@@ -399,54 +449,74 @@ const DebrisOverviewPage = () => {
 
   const handleEditDebris = useCallback((debrisObject) => {
     if (import.meta.env.DEV) {
-      console.info(
-        "[DebrisOverviewPage] Edit debris:",
-        debrisObject,
-      );
+      console.info("[DebrisOverviewPage] Edit debris:", debrisObject);
     }
+
+    /**
+     * Edit UI can call debrisService.updateDebris()
+     * when the existing edit form/modal is connected.
+     */
   }, []);
 
   /* ============================================================
      DELETE DEBRIS
   ============================================================ */
 
-  const handleDeleteDebris = useCallback(async (debrisObject) => {
-    if (!debrisObject?.id) {
-      return;
-    }
+  const handleDeleteDebris = useCallback(
+    async (debrisObject) => {
+      if (!debrisObject?.id) {
+        return;
+      }
 
-    /**
-     * Backend delete connection will be added later.
-     */
-    if (import.meta.env.DEV) {
-      console.info(
-        "[DebrisOverviewPage] Delete debris requested:",
-        debrisObject,
-      );
-    }
-  }, []);
+      setErrorMessage("");
+
+      try {
+        await debrisService.deleteDebris(debrisObject.id);
+
+        /**
+         * Backend DELETE is a soft delete.
+         *
+         * Reload instead of manually filtering local state
+         * so the frontend always reflects the backend.
+         */
+        await loadDebris();
+      } catch (error) {
+        console.error("[DebrisOverviewPage] Delete debris failed:", error);
+
+        setErrorMessage(getErrorMessage(error, "Unable to delete debris."));
+      }
+    },
+    [loadDebris],
+  );
 
   /* ============================================================
      OVERVIEW STATISTICS
   ============================================================ */
 
   /**
-   * UI structure only.
+   * IMPORTANT:
    *
-   * Real statistics will be connected from the backend later.
+   * GET /api/v1/debris returns active debris records only.
    *
-   * We intentionally do NOT calculate statistics from `debris`
-   * because the array will eventually represent only the current
-   * server-side page.
+   * Therefore:
+   *
+   * totalElements = total active records represented by
+   *                 the backend registry query.
+   *
+   * We must NOT calculate inactive/decommissioned totals
+   * from the current page because that would be incorrect.
+   *
+   * Until a dedicated statistics endpoint exists, those
+   * unavailable categories remain null.
    */
   const overviewStats = useMemo(
     () => ({
-      total: 0,
-      active: 0,
-      inactive: 0,
-      decommissioned: 0,
+      total: pagination.totalElements,
+      active: pagination.totalElements,
+      inactive: null,
+      decommissioned: null,
     }),
-    [],
+    [pagination.totalElements],
   );
 
   /* ============================================================
@@ -604,10 +674,7 @@ const DebrisOverviewPage = () => {
             xl:px-8
           "
         >
-          <h2
-            id="debris-overview-stats"
-            className="sr-only"
-          >
+          <h2 id="debris-overview-stats" className="sr-only">
             Debris Overview Statistics
           </h2>
 
@@ -701,9 +768,8 @@ const DebrisOverviewPage = () => {
                 sm:leading-6
               "
             >
-              Explore tracked orbital debris, orbital parameters,
-              TLE-derived telemetry and object status across the
-              OrbitGuard registry.
+              Explore tracked orbital debris, orbital parameters, TLE-derived
+              telemetry and object status across the OrbitGuard registry.
             </p>
           </div>
 
@@ -784,7 +850,7 @@ const DebrisOverviewPage = () => {
 
                 <button
                   type="button"
-                  disabled={pagination.currentPage <= 0}
+                  disabled={pagination.currentPage <= 0 || isLoading}
                   onClick={handlePreviousPage}
                   aria-label="Previous page"
                   className="
@@ -830,16 +896,16 @@ const DebrisOverviewPage = () => {
                         <span
                           key={`ellipsis-${index}`}
                           className="
-                            flex
-                            h-8
-                            min-w-7
-                            items-center
-                            justify-center
-                            px-1
-                            font-['Inter']
-                            text-[10px]
-                            text-slate-600
-                          "
+                              flex
+                              h-8
+                              min-w-7
+                              items-center
+                              justify-center
+                              px-1
+                              font-['Inter']
+                              text-[10px]
+                              text-slate-600
+                            "
                         >
                           …
                         </span>
@@ -848,42 +914,41 @@ const DebrisOverviewPage = () => {
 
                     const pageIndex = pageNumber - 1;
 
-                    const isCurrentPage =
-                      pagination.currentPage === pageIndex;
+                    const isCurrentPage = pagination.currentPage === pageIndex;
 
                     return (
                       <button
                         key={pageNumber}
                         type="button"
                         aria-label={`Go to page ${pageNumber}`}
-                        aria-current={
-                          isCurrentPage ? "page" : undefined
-                        }
-                        onClick={() =>
-                          handlePageChange(pageIndex)
-                        }
+                        aria-current={isCurrentPage ? "page" : undefined}
+                        disabled={isLoading}
+                        onClick={() => handlePageChange(pageIndex)}
                         className={`
-                          flex
-                          h-8
-                          min-w-8
-                          items-center
-                          justify-center
-                          rounded-md
-                          border
-                          px-2
-                          font-['Inter']
-                          text-[10px]
-                          font-medium
-                          tabular-nums
-                          transition-all
-                          duration-200
+                            flex
+                            h-8
+                            min-w-8
+                            items-center
+                            justify-center
+                            rounded-md
+                            border
+                            px-2
+                            font-['Inter']
+                            text-[10px]
+                            font-medium
+                            tabular-nums
+                            transition-all
+                            duration-200
 
-                          ${
-                            isCurrentPage
-                              ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-300 shadow-[0_0_14px_rgba(34,211,238,0.10)]"
-                              : "border-transparent text-slate-400 hover:border-slate-700 hover:bg-slate-800/70 hover:text-slate-200"
-                          }
-                        `}
+                            ${
+                              isCurrentPage
+                                ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-300 shadow-[0_0_14px_rgba(34,211,238,0.10)]"
+                                : "border-transparent text-slate-400 hover:border-slate-700 hover:bg-slate-800/70 hover:text-slate-200"
+                            }
+
+                            disabled:cursor-not-allowed
+                            disabled:opacity-50
+                          `}
                       >
                         {pageNumber}
                       </button>
@@ -896,8 +961,8 @@ const DebrisOverviewPage = () => {
                 <button
                   type="button"
                   disabled={
-                    pagination.currentPage >=
-                    pagination.totalPages - 1
+                    pagination.currentPage >= pagination.totalPages - 1 ||
+                    isLoading
                   }
                   onClick={handleNextPage}
                   aria-label="Next page"
@@ -962,6 +1027,7 @@ const DebrisOverviewPage = () => {
                   <select
                     value={pageSize}
                     onChange={handlePageSizeChange}
+                    disabled={isLoading}
                     aria-label="Rows per page"
                     className="
                       h-8
@@ -983,6 +1049,8 @@ const DebrisOverviewPage = () => {
                       focus:border-cyan-400/40
                       focus:ring-1
                       focus:ring-cyan-400/20
+                      disabled:cursor-not-allowed
+                      disabled:opacity-50
                     "
                   >
                     {PAGE_SIZE_OPTIONS.map((option) => (
@@ -990,9 +1058,9 @@ const DebrisOverviewPage = () => {
                         key={option}
                         value={option}
                         className="
-                          bg-slate-900
-                          text-slate-200
-                        "
+                            bg-slate-900
+                            text-slate-200
+                          "
                       >
                         {option}
                       </option>

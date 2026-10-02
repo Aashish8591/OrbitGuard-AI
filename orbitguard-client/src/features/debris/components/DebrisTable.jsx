@@ -14,29 +14,30 @@ import {
  *
  * Presentation-only component.
  *
- * Responsibilities:
- * - Display debris registry data
- * - Display synchronized debris imagery
- * - Navigate to debris detail page
- *
- * Navigation:
- * - View Debris -> /debris/:debrisId
- *
- * This component does NOT:
- * - call Axios
- * - call debrisService
- * - fetch backend data
- * - perform filtering
- * - calculate orbital values
- * - calculate debris status
- *
- * Parent/container owns debris data.
- *
  * Backend source of truth:
+ *
+ * GET /api/v1/debris
+ *        ↓
  * DebrisResponse
+ *        ↓
+ * DebrisOverviewPage
+ *        ↓
+ * DebrisTable
+ *
+ * This component:
+ * - DOES NOT call Axios
+ * - DOES NOT fetch data
+ * - DOES NOT calculate orbital values
+ * - DOES NOT modify backend data
+ *
+ * Responsive behavior:
+ * - Desktop/tablet: normal wide registry table
+ * - Mobile: horizontal table scrolling
+ * - ACTIONS column remains sticky on the right
+ * - Table columns never squeeze into the mobile viewport
+ *
  * ================================================================
  */
-
 
 /* ================================================================
    DEBRIS IMAGE CONFIGURATION
@@ -52,7 +53,6 @@ const DEBRIS_IMAGES = [
   "/images/debris/debris-07.png",
   "/images/debris/debris-08.png",
 ];
-
 
 /* ================================================================
    DEBRIS IMAGE
@@ -76,8 +76,7 @@ const getDebrisImage = (debris) => {
     index += 1
   ) {
     hash =
-      (hash * 31 +
-        identifierString.charCodeAt(index)) %
+      (hash * 31 + identifierString.charCodeAt(index)) %
       DEBRIS_IMAGES.length;
   }
 
@@ -86,9 +85,8 @@ const getDebrisImage = (debris) => {
   ];
 };
 
-
 /* ================================================================
-   DEBRIS STATUS BADGE
+   STATUS BADGE
 ================================================================ */
 
 const DebrisStatusBadge = ({ status }) => {
@@ -105,18 +103,18 @@ const DebrisStatusBadge = ({ status }) => {
       label: "ACTIVE",
     },
 
-    DECAYED: {
+    INACTIVE: {
       className:
         "border-amber-400/20 bg-amber-400/10 text-amber-300",
       dot: "text-amber-400",
-      label: "DECAYED",
+      label: "INACTIVE",
     },
 
-    LOST_TRACK: {
+    DECOMMISSIONED: {
       className:
         "border-red-400/20 bg-red-400/10 text-red-300",
       dot: "text-red-400",
-      label: "LOST TRACK",
+      label: "DECOMMISSIONED",
     },
   };
 
@@ -132,8 +130,10 @@ const DebrisStatusBadge = ({ status }) => {
     <span
       className={`
         inline-flex
+        max-w-full
         items-center
         gap-2
+        whitespace-nowrap
         rounded-md
         border
         px-2.5
@@ -142,12 +142,13 @@ const DebrisStatusBadge = ({ status }) => {
         text-[9px]
         font-semibold
         tracking-[0.06em]
-        whitespace-nowrap
         ${config.className}
       `}
+      title={`Debris status: ${config.label}`}
+      aria-label={`Debris status: ${config.label}`}
     >
       <FaCircle
-        className={`text-[5px] ${config.dot}`}
+        className={`shrink-0 text-[5px] ${config.dot}`}
         aria-hidden="true"
       />
 
@@ -160,88 +161,27 @@ DebrisStatusBadge.propTypes = {
   status: PropTypes.string,
 };
 
-
 /* ================================================================
-   ACTIVE BADGE
+   GENERIC VALUE
 ================================================================ */
 
-const ActiveBadge = ({ active }) => {
-  if (active === true) {
-    return (
-      <span
-        className="
-          font-['Orbitron']
-          text-[9px]
-          font-semibold
-          tracking-[0.06em]
-          text-emerald-300
-        "
-      >
-        YES
-      </span>
-    );
-  }
-
-  if (active === false) {
-    return (
-      <span
-        className="
-          font-['Orbitron']
-          text-[9px]
-          font-semibold
-          tracking-[0.06em]
-          text-slate-500
-        "
-      >
-        NO
-      </span>
-    );
-  }
-
-  return (
-    <span
-      className="
-        font-['Orbitron']
-        text-[9px]
-        font-semibold
-        tracking-[0.06em]
-        text-slate-600
-      "
-    >
-      —
-    </span>
-  );
-};
-
-ActiveBadge.propTypes = {
-  active: PropTypes.bool,
-};
-
-
-/* ================================================================
-   FORMATTERS
-================================================================ */
-
-const formatDate = (date) => {
-  if (!date) {
+const displayValue = (value) => {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
     return "—";
   }
 
-  const parsedDate = new Date(date);
-
-  if (Number.isNaN(parsedDate.getTime())) {
-    return String(date);
-  }
-
-  return parsedDate.toLocaleDateString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return String(value);
 };
 
+/* ================================================================
+   NUMBER FORMATTER
+================================================================ */
 
-const formatNumber = (value, decimals = 1) => {
+const formatNumber = (value, decimals = 2) => {
   if (
     value === null ||
     value === undefined ||
@@ -262,6 +202,30 @@ const formatNumber = (value, decimals = 1) => {
   });
 };
 
+/* ================================================================
+   DATE / TIME FORMATTER
+================================================================ */
+
+const formatDateTime = (value) => {
+  if (!value) {
+    return "—";
+  }
+
+  const parsedDate = new Date(value);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return String(value);
+  }
+
+  return parsedDate.toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+};
 
 /* ================================================================
    TABLE HEADER
@@ -313,7 +277,6 @@ TableHeader.propTypes = {
   sticky: PropTypes.bool,
 };
 
-
 /* ================================================================
    DEBRIS TABLE
 ================================================================ */
@@ -324,7 +287,6 @@ const DebrisTable = ({
 }) => {
   const navigate = useNavigate();
 
-
   /* ==============================================================
      VIEW DEBRIS
   ============================================================== */
@@ -332,17 +294,18 @@ const DebrisTable = ({
   const handleViewDebris = (item) => {
     if (!item) {
       console.warn(
-        "Cannot open debris detail: debris object is missing."
+        "Cannot open debris detail: debris object is missing.",
       );
 
       return;
     }
 
     /*
-     * IMPORTANT:
-     * Debris detail endpoint uses the backend MongoDB `id`.
+     * Backend detail endpoint:
      *
-     * Do not silently replace it with NORAD ID.
+     * GET /api/v1/debris/{id}
+     *
+     * MongoDB document ID is used for navigation.
      */
     const debrisId = item.id;
 
@@ -352,27 +315,19 @@ const DebrisTable = ({
       debrisId === ""
     ) {
       console.warn(
-        "Cannot open debris detail: debris.id is missing.",
-        item
+        "Cannot open debris detail: backend debris.id is missing.",
+        item,
       );
 
       return;
     }
 
-    const targetPath =
+    navigate(
       `/debris/${encodeURIComponent(
-        String(debrisId)
-      )}`;
-
-    console.log(
-      "Opening debris detail:",
-      targetPath,
-      item
+        String(debrisId),
+      )}`,
     );
-
-    navigate(targetPath);
   };
-
 
   return (
     <section
@@ -388,7 +343,6 @@ const DebrisTable = ({
       "
       aria-label="Debris registry"
     >
-
       {/* ==========================================================
           TABLE HEADER
       =========================================================== */}
@@ -402,14 +356,13 @@ const DebrisTable = ({
           border-slate-800/80
           px-5
           py-4
+
           sm:flex-row
           sm:items-center
           sm:justify-between
         "
       >
-
         <div className="flex items-center gap-3">
-
           <div
             className="
               flex
@@ -431,7 +384,6 @@ const DebrisTable = ({
           </div>
 
           <div>
-
             <h2
               className="
                 font-['Orbitron']
@@ -454,9 +406,7 @@ const DebrisTable = ({
             >
               Orbital debris objects synchronized with OrbitGuard
             </p>
-
           </div>
-
         </div>
 
         <div
@@ -472,31 +422,43 @@ const DebrisTable = ({
           {debris.length} RECORD
           {debris.length === 1 ? "" : "S"}
         </div>
-
       </div>
-
 
       {/* ==========================================================
           TABLE
+
+          IMPORTANT RESPONSIVE BEHAVIOR
+
+          The table deliberately keeps a minimum width.
+
+          On desktop:
+          - table uses available width
+
+          On mobile:
+          - table does NOT squeeze
+          - user can swipe horizontally
+          - ACTIONS remains visible as sticky sidebar
+
+          This follows the same responsive strategy as SatelliteTable.
       =========================================================== */}
 
       <div className="overflow-x-auto">
-
         <table
           className="
             w-full
-            min-w-[1400px]
+            min-w-[1250px]
             border-collapse
           "
         >
-
           <thead>
-
             <tr className="bg-slate-900/35">
+              {/* 1 - DEBRIS */}
 
               <TableHeader>
                 DEBRIS
               </TableHeader>
+
+              {/* 2 - NORAD */}
 
               <TableHeader>
                 NORAD
@@ -504,47 +466,51 @@ const DebrisTable = ({
                 ID
               </TableHeader>
 
-              <TableHeader>
-                OBJECT
-                <br />
-                TYPE
-              </TableHeader>
+              {/* 3 - OBJECT ID */}
 
               <TableHeader>
-                ORBIT
+                OBJECT ID
+              </TableHeader>
+
+              {/* 4 - MEAN MOTION */}
+
+              <TableHeader align="right">
+                MEAN
                 <br />
-                TYPE
+                MOTION
               </TableHeader>
 
-              <TableHeader align="right">
-                SIZE
-              </TableHeader>
+              {/* 5 - INCLINATION */}
 
               <TableHeader align="right">
-                MASS
+                INCLINATION
               </TableHeader>
+
+              {/* 6 - ALTITUDE */}
 
               <TableHeader align="right">
                 ALTITUDE
               </TableHeader>
 
+              {/* 7 - VELOCITY */}
+
               <TableHeader align="right">
                 VELOCITY
               </TableHeader>
+
+              {/* 8 - STATUS */}
 
               <TableHeader>
                 STATUS
               </TableHeader>
 
-              <TableHeader>
-                ACTIVE
-              </TableHeader>
+              {/* 9 - EPOCH */}
 
               <TableHeader>
-                LAUNCH
-                <br />
-                DATE
+                EPOCH
               </TableHeader>
+
+              {/* 10 - ACTIONS */}
 
               <TableHeader
                 align="right"
@@ -552,14 +518,10 @@ const DebrisTable = ({
               >
                 ACTIONS
               </TableHeader>
-
             </tr>
-
           </thead>
 
-
           <tbody>
-
             {/* ======================================================
                 LOADING
             ======================================================= */}
@@ -574,14 +536,16 @@ const DebrisTable = ({
                       border-slate-800/60
                     "
                   >
-
                     {Array.from({
-                      length: 12,
+                      length: 10,
                     }).map(
                       (_, cellIndex) => (
                         <td
-                          key={`skeleton-cell-${cellIndex}`}
-                          className="px-4 py-4"
+                          key={`skeleton-cell-${rowIndex}-${cellIndex}`}
+                          className="
+                            px-4
+                            py-4
+                          "
                         >
                           <div
                             className="
@@ -592,13 +556,11 @@ const DebrisTable = ({
                             "
                           />
                         </td>
-                      )
+                      ),
                     )}
-
                   </tr>
-                )
+                ),
               )}
-
 
             {/* ======================================================
                 EMPTY
@@ -607,12 +569,14 @@ const DebrisTable = ({
             {!isLoading &&
               debris.length === 0 && (
                 <tr>
-
                   <td
-                    colSpan={12}
-                    className="px-6 py-20 text-center"
+                    colSpan={10}
+                    className="
+                      px-6
+                      py-20
+                      text-center
+                    "
                   >
-
                     <div
                       className="
                         mx-auto
@@ -622,7 +586,6 @@ const DebrisTable = ({
                         items-center
                       "
                     >
-
                       <div
                         className="
                           flex
@@ -665,17 +628,13 @@ const DebrisTable = ({
                           text-slate-500
                         "
                       >
-                        No debris records match the
-                        current search or filter criteria.
+                        No debris records match the current
+                        search or filter criteria.
                       </p>
-
                     </div>
-
                   </td>
-
                 </tr>
               )}
-
 
             {/* ======================================================
                 DEBRIS RECORDS
@@ -683,7 +642,6 @@ const DebrisTable = ({
 
             {!isLoading &&
               debris.map((item, index) => {
-
                 const debrisName =
                   item.debrisName ??
                   "Unnamed Debris";
@@ -691,10 +649,6 @@ const DebrisTable = ({
                 const debrisImage =
                   getDebrisImage(item);
 
-                /*
-                 * Prefer backend ID for React key.
-                 * Fall back only for rendering safety.
-                 */
                 const rowKey =
                   item.id ??
                   item.noradId ??
@@ -713,13 +667,11 @@ const DebrisTable = ({
                       hover:bg-cyan-400/[0.025]
                     "
                   >
-
                     {/* ==================================================
                         DEBRIS
                     =================================================== */}
 
                     <td className="px-5 py-4">
-
                       <button
                         type="button"
                         onClick={() =>
@@ -727,14 +679,13 @@ const DebrisTable = ({
                         }
                         className="
                           flex
-                          min-w-[245px]
+                          min-w-[230px]
                           items-center
                           gap-3
                           text-left
                           outline-none
                         "
                       >
-
                         <div
                           className="
                             flex
@@ -755,7 +706,6 @@ const DebrisTable = ({
                             group-hover:bg-cyan-400/5
                           "
                         >
-
                           <img
                             src={debrisImage}
                             alt={`${debrisName} debris`}
@@ -770,11 +720,9 @@ const DebrisTable = ({
                             loading="lazy"
                             draggable="false"
                           />
-
                         </div>
 
                         <div className="min-w-0">
-
                           <p
                             className="
                               truncate
@@ -785,6 +733,7 @@ const DebrisTable = ({
                               transition-colors
                               group-hover:text-cyan-300
                             "
+                            title={debrisName}
                           >
                             {debrisName}
                           </p>
@@ -798,22 +747,23 @@ const DebrisTable = ({
                               tracking-[0.08em]
                               text-slate-500
                             "
+                            title={
+                              item.debrisCode ??
+                              "NO CODE"
+                            }
                           >
                             {item.debrisCode ??
                               "NO CODE"}
                           </p>
-
                         </div>
-
                       </button>
-
                     </td>
 
-
-                    {/* NORAD ID */}
+                    {/* ==================================================
+                        NORAD ID
+                    =================================================== */}
 
                     <td className="px-4 py-4">
-
                       <span
                         className="
                           whitespace-nowrap
@@ -823,59 +773,38 @@ const DebrisTable = ({
                           font-medium
                           text-slate-300
                         "
+                        title={displayValue(item.noradId)}
                       >
-                        {item.noradId ?? "—"}
+                        {displayValue(item.noradId)}
                       </span>
-
                     </td>
 
-
-                    {/* OBJECT TYPE */}
+                    {/* ==================================================
+                        OBJECT ID
+                    =================================================== */}
 
                     <td className="px-4 py-4">
-
                       <span
                         className="
                           whitespace-nowrap
-                          font-['Orbitron']
-                          text-[9px]
+                          font-['Inter']
+                          tabular-nums
+                          text-[10px]
                           font-medium
-                          tracking-[0.04em]
                           text-slate-400
                         "
+                        title={displayValue(item.objectId)}
                       >
-                        {item.objectType ?? "—"}
+                        {displayValue(item.objectId)}
                       </span>
-
                     </td>
 
-
-                    {/* ORBIT TYPE */}
-
-                    <td className="px-4 py-4">
-
-                      <span
-                        className="
-                          whitespace-nowrap
-                          font-['Orbitron']
-                          text-[9px]
-                          font-medium
-                          tracking-[0.04em]
-                          text-cyan-300/80
-                        "
-                      >
-                        {item.orbitType ?? "—"}
-                      </span>
-
-                    </td>
-
-
-                    {/* SIZE */}
+                    {/* ==================================================
+                        MEAN MOTION
+                    =================================================== */}
 
                     <td className="px-4 py-4 text-right">
-
                       <div className="whitespace-nowrap">
-
                         <span
                           className="
                             font-['Inter']
@@ -885,7 +814,10 @@ const DebrisTable = ({
                             text-slate-200
                           "
                         >
-                          {formatNumber(item.size, 2)}
+                          {formatNumber(
+                            item.meanMotion,
+                            4,
+                          )}
                         </span>
 
                         <span
@@ -896,30 +828,30 @@ const DebrisTable = ({
                             text-slate-500
                           "
                         >
-                          m
+                          rev/day
                         </span>
-
                       </div>
-
                     </td>
 
-
-                    {/* MASS */}
+                    {/* ==================================================
+                        INCLINATION
+                    =================================================== */}
 
                     <td className="px-4 py-4 text-right">
-
                       <div className="whitespace-nowrap">
-
                         <span
                           className="
                             font-['Inter']
                             tabular-nums
                             text-[11px]
                             font-medium
-                            text-slate-200
+                            text-slate-300
                           "
                         >
-                          {formatNumber(item.mass, 1)}
+                          {formatNumber(
+                            item.inclination,
+                            4,
+                          )}
                         </span>
 
                         <span
@@ -930,20 +862,17 @@ const DebrisTable = ({
                             text-slate-500
                           "
                         >
-                          kg
+                          °
                         </span>
-
                       </div>
-
                     </td>
 
-
-                    {/* ALTITUDE */}
+                    {/* ==================================================
+                        ALTITUDE
+                    =================================================== */}
 
                     <td className="px-4 py-4 text-right">
-
                       <div className="whitespace-nowrap">
-
                         <span
                           className="
                             font-['Inter']
@@ -955,7 +884,7 @@ const DebrisTable = ({
                         >
                           {formatNumber(
                             item.altitude,
-                            0
+                            0,
                           )}
                         </span>
 
@@ -969,18 +898,15 @@ const DebrisTable = ({
                         >
                           km
                         </span>
-
                       </div>
-
                     </td>
 
-
-                    {/* VELOCITY */}
+                    {/* ==================================================
+                        VELOCITY
+                    =================================================== */}
 
                     <td className="px-4 py-4 text-right">
-
                       <div className="whitespace-nowrap">
-
                         <span
                           className="
                             font-['Inter']
@@ -992,7 +918,7 @@ const DebrisTable = ({
                         >
                           {formatNumber(
                             item.velocity,
-                            2
+                            2,
                           )}
                         </span>
 
@@ -1006,38 +932,24 @@ const DebrisTable = ({
                         >
                           km/s
                         </span>
-
                       </div>
-
                     </td>
 
-
-                    {/* STATUS */}
+                    {/* ==================================================
+                        STATUS
+                    =================================================== */}
 
                     <td className="px-4 py-4">
-
                       <DebrisStatusBadge
                         status={item.status}
                       />
-
                     </td>
 
-
-                    {/* ACTIVE */}
-
-                    <td className="px-4 py-4">
-
-                      <ActiveBadge
-                        active={item.isActive}
-                      />
-
-                    </td>
-
-
-                    {/* LAUNCH DATE */}
+                    {/* ==================================================
+                        EPOCH
+                    =================================================== */}
 
                     <td className="px-4 py-4">
-
                       <span
                         className="
                           whitespace-nowrap
@@ -1046,17 +958,17 @@ const DebrisTable = ({
                           text-[10px]
                           text-slate-400
                         "
+                        title={formatDateTime(item.epoch)}
                       >
-                        {formatDate(
-                          item.launchDate
-                        )}
+                        {formatDateTime(item.epoch)}
                       </span>
-
                     </td>
-
 
                     {/* ==================================================
                         ACTION
+
+                        IMPORTANT:
+                        Sticky right column exactly like SatelliteTable.
                     =================================================== */}
 
                     <td
@@ -1073,15 +985,13 @@ const DebrisTable = ({
                         shadow-[-8px_0_18px_rgba(0,0,0,0.20)]
                       "
                     >
-
                       <div className="flex justify-end">
-
                         <button
                           type="button"
                           onClick={() =>
                             handleViewDebris(item)
                           }
-                          title="View debris"
+                          title="View debris details"
                           aria-label={`View ${debrisName}`}
                           className="
                             flex
@@ -1103,28 +1013,19 @@ const DebrisTable = ({
                             focus:ring-cyan-400/30
                           "
                         >
-
                           <FaArrowUpRightFromSquare
                             className="text-[10px]"
                             aria-hidden="true"
                           />
-
                         </button>
-
                       </div>
-
                     </td>
-
                   </tr>
                 );
               })}
-
           </tbody>
-
         </table>
-
       </div>
-
 
       {/* ============================================================
           MOBILE SCROLL INDICATOR
@@ -1150,11 +1051,9 @@ const DebrisTable = ({
           Swipe horizontally to view debris telemetry
         </span>
       </div>
-
     </section>
   );
 };
-
 
 /* ================================================================
    PROPTYPES
@@ -1163,37 +1062,93 @@ const DebrisTable = ({
 DebrisTable.propTypes = {
   debris: PropTypes.arrayOf(
     PropTypes.shape({
-
+      /* MongoDB document ID */
       id: PropTypes.oneOfType([
         PropTypes.string,
         PropTypes.number,
       ]),
 
+      /* Registry identity */
       debrisCode: PropTypes.string,
-
       debrisName: PropTypes.string,
 
+      /* NORAD / orbital identity */
       noradId: PropTypes.oneOfType([
         PropTypes.string,
         PropTypes.number,
       ]),
 
-      objectType: PropTypes.string,
+      objectId: PropTypes.string,
 
-      orbitType: PropTypes.string,
+      /* TLE / orbital data */
+      epoch: PropTypes.string,
 
-      country: PropTypes.string,
+      /* Detail-page TLE/orbital fields */
+      classificationType: PropTypes.string,
 
-      size: PropTypes.oneOfType([
+      ephemerisType: PropTypes.oneOfType([
         PropTypes.string,
         PropTypes.number,
       ]),
 
-      mass: PropTypes.oneOfType([
+      elementSetNumber: PropTypes.oneOfType([
         PropTypes.string,
         PropTypes.number,
       ]),
 
+      revolutionAtEpoch: PropTypes.oneOfType([
+        PropTypes.string,
+        PropTypes.number,
+      ]),
+
+      meanMotion: PropTypes.oneOfType([
+        PropTypes.string,
+        PropTypes.number,
+      ]),
+
+      meanMotionDot: PropTypes.oneOfType([
+        PropTypes.string,
+        PropTypes.number,
+      ]),
+
+      meanMotionDdot: PropTypes.oneOfType([
+        PropTypes.string,
+        PropTypes.number,
+      ]),
+
+      eccentricity: PropTypes.oneOfType([
+        PropTypes.string,
+        PropTypes.number,
+      ]),
+
+      inclination: PropTypes.oneOfType([
+        PropTypes.string,
+        PropTypes.number,
+      ]),
+
+      rightAscensionOfAscendingNode:
+        PropTypes.oneOfType([
+          PropTypes.string,
+          PropTypes.number,
+        ]),
+
+      argumentOfPericenter:
+        PropTypes.oneOfType([
+          PropTypes.string,
+          PropTypes.number,
+        ]),
+
+      meanAnomaly: PropTypes.oneOfType([
+        PropTypes.string,
+        PropTypes.number,
+      ]),
+
+      bstar: PropTypes.oneOfType([
+        PropTypes.string,
+        PropTypes.number,
+      ]),
+
+      /* Calculated / synchronized orbital values */
       velocity: PropTypes.oneOfType([
         PropTypes.string,
         PropTypes.number,
@@ -1204,32 +1159,16 @@ DebrisTable.propTypes = {
         PropTypes.number,
       ]),
 
-      inclination: PropTypes.oneOfType([
-        PropTypes.string,
-        PropTypes.number,
-      ]),
-
-      eccentricity: PropTypes.oneOfType([
-        PropTypes.string,
-        PropTypes.number,
-      ]),
-
-      launchDate: PropTypes.string,
-
-      description: PropTypes.string,
-
+      /* State */
       status: PropTypes.string,
 
-      isActive: PropTypes.bool,
-
+      /* Audit */
       createdAt: PropTypes.string,
-
       updatedAt: PropTypes.string,
-    })
+    }),
   ),
 
   isLoading: PropTypes.bool,
 };
-
 
 export default DebrisTable;

@@ -1,9 +1,4 @@
-import {
-  useEffect,
-  useId,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { createPortal } from "react-dom";
 
@@ -29,13 +24,7 @@ import {
  * ================================================================
  */
 
-const ToolbarDropdown = ({
-  id,
-  value,
-  options,
-  onChange,
-  ariaLabel,
-}) => {
+const ToolbarDropdown = ({ id, value, options, onChange, ariaLabel }) => {
   const [isOpen, setIsOpen] = useState(false);
 
   const [menuPosition, setMenuPosition] = useState({
@@ -55,9 +44,7 @@ const ToolbarDropdown = ({
   ============================================================ */
 
   const selectedOption =
-    options.find(
-      (option) => option.value === value
-    ) ?? options[0];
+    options.find((option) => option.value === value) ?? options[0];
 
   /* ============================================================
      CALCULATE DROPDOWN POSITION
@@ -78,24 +65,14 @@ const ToolbarDropdown = ({
     const viewportPadding = 12;
     const menuGap = 6;
 
-    const availableWidth =
-      viewportWidth - viewportPadding * 2;
+    const availableWidth = viewportWidth - viewportPadding * 2;
 
-    const menuWidth = Math.min(
-      rect.width,
-      availableWidth
-    );
+    const menuWidth = Math.min(rect.width, availableWidth);
 
     let left = rect.left;
 
-    if (
-      left + menuWidth >
-      viewportWidth - viewportPadding
-    ) {
-      left =
-        viewportWidth -
-        viewportPadding -
-        menuWidth;
+    if (left + menuWidth > viewportWidth - viewportPadding) {
+      left = viewportWidth - viewportPadding - menuWidth;
     }
 
     if (left < viewportPadding) {
@@ -106,42 +83,22 @@ const ToolbarDropdown = ({
        VERTICAL POSITIONING
     ======================================================== */
 
-    const spaceBelow =
-      viewportHeight -
-      rect.bottom -
-      menuGap -
-      viewportPadding;
+    const spaceBelow = viewportHeight - rect.bottom - menuGap - viewportPadding;
 
-    const spaceAbove =
-      rect.top -
-      menuGap -
-      viewportPadding;
+    const spaceAbove = rect.top - menuGap - viewportPadding;
 
     const preferredMaxHeight = Math.min(
       288,
-      Math.max(
-        160,
-        viewportHeight * 0.45
-      )
+      Math.max(160, viewportHeight * 0.45),
     );
 
-    const shouldOpenUpward =
-      spaceBelow < 180 &&
-      spaceAbove > spaceBelow;
+    const shouldOpenUpward = spaceBelow < 180 && spaceAbove > spaceBelow;
 
     if (shouldOpenUpward) {
-      const maxHeight = Math.min(
-        preferredMaxHeight,
-        spaceAbove
-      );
+      const maxHeight = Math.min(preferredMaxHeight, spaceAbove);
 
       setMenuPosition({
-        top: Math.max(
-          viewportPadding,
-          rect.top -
-            menuGap -
-            maxHeight
-        ),
+        top: Math.max(viewportPadding, rect.top - menuGap - maxHeight),
         left,
         width: menuWidth,
         maxHeight,
@@ -151,13 +108,7 @@ const ToolbarDropdown = ({
       return;
     }
 
-    const maxHeight = Math.min(
-      preferredMaxHeight,
-      Math.max(
-        120,
-        spaceBelow
-      )
-    );
+    const maxHeight = Math.min(preferredMaxHeight, Math.max(120, spaceBelow));
 
     setMenuPosition({
       top: rect.bottom + menuGap,
@@ -183,28 +134,14 @@ const ToolbarDropdown = ({
       updateMenuPosition();
     };
 
-    window.addEventListener(
-      "scroll",
-      handleViewportChange,
-      true
-    );
+    window.addEventListener("scroll", handleViewportChange, true);
 
-    window.addEventListener(
-      "resize",
-      handleViewportChange
-    );
+    window.addEventListener("resize", handleViewportChange);
 
     return () => {
-      window.removeEventListener(
-        "scroll",
-        handleViewportChange,
-        true
-      );
+      window.removeEventListener("scroll", handleViewportChange, true);
 
-      window.removeEventListener(
-        "resize",
-        handleViewportChange
-      );
+      window.removeEventListener("resize", handleViewportChange);
     };
   }, [isOpen]);
 
@@ -220,30 +157,19 @@ const ToolbarDropdown = ({
     const handlePointerDown = (event) => {
       const target = event.target;
 
-      const clickedTrigger =
-        dropdownRef.current?.contains(target);
+      const clickedTrigger = dropdownRef.current?.contains(target);
 
-      const clickedMenu =
-        menuRef.current?.contains(target);
+      const clickedMenu = menuRef.current?.contains(target);
 
-      if (
-        !clickedTrigger &&
-        !clickedMenu
-      ) {
+      if (!clickedTrigger && !clickedMenu) {
         setIsOpen(false);
       }
     };
 
-    document.addEventListener(
-      "pointerdown",
-      handlePointerDown
-    );
+    document.addEventListener("pointerdown", handlePointerDown);
 
     return () => {
-      document.removeEventListener(
-        "pointerdown",
-        handlePointerDown
-      );
+      document.removeEventListener("pointerdown", handlePointerDown);
     };
   }, [isOpen]);
 
@@ -264,16 +190,10 @@ const ToolbarDropdown = ({
       }
     };
 
-    document.addEventListener(
-      "keydown",
-      handleKeyDown
-    );
+    document.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      document.removeEventListener(
-        "keydown",
-        handleKeyDown
-      );
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, [isOpen]);
 
@@ -305,10 +225,6 @@ const ToolbarDropdown = ({
 
   return (
     <>
-      {/* ========================================================
-          DROPDOWN TRIGGER
-      ======================================================== */}
-
       <div
         ref={dropdownRef}
         id={id}
@@ -323,11 +239,7 @@ const ToolbarDropdown = ({
           aria-haspopup="listbox"
           aria-expanded={isOpen}
           aria-label={ariaLabel}
-          aria-controls={
-            isOpen
-              ? `${id}-menu`
-              : undefined
-          }
+          aria-controls={isOpen ? `${id}-menu` : undefined}
           onClick={handleToggle}
           className={`
             flex
@@ -386,19 +298,11 @@ const ToolbarDropdown = ({
               transition-transform
               duration-200
 
-              ${
-                isOpen
-                  ? "rotate-180 text-cyan-300"
-                  : ""
-              }
+              ${isOpen ? "rotate-180 text-cyan-300" : ""}
             `}
           />
         </button>
       </div>
-
-      {/* ========================================================
-          PORTAL DROPDOWN MENU
-      ======================================================== */}
 
       {isOpen &&
         createPortal(
@@ -431,8 +335,7 @@ const ToolbarDropdown = ({
             "
           >
             {options.map((option) => {
-              const isSelected =
-                option.value === value;
+              const isSelected = option.value === value;
 
               return (
                 <button
@@ -440,11 +343,7 @@ const ToolbarDropdown = ({
                   type="button"
                   role="option"
                   aria-selected={isSelected}
-                  onClick={() =>
-                    handleOptionSelect(
-                      option.value
-                    )
-                  }
+                  onClick={() => handleOptionSelect(option.value)}
                   className={`
                     flex
                     min-h-10
@@ -473,14 +372,12 @@ const ToolbarDropdown = ({
                     focus:outline-none
                   `}
                 >
-                  <span className="truncate">
-                    {option.label}
-                  </span>
+                  <span className="truncate">{option.label}</span>
                 </button>
               );
             })}
           </div>,
-          document.body
+          document.body,
         )}
     </>
   );
@@ -491,26 +388,31 @@ const ToolbarDropdown = ({
  * OrbitGuard AI - Debris Toolbar
  * ================================================================
  *
- * Presentation-only component for the Debris Registry.
+ * Backend contract:
  *
- * Responsibilities:
- * - Render debris search control
- * - Render backend-compatible sorting controls
- * - Trigger CelesTrak synchronization
+ * GET
+ * /api/v1/debris
+ *
+ * Parameters:
+ * - search
+ * - page
+ * - size
+ * - sort
+ *
+ * CelesTrak synchronization:
+ *
+ * POST
+ * /api/v1/debris/synchronize?group=<GROUP>
  *
  * IMPORTANT:
- * - No Axios
- * - No API calls
- * - No filtering
- * - No sorting calculations
- * - No pagination
+ * The actual API calls remain in DebrisOverviewPage / debrisService.
  *
- * DebrisOverviewPage owns:
- * - Search state
- * - Sort state
- * - Pagination
- * - Synchronization request
+ * This component only forwards:
+ * - search changes
+ * - sort changes
+ * - synchronization request
  *
+ * This keeps the existing architecture intact.
  * ================================================================
  */
 
@@ -533,9 +435,10 @@ const DebrisToolbar = ({
   onSortDirectionChange,
 
   /* ============================================================
-     CELESTRAK SYNC
+     CELESTRAK SYNCHRONIZATION
   ============================================================ */
 
+  syncGroup = "DEB",
   onSync,
   isSyncing = false,
 }) => {
@@ -586,9 +489,7 @@ const DebrisToolbar = ({
   ============================================================ */
 
   const handleSearchChange = (event) => {
-    onSearchChange?.(
-      event.target.value
-    );
+    onSearchChange?.(event.target.value);
   };
 
   const handleSortChange = (value) => {
@@ -599,12 +500,37 @@ const DebrisToolbar = ({
     onSortDirectionChange?.(value);
   };
 
+  /**
+   * ============================================================
+   * CELESTRAK SYNC HANDLER
+   * ============================================================
+   *
+   * The toolbar does NOT call Axios directly.
+   *
+   * It sends the selected backend CelesTrak group to the
+   * DebrisOverviewPage.
+   *
+   * DebrisOverviewPage then calls debrisService.
+   * ============================================================
+   */
+
   const handleSync = () => {
     if (isSyncing) {
       return;
     }
 
-    onSync?.();
+    const normalizedGroup =
+      typeof syncGroup === "string" ? syncGroup.trim() : "";
+
+    if (!normalizedGroup) {
+      console.warn(
+        "[DebrisToolbar] Cannot synchronize debris: CelesTrak group is missing.",
+      );
+
+      return;
+    }
+
+    onSync?.(normalizedGroup);
   };
 
   return (
@@ -615,10 +541,6 @@ const DebrisToolbar = ({
         w-full
       "
     >
-      {/* ======================================================
-          RESPONSIVE TOOLBAR
-      ======================================================= */}
-
       <div
         className="
           flex
@@ -662,10 +584,7 @@ const DebrisToolbar = ({
               lg:col-span-1
             "
           >
-            <label
-              htmlFor={searchId}
-              className="sr-only"
-            >
+            <label htmlFor={searchId} className="sr-only">
               Search debris
             </label>
 
@@ -688,7 +607,7 @@ const DebrisToolbar = ({
               type="search"
               value={searchQuery}
               onChange={handleSearchChange}
-              placeholder="Search debris by name..."
+              placeholder="Search debris by name, code or NORAD ID..."
               autoComplete="off"
               spellCheck="false"
               className="
@@ -775,8 +694,13 @@ const DebrisToolbar = ({
           <button
             type="button"
             onClick={handleSync}
-            disabled={isSyncing}
+            disabled={isSyncing || !String(syncGroup ?? "").trim()}
             aria-busy={isSyncing}
+            aria-label={
+              isSyncing
+                ? "Synchronizing debris from CelesTrak"
+                : "Synchronize debris from CelesTrak"
+            }
             className="
               group
               inline-flex
@@ -824,15 +748,9 @@ const DebrisToolbar = ({
               "
             >
               {isSyncing ? (
-                <FaRotate
-                  className="animate-spin text-sm"
-                  aria-hidden="true"
-                />
+                <FaRotate className="animate-spin text-sm" aria-hidden="true" />
               ) : (
-                <FaCloudArrowDown
-                  className="text-sm"
-                  aria-hidden="true"
-                />
+                <FaCloudArrowDown className="text-sm" aria-hidden="true" />
               )}
             </span>
 
@@ -852,9 +770,7 @@ const DebrisToolbar = ({
                   text-cyan-300
                 "
               >
-                {isSyncing
-                  ? "SYNCING..."
-                  : "SYNC CELESTRAK"}
+                {isSyncing ? "SYNCING..." : "SYNC CELESTRAK"}
               </span>
 
               <span
@@ -867,7 +783,7 @@ const DebrisToolbar = ({
               >
                 {isSyncing
                   ? "Importing debris data..."
-                  : "Import debris from CelesTrak"}
+                  : `Import ${syncGroup || "debris"} data from CelesTrak`}
               </span>
             </span>
           </button>

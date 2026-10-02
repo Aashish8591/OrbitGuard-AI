@@ -11,81 +11,127 @@ import {
  * OrbitGuard AI - Debris Statistics
  * ================================================================
  *
- * Presentation-only component.
+ * Presentation component for the Debris Registry.
  *
- * IMPORTANT:
- * This component does NOT calculate statistics.
+ * DATA FLOW
+ * ----------------------------------------------------------------
  *
- * All values must come from DebrisOverviewPage.
- *
- * Therefore:
- *
- * Backend aggregate statistics
- *          ↓
+ * Spring Boot backend
+ *        ↓
+ * debrisService
+ *        ↓
  * DebrisOverviewPage
- *          ↓
+ *        ↓
  * DebrisStats
  *
- * The values represent the COMPLETE debris registry,
- * not only the currently paginated page.
+ * IMPORTANT
+ * ----------------------------------------------------------------
+ * This component does NOT:
  *
- * IMPORTANT:
- * The structure and visual design intentionally follow
- * SatelliteStats so both registry pages remain consistent.
+ * - call the backend
+ * - calculate registry statistics
+ * - calculate statistics from the current page
+ * - generate fake backend values
+ *
+ * All statistics must be supplied by the parent.
+ *
+ * The values are expected to represent the COMPLETE debris
+ * registry, not only the currently paginated records.
  * ================================================================
  */
 
-const DebrisStats = ({ stats }) => {
+const DebrisStats = ({ stats, isLoading = false }) => {
+  /* ============================================================
+     NORMALIZE BACKEND DATA
+  ============================================================ */
+
+  const safeStats = {
+    total: normalizeNumber(stats?.total),
+    active: normalizeNumber(stats?.active),
+    inactive: normalizeNumber(stats?.inactive),
+    decommissioned: normalizeNumber(
+      stats?.decommissioned,
+    ),
+
+    totalChange: stats?.totalChange ?? null,
+    activeChange: stats?.activeChange ?? null,
+    inactiveChange: stats?.inactiveChange ?? null,
+    decommissionedChange:
+      stats?.decommissionedChange ?? null,
+
+    totalChart: stats?.totalChart ?? [],
+    activeChart: stats?.activeChart ?? [],
+    inactiveChart: stats?.inactiveChart ?? [],
+    decommissionedChart:
+      stats?.decommissionedChart ?? [],
+  };
+
+  /* ============================================================
+     STAT CARDS
+  ============================================================ */
+
   const statCards = [
     {
       id: "total",
       label: "TOTAL DEBRIS",
-      value: stats.total,
-      change: stats.totalChange,
+      value: safeStats.total,
+      change: safeStats.totalChange,
       icon: FaMeteor,
-      iconWrapper: "bg-cyan-500/10 border-cyan-400/20",
+      iconWrapper:
+        "bg-cyan-500/10 border-cyan-400/20",
       iconColor: "text-cyan-400",
       accent: "cyan",
-      chart: stats.totalChart,
+      chart: safeStats.totalChart,
     },
+
     {
       id: "active",
       label: "ACTIVE",
-      value: stats.active,
-      change: stats.activeChange,
+      value: safeStats.active,
+      change: safeStats.activeChange,
       icon: FaCheckCircle,
-      iconWrapper: "bg-emerald-500/10 border-emerald-400/20",
+      iconWrapper:
+        "bg-emerald-500/10 border-emerald-400/20",
       iconColor: "text-emerald-400",
       accent: "emerald",
-      chart: stats.activeChart,
+      chart: safeStats.activeChart,
     },
+
     {
       id: "inactive",
       label: "INACTIVE",
-      value: stats.inactive,
-      change: stats.inactiveChange,
+      value: safeStats.inactive,
+      change: safeStats.inactiveChange,
       icon: FaPauseCircle,
-      iconWrapper: "bg-amber-500/10 border-amber-400/20",
+      iconWrapper:
+        "bg-amber-500/10 border-amber-400/20",
       iconColor: "text-amber-400",
       accent: "amber",
-      chart: stats.inactiveChart,
+      chart: safeStats.inactiveChart,
     },
+
     {
       id: "decommissioned",
       label: "DECOMMISSIONED",
-      value: stats.decommissioned,
-      change: stats.decommissionedChange,
+      value: safeStats.decommissioned,
+      change: safeStats.decommissionedChange,
       icon: FaExclamationCircle,
-      iconWrapper: "bg-red-500/10 border-red-400/20",
+      iconWrapper:
+        "bg-red-500/10 border-red-400/20",
       iconColor: "text-red-400",
       accent: "red",
-      chart: stats.decommissionedChart,
+      chart: safeStats.decommissionedChart,
     },
   ];
+
+  /* ============================================================
+     RENDER
+  ============================================================ */
 
   return (
     <section
       aria-label="Debris registry statistics"
+      aria-busy={isLoading}
       className="
         grid
         grid-cols-1
@@ -118,9 +164,9 @@ const DebrisStats = ({ stats }) => {
               hover:bg-slate-900/80
             "
           >
-            {/* ====================================================
+            {/* ==================================================
                 TOP GLOW
-            ===================================================== */}
+            ================================================== */}
 
             <div
               aria-hidden="true"
@@ -152,7 +198,7 @@ const DebrisStats = ({ stats }) => {
 
             <div className="relative flex items-center justify-between gap-4">
               {/* ==================================================
-                  LEFT
+                  LEFT CONTENT
               ================================================== */}
 
               <div className="flex min-w-0 items-center gap-4">
@@ -172,6 +218,12 @@ const DebrisStats = ({ stats }) => {
                     rounded-full
                     border
                     ${card.iconWrapper}
+
+                    ${
+                      isLoading
+                        ? "animate-pulse"
+                        : ""
+                    }
                   `}
                 >
                   <Icon
@@ -198,41 +250,30 @@ const DebrisStats = ({ stats }) => {
 
                   <div className="mt-1 flex items-end gap-3">
                     <span
-                      className="
+                      className={`
                         font-['Orbitron']
                         text-2xl
                         font-semibold
                         leading-none
                         tracking-wide
                         text-white
-                      "
+
+                        ${
+                          isLoading
+                            ? "animate-pulse"
+                            : ""
+                        }
+                      `}
                     >
-                      {formatStatValue(card.value)}
+                      {isLoading
+                        ? "—"
+                        : formatStatValue(card.value)}
                     </span>
 
-                    {card.change && (
-                      <span
-                        className={`
-                          mb-0.5
-                          whitespace-nowrap
-                          font-['Inter']
-                          text-[10px]
-                          font-medium
-
-                          ${
-                            card.change.type === "negative"
-                              ? "text-red-400"
-                              : card.change.type === "warning"
-                                ? "text-amber-400"
-                                : "text-emerald-400"
-                          }
-                        `}
-                      >
-                        {card.change.direction === "up"
-                          ? "↗"
-                          : "↘"}{" "}
-                        {card.change.value}
-                      </span>
+                    {!isLoading && card.change && (
+                      <StatChange
+                        change={card.change}
+                      />
                     )}
                   </div>
                 </div>
@@ -245,6 +286,7 @@ const DebrisStats = ({ stats }) => {
               <MiniTelemetryChart
                 data={card.chart}
                 accent={card.accent}
+                isLoading={isLoading}
               />
             </div>
           </article>
@@ -254,22 +296,120 @@ const DebrisStats = ({ stats }) => {
   );
 };
 
+/* ================================================================
+   STAT CHANGE
+================================================================ */
+
 /**
- * ================================================================
- * MINI TELEMETRY CHART
- * ================================================================
+ * Change values are optional.
  *
- * Decorative only.
+ * They should only be supplied when the backend actually provides
+ * a meaningful comparison period.
  *
- * It is NOT presented as historical backend analytics.
- * ================================================================
+ * We do NOT invent change percentages on the frontend.
  */
 
-const MiniTelemetryChart = ({ data, accent }) => {
-  const bars =
-    Array.isArray(data) && data.length > 0
-      ? data
-      : [18, 25, 15, 31, 22, 38, 27, 44, 34, 48, 30, 40];
+const StatChange = ({ change }) => {
+  if (
+    !change ||
+    change.value === null ||
+    change.value === undefined ||
+    change.value === ""
+  ) {
+    return null;
+  }
+
+  const direction =
+    change.direction === "up"
+      ? "↗"
+      : change.direction === "down"
+        ? "↘"
+        : "→";
+
+  const colorClass =
+    change.type === "negative"
+      ? "text-red-400"
+      : change.type === "warning"
+        ? "text-amber-400"
+        : "text-emerald-400";
+
+  return (
+    <span
+      className={`
+        mb-0.5
+        whitespace-nowrap
+        font-['Inter']
+        text-[10px]
+        font-medium
+        ${colorClass}
+      `}
+    >
+      {direction} {change.value}
+    </span>
+  );
+};
+
+/* ================================================================
+   MINI TELEMETRY CHART
+================================================================ */
+
+/**
+ * IMPORTANT
+ * ----------------------------------------------------------------
+ * This chart is decorative unless real historical statistics are
+ * supplied by the backend.
+ *
+ * If no backend chart data exists, the chart is not rendered.
+ *
+ * This avoids presenting generated numbers as real analytics.
+ */
+
+const MiniTelemetryChart = ({
+  data,
+  accent,
+  isLoading,
+}) => {
+  if (isLoading) {
+    return (
+      <div
+        className="
+          hidden
+          h-10
+          w-16
+          shrink-0
+          items-end
+          justify-end
+          gap-[2px]
+          sm:flex
+        "
+        aria-hidden="true"
+      >
+        {[18, 25, 20, 30, 24, 34].map(
+          (height, index) => (
+            <span
+              key={`loading-${index}`}
+              className="
+                w-[3px]
+                rounded-t-sm
+                bg-slate-700
+                animate-pulse
+              "
+              style={{
+                height: `${height}%`,
+              }}
+            />
+          ),
+        )}
+      </div>
+    );
+  }
+
+  /**
+   * Only render the chart when actual data was supplied.
+   */
+  if (!Array.isArray(data) || data.length === 0) {
+    return null;
+  }
 
   const barColor =
     accent === "cyan"
@@ -294,7 +434,7 @@ const MiniTelemetryChart = ({ data, accent }) => {
       "
       aria-hidden="true"
     >
-      {bars.map((height, index) => (
+      {data.map((height, index) => (
         <span
           key={`${index}-${height}`}
           className={`
@@ -318,11 +458,29 @@ const MiniTelemetryChart = ({ data, accent }) => {
   );
 };
 
-/**
- * ================================================================
- * VALUE FORMATTER
- * ================================================================
- */
+/* ================================================================
+   VALUE NORMALIZER
+================================================================ */
+
+const normalizeNumber = (value) => {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ""
+  ) {
+    return 0;
+  }
+
+  const numericValue = Number(value);
+
+  return Number.isFinite(numericValue)
+    ? numericValue
+    : 0;
+};
+
+/* ================================================================
+   VALUE FORMATTER
+================================================================ */
 
 const formatStatValue = (value) => {
   if (
@@ -334,21 +492,29 @@ const formatStatValue = (value) => {
   }
 
   if (typeof value === "number") {
-    return new Intl.NumberFormat("en-US").format(value);
+    return new Intl.NumberFormat("en-US").format(
+      value,
+    );
   }
 
   return value;
 };
 
-/**
- * ================================================================
- * PROP TYPES
- * ================================================================
- */
+/* ================================================================
+   PROP TYPES
+================================================================ */
 
 const changePropType = PropTypes.shape({
-  value: PropTypes.string,
-  direction: PropTypes.oneOf(["up", "down"]),
+  value: PropTypes.oneOfType([
+    PropTypes.string,
+    PropTypes.number,
+  ]),
+
+  direction: PropTypes.oneOf([
+    "up",
+    "down",
+  ]),
+
   type: PropTypes.oneOf([
     "positive",
     "negative",
@@ -383,13 +549,24 @@ DebrisStats.propTypes = {
     inactiveChange: changePropType,
     decommissionedChange: changePropType,
 
-    totalChart: PropTypes.arrayOf(PropTypes.number),
-    activeChart: PropTypes.arrayOf(PropTypes.number),
-    inactiveChart: PropTypes.arrayOf(PropTypes.number),
+    totalChart: PropTypes.arrayOf(
+      PropTypes.number,
+    ),
+
+    activeChart: PropTypes.arrayOf(
+      PropTypes.number,
+    ),
+
+    inactiveChart: PropTypes.arrayOf(
+      PropTypes.number,
+    ),
+
     decommissionedChart: PropTypes.arrayOf(
       PropTypes.number,
     ),
   }).isRequired,
+
+  isLoading: PropTypes.bool,
 };
 
 export default DebrisStats;

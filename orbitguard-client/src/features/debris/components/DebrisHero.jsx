@@ -3,27 +3,80 @@ import { FaArrowLeft, FaMeteor } from "react-icons/fa";
 
 /**
  * ================================================================
- * DebrisHero
+ * OrbitGuard AI - DebrisHero
  * ================================================================
  *
- * Presentation-only component for the Debris Registry.
+ * Presentation component for the Debris Registry.
  *
- * Backend/API responsibility:
- * - None.
- * - DebrisOverviewPage is responsible for obtaining backend data.
+ * Backend responsibility:
+ * ---------------------------------------------------------------
+ * NONE.
  *
- * Expected props:
- * - totalDebris: total debris available from backend
- * - activeDebris: active/tracked debris available from backend
+ * DebrisOverviewPage is responsible for:
+ * - Calling debrisService
+ * - Loading backend data
+ * - Reading pagination metadata
+ * - Providing totalDebris / activeDebris
+ *
+ * Props:
+ * ---------------------------------------------------------------
+ * totalDebris
+ *   Total debris records reported by the backend.
+ *
+ * activeDebris
+ *   Total active/tracked debris reported/calculated by the
+ *   parent from backend data.
+ *
+ * isLoading
+ *   Used only for displaying a loading state while the parent
+ *   is loading backend data.
  *
  * IMPORTANT:
- * This component intentionally follows the SatelliteHero design
- * system so both registry pages remain visually consistent.
+ * ---------------------------------------------------------------
+ * Do not call axios/debrisService directly from this component.
+ *
+ * The Hero remains a presentation component.
+ * ================================================================
  */
+
 const DebrisHero = ({
   totalDebris = 0,
   activeDebris = 0,
+  isLoading = false,
 }) => {
+  /* ============================================================
+     SAFE BACKEND VALUES
+  ============================================================ */
+
+  /**
+   * Backend values can sometimes be null/undefined while the
+   * request is loading.
+   *
+   * Normalize them before rendering.
+   */
+  const normalizedTotalDebris =
+    Number.isFinite(Number(totalDebris))
+      ? Number(totalDebris)
+      : 0;
+
+  const normalizedActiveDebris =
+    Number.isFinite(Number(activeDebris))
+      ? Number(activeDebris)
+      : 0;
+
+  /**
+   * Prevent impossible visual state where active debris is
+   * greater than the total number of debris records.
+   */
+  const safeActiveDebris = Math.min(
+    Math.max(normalizedActiveDebris, 0),
+    normalizedTotalDebris,
+  );
+
+  /* ============================================================
+     RENDER
+  ============================================================ */
+
   return (
     <section
       className="
@@ -267,8 +320,6 @@ const DebrisHero = ({
 
                 {/* ==================================================
                     LIVE REGISTRY TELEMETRY
-
-                    These values are received from the parent page.
                 ================================================== */}
 
                 <div
@@ -287,8 +338,11 @@ const DebrisHero = ({
                     sm:text-[9px]
                   "
                   aria-label="Debris registry status"
+                  aria-live="polite"
                 >
-                  {/* Total tracked debris */}
+                  {/* ==================================================
+                      TOTAL TRACKED DEBRIS
+                  ================================================== */}
 
                   <span className="inline-flex items-center gap-1.5">
                     <span
@@ -303,7 +357,9 @@ const DebrisHero = ({
                     />
 
                     <span>
-                      {totalDebris} TRACKED
+                      {isLoading
+                        ? "LOADING"
+                        : `${normalizedTotalDebris} TRACKED`}
                     </span>
                   </span>
 
@@ -314,10 +370,14 @@ const DebrisHero = ({
                     /
                   </span>
 
-                  {/* Active debris */}
+                  {/* ==================================================
+                      ACTIVE DEBRIS
+                  ================================================== */}
 
                   <span className="text-cyan-300/80">
-                    {activeDebris} ACTIVE
+                    {isLoading
+                      ? "— ACTIVE"
+                      : `${safeActiveDebris} ACTIVE`}
                   </span>
                 </div>
               </div>
@@ -373,11 +433,9 @@ const DebrisHero = ({
   );
 };
 
-/**
- * ================================================================
- * Right-side OrbitGuard identity line
- * ================================================================
- */
+/* ================================================================
+   RIGHT-SIDE ORBITGUARD IDENTITY LINE
+================================================================ */
 
 const HeroIdentityLine = ({ text }) => {
   return (
