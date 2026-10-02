@@ -13,10 +13,8 @@ import com.orbitguard.debris.repository.DebrisRepository;
 import com.orbitguard.orbit.propagation.dto.OrbitalPropagationInput;
 import com.orbitguard.orbit.propagation.dto.PropagatedOrbitalState;
 import com.orbitguard.orbit.propagation.service.OrbitalPropagationService;
-
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -28,12 +26,21 @@ import java.util.List;
  * records from CelesTrak into MongoDB.
  *
  * <p>
- * CelesTrak is the source of truth for GP/TLE orbital data.
+ * CelesTrak is the source of truth for synchronized
+ * GP/TLE orbital data.
  * </p>
  *
  * <p>
- * Altitude and velocity are derived by the common
- * SGP4/Orekit propagation service.
+ * CelesTrak may return incomplete orbital information for
+ * some objects. Such records must still be stored in
+ * MongoDB. Orbital propagation is therefore treated as
+ * optional derived-data processing.
+ * </p>
+ *
+ * <p>
+ * Altitude and velocity are derived using the common
+ * SGP4/Orekit propagation service whenever sufficient
+ * orbital data is available.
  * </p>
  */
 @Service
@@ -58,52 +65,56 @@ public class DebrisSynchronizationServiceImpl
 
     private final BusinessCodeGenerator businessCodeGenerator;
 
-    /*
-     * Common orbital propagation service.
-     *
-     * This is the missing dependency in the old
-     * debris synchronization implementation.
-     */
     private final OrbitalPropagationService orbitalPropagationService;
 
 
     /**
      * Synchronizes debris records from a CelesTrak group.
      *
+     * <p>
+     * Every valid CelesTrak record is processed independently.
+     * Therefore, an incomplete or invalid record will not stop
+     * the synchronization of the remaining records.
+     * </p>
+     *
+     * <p>
+     * CelesTrak synchronization and orbital propagation are
+     * intentionally separated:
+     *
      * <pre>
      * CelesTrak
-     *      ↓
-     * CelesTrakDebrisService
      *      ↓
      * CelesTrakDebrisResponse
      *      ↓
      * Validate NORAD ID
      *      ↓
-     * Find by NORAD ID
+     * Find existing debris
      *      ↓
-     * ┌──────────────────────┐
-     * │ Existing debris?     │
-     * └──────────┬───────────┘
-     *            │
-     *       ┌────┴────┐
-     *       │         │
-     *      YES        NO
-     *       │         │
-     *       ↓         ↓
-     *    Update     Insert
-     *       │         │
-     *       └────┬────┘
-     *            ↓
-     *    Build propagation input
-     *            ↓
-     *       SGP4 / Orekit
-     *            ↓
-     *   Position + velocity
-     *            ↓
-     *   Calculate altitude + velocity
-     *            ↓
-     *        Save debris
+     * ┌─────────────────────────┐
+     * │ Existing?               │
+     * └────────────┬────────────┘
+     *              │
+     *        ┌─────┴─────┐
+     *        │           │
+     *       YES          NO
+     *        │           │
+     *     Update       Insert
+     *        │           │
+     *        └─────┬─────┘
+     *              ↓
+     *     Save synchronized
+     *     CelesTrak data
+     *              ↓
+     *       Try propagation
+     *              ↓
+     *    Altitude + velocity
+     *        if possible
+     *              ↓
+     *        Save again
      * </pre>
+     * </p>
+     *
+     * @param group CelesTrak debris group
      */
     @Override
     public void synchronizeDebris(String group) {
@@ -119,39 +130,102 @@ public class DebrisSynchronizationServiceImpl
                 );
 
         if (responses == null || responses.isEmpty()) {
+
+            log.info(
+                    "No debris records returned from CelesTrak for group {}",
+                    normalizedGroup
+            );
+
             return;
         }
+
+        log.info(
+                "Starting debris synchronization for group {}. Records received: {}",
+                normalizedGroup,
+                responses.size()
+        );
+
+        int processedCount = 0;
+        int skippedCount = 0;
 
         for (CelesTrakDebrisResponse response : responses) {
 
             if (response == null) {
+
+                skippedCount++;
+
                 continue;
             }
 
-            Long noradId =
-                    response.getNoradCatalogId();
+            try {
 
-            /*
-             * NORAD catalog ID is the external identity.
-             */
-            if (noradId == null || noradId <= 0) {
-                continue;
-            }
+                Long noradId =
+                        response.getNoradCatalogId();
 
-            debrisRepository
-                    .findByNoradId(noradId)
-                    .ifPresentOrElse(
+                /*
+                 * NORAD catalog ID is required because it is
+                 * the external identity used to find/update
+                 * debris records.
+                 */
+                if (noradId == null || noradId <= 0) {
 
-                            existingDebris ->
-                                    updateExistingDebris(
-                                            existingDebris,
-                                            response
-                                    ),
-
-                            () ->
-                                    insertNewDebris(response)
+                    log.warn(
+                            "Skipping CelesTrak debris record because NORAD ID is missing or invalid."
                     );
+
+                    skippedCount++;
+
+                    continue;
+                }
+
+                /*
+                 * Each record is processed independently.
+                 *
+                 * This is important because one incomplete
+                 * CelesTrak object must not terminate the
+                 * complete synchronization.
+                 */
+                debrisRepository
+                        .findByNoradId(noradId)
+                        .ifPresentOrElse(
+
+                                existingDebris ->
+                                        updateExistingDebris(
+                                                existingDebris,
+                                                response
+                                        ),
+
+                                () ->
+                                        insertNewDebris(
+                                                response
+                                        )
+                        );
+
+                processedCount++;
+
+            } catch (Exception exception) {
+
+                /*
+                 * Do not terminate the complete synchronization
+                 * because one CelesTrak record failed.
+                 */
+                log.error(
+                        "Failed to synchronize debris record from CelesTrak. NORAD ID: {}",
+                        response.getNoradCatalogId(),
+                        exception
+                );
+
+                skippedCount++;
+            }
         }
+
+        log.info(
+                "Debris synchronization completed for group {}. "
+                        + "Processed: {}, Skipped: {}",
+                normalizedGroup,
+                processedCount,
+                skippedCount
+        );
     }
 
 
@@ -159,24 +233,29 @@ public class DebrisSynchronizationServiceImpl
      * Updates an existing debris record.
      *
      * <p>
-     * First synchronize the latest CelesTrak GP/TLE data.
-     * Then propagate that latest orbital state and update
-     * altitude and velocity.
+     * The latest CelesTrak fields are synchronized first.
+     * The record is then saved regardless of whether orbital
+     * propagation is possible.
      * </p>
      */
     private void updateExistingDebris(
             SpaceDebris existingDebris,
             CelesTrakDebrisResponse response) {
 
-        if (existingDebris == null
-                || response == null) {
+        if (existingDebris == null || response == null) {
             return;
         }
 
         /*
          * --------------------------------------------------
-         * Update CelesTrak-owned orbital fields
+         * Synchronize CelesTrak-owned fields
          * --------------------------------------------------
+         *
+         * This must happen before propagation.
+         *
+         * Even if some orbital fields are null/incomplete,
+         * the available CelesTrak information is still
+         * synchronized into the entity.
          */
         syncMapper.updateEntity(
                 existingDebris,
@@ -185,25 +264,32 @@ public class DebrisSynchronizationServiceImpl
 
         /*
          * --------------------------------------------------
-         * Calculate current derived orbital state
+         * Mark the object as active in the latest sync
+         * --------------------------------------------------
+         */
+        existingDebris.setIsActive(true);
+
+        /*
+         * --------------------------------------------------
+         * Try to calculate derived orbital values.
          * --------------------------------------------------
          *
-         * This is the important part that was missing
-         * from the previous debris synchronization flow.
+         * Propagation failure must NOT prevent the
+         * synchronized CelesTrak data from being stored.
          */
         propagateAndSetDerivedValues(
                 existingDebris
         );
 
-        /*
-         * Object appeared in latest synchronization.
-         */
-        existingDebris.setIsActive(true);
-
         existingDebris.setUpdatedAt(
                 LocalDateTime.now()
         );
 
+        /*
+         * --------------------------------------------------
+         * Always save the synchronized record.
+         * --------------------------------------------------
+         */
         debrisRepository.save(
                 existingDebris
         );
@@ -212,6 +298,11 @@ public class DebrisSynchronizationServiceImpl
 
     /**
      * Inserts a new debris record received from CelesTrak.
+     *
+     * <p>
+     * A record is inserted even if some optional CelesTrak
+     * fields are incomplete.
+     * </p>
      */
     private void insertNewDebris(
             CelesTrakDebrisResponse response) {
@@ -221,12 +312,20 @@ public class DebrisSynchronizationServiceImpl
         }
 
         /*
-         * Create entity from synchronized CelesTrak data.
+         * --------------------------------------------------
+         * Convert CelesTrak response into SpaceDebris entity
+         * --------------------------------------------------
          */
         SpaceDebris debris =
                 syncMapper.toEntity(response);
 
         if (debris == null) {
+
+            log.warn(
+                    "CelesTrak mapper returned null for NORAD ID {}",
+                    response.getNoradCatalogId()
+            );
+
             return;
         }
 
@@ -234,12 +333,19 @@ public class DebrisSynchronizationServiceImpl
                 debris.getNoradId();
 
         if (noradId == null || noradId <= 0) {
+
+            log.warn(
+                    "Mapped debris has invalid NORAD ID. "
+                            + "CelesTrak NORAD ID: {}",
+                    response.getNoradCatalogId()
+            );
+
             return;
         }
 
         /*
          * --------------------------------------------------
-         * Generate OrbitGuard debris business code
+         * Generate OrbitGuard business code
          * --------------------------------------------------
          */
         long sequence =
@@ -259,15 +365,8 @@ public class DebrisSynchronizationServiceImpl
 
         /*
          * --------------------------------------------------
-         * Calculate derived orbital values
+         * New synchronized object
          * --------------------------------------------------
-         */
-        propagateAndSetDerivedValues(
-                debris
-        );
-
-        /*
-         * New synchronized debris is active.
          */
         debris.setIsActive(true);
 
@@ -281,6 +380,23 @@ public class DebrisSynchronizationServiceImpl
         debris.setCreatedAt(now);
         debris.setUpdatedAt(now);
 
+        /*
+         * --------------------------------------------------
+         * Try orbital propagation.
+         * --------------------------------------------------
+         *
+         * Propagation is optional. The debris record must
+         * still be saved when propagation cannot be performed.
+         */
+        propagateAndSetDerivedValues(
+                debris
+        );
+
+        /*
+         * --------------------------------------------------
+         * ALWAYS save the synchronized CelesTrak record.
+         * --------------------------------------------------
+         */
         debrisRepository.save(
                 debris
         );
@@ -288,23 +404,40 @@ public class DebrisSynchronizationServiceImpl
 
 
     /**
-     * Propagates the debris orbital state using the
-     * common SGP4/Orekit propagation service.
+     * Attempts to calculate derived orbital values using
+     * the common SGP4/Orekit propagation service.
      *
      * <p>
-     * The propagation target is the current UTC time.
+     * Propagation is intentionally optional because CelesTrak
+     * may provide incomplete orbital data.
      * </p>
      *
      * <p>
-     * The propagated position is used to calculate
-     * altitude and the propagated velocity vector is
-     * used to calculate velocity magnitude.
+     * If the required orbital data is unavailable, this method
+     * simply returns without modifying existing altitude or
+     * velocity values.
      * </p>
      */
     private void propagateAndSetDerivedValues(
             SpaceDebris debris) {
 
         if (debris == null) {
+            return;
+        }
+
+        /*
+         * --------------------------------------------------
+         * Check whether enough orbital information exists
+         * --------------------------------------------------
+         */
+        if (!hasRequiredPropagationData(debris)) {
+
+            log.debug(
+                    "Skipping propagation for debris NORAD {} "
+                            + "because required orbital data is incomplete.",
+                    debris.getNoradId()
+            );
+
             return;
         }
 
@@ -333,7 +466,8 @@ public class DebrisSynchronizationServiceImpl
             if (state == null) {
 
                 log.warn(
-                        "Propagation returned null for debris NORAD {}",
+                        "Propagation returned null for debris NORAD {}. "
+                                + "CelesTrak data will still be saved.",
                         debris.getNoradId()
                 );
 
@@ -361,20 +495,26 @@ public class DebrisSynchronizationServiceImpl
                     );
 
             /*
-             * --------------------------------------------------
-             * Store derived values
-             * --------------------------------------------------
+             * Only replace existing derived values when a
+             * valid calculated value is actually available.
              */
-            debris.setVelocity(
-                    velocity
-            );
+            if (velocity != null) {
 
-            debris.setAltitude(
-                    altitude
-            );
+                debris.setVelocity(
+                        velocity
+                );
+            }
+
+            if (altitude != null) {
+
+                debris.setAltitude(
+                        altitude
+                );
+            }
 
             log.debug(
-                    "Debris propagation successful for NORAD {}: altitude={} km, velocity={} km/s",
+                    "Debris propagation completed for NORAD {}: "
+                            + "altitude={} km, velocity={} km/s",
                     debris.getNoradId(),
                     altitude,
                     velocity
@@ -383,18 +523,51 @@ public class DebrisSynchronizationServiceImpl
         } catch (Exception exception) {
 
             /*
-             * Do not stop the entire synchronization
-             * because one debris object failed propagation.
+             * IMPORTANT:
              *
-             * Existing values are preserved.
+             * Do not throw this exception.
+             *
+             * The CelesTrak record is still valid even when
+             * derived orbital calculations cannot be performed.
              */
             log.warn(
                     "Could not propagate debris NORAD {}. "
-                            + "Derived altitude/velocity were not updated.",
+                            + "CelesTrak synchronized data will still be saved.",
                     debris.getNoradId(),
                     exception
             );
         }
+    }
+
+
+    /**
+     * Determines whether the debris contains enough orbital
+     * information to attempt SGP4/Orekit propagation.
+     *
+     * <p>
+     * This prevents incomplete CelesTrak records from being
+     * unnecessarily passed into the propagation layer.
+     * </p>
+     */
+    private boolean hasRequiredPropagationData(
+            SpaceDebris debris) {
+
+        if (debris == null) {
+            return false;
+        }
+
+        /*
+         * These values are fundamental for constructing the
+         * orbital propagation input.
+         */
+        return debris.getNoradId() != null
+                && debris.getEpoch() != null
+                && debris.getMeanMotion() != null
+                && debris.getEccentricity() != null
+                && debris.getInclination() != null
+                && debris.getRightAscensionOfAscendingNode() != null
+                && debris.getArgumentOfPericenter() != null
+                && debris.getMeanAnomaly() != null;
     }
 
 
@@ -406,10 +579,12 @@ public class DebrisSynchronizationServiceImpl
             SpaceDebris debris) {
 
         /*
-         * Propagation target is current UTC time.
+         * Propagation target is the current UTC time.
          */
         LocalDateTime targetTime =
-                LocalDateTime.now(ZoneOffset.UTC);
+                LocalDateTime.now(
+                        ZoneOffset.UTC
+                );
 
         return OrbitalPropagationInput.builder()
 
@@ -531,13 +706,6 @@ public class DebrisSynchronizationServiceImpl
      * Calculates geocentric altitude from the propagated
      * Earth-centered position.
      *
-     * <p>
-     * The common propagation service already calculates
-     * altitude, but we calculate it here from the returned
-     * position to keep the synchronization layer explicit
-     * and consistent with the satellite synchronization flow.
-     * </p>
-     *
      * @param state propagated orbital state
      * @return altitude in kilometers
      */
@@ -553,9 +721,6 @@ public class DebrisSynchronizationServiceImpl
         }
 
         /*
-         * Use the same Earth radius convention as the
-         * satellite synchronization service.
-         *
          * Mean Earth radius in kilometers.
          */
         final double earthRadiusKm =
