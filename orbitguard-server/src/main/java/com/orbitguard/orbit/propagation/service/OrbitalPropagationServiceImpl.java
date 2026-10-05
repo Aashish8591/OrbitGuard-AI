@@ -25,7 +25,15 @@ public class OrbitalPropagationServiceImpl
     private static final double TWO_PI = 2.0 * Math.PI;
 
     /**
-     * Orekit returns position in meters.
+     * Orekit returns position and velocity in SI units:
+     *
+     * Position  -> meters
+     * Velocity  -> meters/second
+     *
+     * OrbitGuard propagation contract uses:
+     *
+     * Position  -> kilometers
+     * Velocity  -> kilometers/second
      */
     private static final double METERS_TO_KILOMETERS = 1.0 / 1000.0;
 
@@ -35,16 +43,29 @@ public class OrbitalPropagationServiceImpl
      * Used for the current geocentric altitude calculation.
      *
      * Unit: kilometers.
+     *
+     * Note:
+     * This is intentionally kept here as a simple derived
+     * altitude value. Geodetic latitude/longitude/altitude
+     * conversion remains the responsibility of
+     * CoordinateConversionService.
      */
     private static final double EARTH_RADIUS_KM = 6378.137;
+
+    /**
+     * Reference frame returned by TLE/SGP4 propagation.
+     */
+    private static final String PROPAGATION_FRAME = "TEME";
 
     /**
      * International designator format:
      *
      * YYYY-NNNPPP
      *
-     * Example:
+     * Examples:
+     *
      * 1998-067A
+     * 2024-001AB
      */
     private static final Pattern OBJECT_ID_PATTERN =
             Pattern.compile(
@@ -58,48 +79,75 @@ public class OrbitalPropagationServiceImpl
         validateInput(input);
 
         /*
-         * Build TLE from normalized OrbitGuard data.
+         * --------------------------------------------------
+         * BUILD TLE
+         * --------------------------------------------------
+         *
+         * Convert OrbitGuard's normalized orbital data
+         * into an Orekit TLE.
          */
         TLE tle = buildTle(input);
 
         /*
-         * Create SGP4 propagator.
+         * --------------------------------------------------
+         * CREATE SGP4 PROPAGATOR
+         * --------------------------------------------------
          */
         TLEPropagator propagator =
                 TLEPropagator.selectExtrapolator(tle);
 
         /*
-         * Convert requested propagation time
-         * into Orekit AbsoluteDate.
+         * --------------------------------------------------
+         * TARGET TIME
+         * --------------------------------------------------
+         *
+         * OrbitGuard currently uses LocalDateTime.
+         * The propagation contract treats this value as UTC.
          */
         AbsoluteDate targetDate =
                 toAbsoluteDate(input.getTargetTime());
 
         /*
-         * Propagate satellite to requested time.
+         * --------------------------------------------------
+         * PROPAGATE
+         * --------------------------------------------------
          */
         PVCoordinates pvCoordinates =
                 propagator.getPVCoordinates(targetDate);
 
-        /*
-         * Position and velocity returned by Orekit.
-         *
-         * Position  -> meters
-         * Velocity  -> meters/second
-         */
+        if (pvCoordinates == null) {
+            throw new IllegalStateException(
+                    "Orekit returned null PV coordinates for NORAD "
+                            + input.getNoradCatalogId()
+                            + " at "
+                            + input.getTargetTime()
+            );
+        }
+
         Vector3D position =
                 pvCoordinates.getPosition();
 
         Vector3D velocity =
                 pvCoordinates.getVelocity();
 
+        if (position == null || velocity == null) {
+            throw new IllegalStateException(
+                    "Orekit returned incomplete position/velocity "
+                            + "data for NORAD "
+                            + input.getNoradCatalogId()
+            );
+        }
+
         /*
          * --------------------------------------------------
          * POSITION
          * --------------------------------------------------
          *
-         * Convert individual position components
-         * from meters to kilometers.
+         * Orekit:
+         * meters
+         *
+         * OrbitGuard:
+         * kilometers
          */
         double positionX =
                 position.getX()
@@ -115,11 +163,14 @@ public class OrbitalPropagationServiceImpl
 
         /*
          * --------------------------------------------------
-         * VELOCITY
+         * VELOCITY COMPONENTS
          * --------------------------------------------------
          *
-         * Convert individual velocity components
-         * from meters/second to kilometers/second.
+         * Orekit:
+         * meters/second
+         *
+         * OrbitGuard:
+         * kilometers/second
          */
         double velocityX =
                 velocity.getX()
@@ -134,17 +185,47 @@ public class OrbitalPropagationServiceImpl
                         * METERS_TO_KILOMETERS;
 
         /*
+         * Validate the converted state before returning it.
+         *
+         * This prevents invalid numerical values from reaching
+         * the Risk Module.
+         */
+        validateFinitePropagationValue(
+                positionX,
+                "Position X"
+        );
+
+        validateFinitePropagationValue(
+                positionY,
+                "Position Y"
+        );
+
+        validateFinitePropagationValue(
+                positionZ,
+                "Position Z"
+        );
+
+        validateFinitePropagationValue(
+                velocityX,
+                "Velocity X"
+        );
+
+        validateFinitePropagationValue(
+                velocityY,
+                "Velocity Y"
+        );
+
+        validateFinitePropagationValue(
+                velocityZ,
+                "Velocity Z"
+        );
+
+        /*
          * --------------------------------------------------
          * VELOCITY MAGNITUDE
          * --------------------------------------------------
          *
-         * Total orbital velocity:
-         *
-         * V = sqrt(
-         *      Vx² +
-         *      Vy² +
-         *      Vz²
-         * )
+         * V = sqrt(Vx² + Vy² + Vz²)
          *
          * Unit:
          * km/s
@@ -156,28 +237,26 @@ public class OrbitalPropagationServiceImpl
                                 + velocityZ * velocityZ
                 );
 
+        validateFinitePropagationValue(
+                velocityMagnitude,
+                "Velocity magnitude"
+        );
+
         /*
          * --------------------------------------------------
-         * ALTITUDE
+         * GEOCENTRIC ALTITUDE
          * --------------------------------------------------
          *
-         * Position magnitude gives the distance from
-         * the Earth's center.
+         * Distance from Earth's center:
          *
-         * R = sqrt(
-         *      X² +
-         *      Y² +
-         *      Z²
-         * )
+         * R = sqrt(X² + Y² + Z²)
          *
-         * Then:
+         * Geocentric altitude:
          *
-         * altitude =
-         *      distanceFromEarthCenter
-         *      - EarthRadius
+         * altitude = R - Earth radius
          *
          * Unit:
-         * km
+         * kilometers
          */
         double distanceFromEarthCenter =
                 Math.sqrt(
@@ -186,9 +265,19 @@ public class OrbitalPropagationServiceImpl
                                 + positionZ * positionZ
                 );
 
+        validateFinitePropagationValue(
+                distanceFromEarthCenter,
+                "Distance from Earth center"
+        );
+
         double altitude =
                 distanceFromEarthCenter
                         - EARTH_RADIUS_KM;
+
+        validateFinitePropagationValue(
+                altitude,
+                "Altitude"
+        );
 
         /*
          * --------------------------------------------------
@@ -206,7 +295,7 @@ public class OrbitalPropagationServiceImpl
                 )
 
                 /*
-                 * Position
+                 * Position components
                  */
                 .positionX(positionX)
                 .positionY(positionY)
@@ -220,15 +309,15 @@ public class OrbitalPropagationServiceImpl
                 .velocityZ(velocityZ)
 
                 /*
-                 * Derived orbital values
+                 * Derived values
                  */
                 .velocity(velocityMagnitude)
                 .altitude(altitude)
 
                 /*
-                 * Reference frame
+                 * TLE propagation reference frame
                  */
-                .frame("TEME")
+                .frame(PROPAGATION_FRAME)
 
                 .build();
     }
@@ -260,10 +349,14 @@ public class OrbitalPropagationServiceImpl
                 );
 
         /*
-         * Mean motion:
+         * --------------------------------------------------
+         * MEAN MOTION
+         * --------------------------------------------------
          *
+         * Input:
          * revolutions/day
-         * →
+         *
+         * Orekit:
          * radians/second
          */
         double meanMotion =
@@ -272,10 +365,14 @@ public class OrbitalPropagationServiceImpl
                 );
 
         /*
-         * Mean motion first derivative:
+         * --------------------------------------------------
+         * MEAN MOTION FIRST DERIVATIVE
+         * --------------------------------------------------
          *
+         * Input:
          * revolutions/day²
-         * →
+         *
+         * Orekit:
          * radians/second²
          */
         double meanMotionDot =
@@ -284,10 +381,14 @@ public class OrbitalPropagationServiceImpl
                 );
 
         /*
-         * Mean motion second derivative:
+         * --------------------------------------------------
+         * MEAN MOTION SECOND DERIVATIVE
+         * --------------------------------------------------
          *
+         * Input:
          * revolutions/day³
-         * →
+         *
+         * Orekit:
          * radians/second³
          */
         double meanMotionDdot =
@@ -295,6 +396,25 @@ public class OrbitalPropagationServiceImpl
                         input.getMeanMotionDdot()
                 );
 
+        validateFinitePropagationValue(
+                meanMotion,
+                "Converted mean motion"
+        );
+
+        validateFinitePropagationValue(
+                meanMotionDot,
+                "Converted mean motion first derivative"
+        );
+
+        validateFinitePropagationValue(
+                meanMotionDdot,
+                "Converted mean motion second derivative"
+        );
+
+        /*
+         * Convert angular values from degrees
+         * into radians for Orekit.
+         */
         double inclination =
                 Math.toRadians(
                         input.getInclination()
@@ -315,10 +435,17 @@ public class OrbitalPropagationServiceImpl
                         input.getMeanAnomaly()
                 );
 
-        char classification =
+        /*
+         * Classification has already been validated,
+         * but keep the conversion local and explicit.
+         */
+        String classificationType =
                 input.getClassificationType()
                         .trim()
-                        .charAt(0);
+                        .toUpperCase();
+
+        char classification =
+                classificationType.charAt(0);
 
         return new TLE(
                 satelliteNumber,
@@ -434,10 +561,16 @@ public class OrbitalPropagationServiceImpl
     }
 
     /**
-     * Convert revolutions/day to radians/second.
+     * Converts revolutions/day into radians/second.
      */
     private double revolutionsPerDayToRadiansPerSecond(
             Double value) {
+
+        if (value == null) {
+            throw new IllegalArgumentException(
+                    "Mean motion must not be null."
+            );
+        }
 
         return value
                 * TWO_PI
@@ -445,12 +578,18 @@ public class OrbitalPropagationServiceImpl
     }
 
     /**
-     * Convert revolutions/day² to radians/second².
+     * Converts revolutions/day² into radians/second².
      */
     private double
     revolutionsPerDaySquaredToRadiansPerSecondSquared(
             Double value) {
 
+        if (value == null) {
+            throw new IllegalArgumentException(
+                    "Mean motion first derivative must not be null."
+            );
+        }
+
         return value
                 * TWO_PI
                 / (
@@ -460,12 +599,18 @@ public class OrbitalPropagationServiceImpl
     }
 
     /**
-     * Convert revolutions/day³ to radians/second³.
+     * Converts revolutions/day³ into radians/second³.
      */
     private double
     revolutionsPerDayCubedToRadiansPerSecondCubed(
             Double value) {
 
+        if (value == null) {
+            throw new IllegalArgumentException(
+                    "Mean motion second derivative must not be null."
+            );
+        }
+
         return value
                 * TWO_PI
                 / (
@@ -476,7 +621,7 @@ public class OrbitalPropagationServiceImpl
     }
 
     /**
-     * Validate all mandatory propagation input values.
+     * Validates all mandatory propagation input values.
      */
     private void validateInput(
             OrbitalPropagationInput input) {
@@ -575,7 +720,11 @@ public class OrbitalPropagationServiceImpl
     }
 
     /**
-     * Validate NORAD catalog ID.
+     * Validates NORAD catalog ID.
+     *
+     * The propagation contract uses Long,
+     * while the Orekit TLE satellite number is
+     * represented as an int.
      */
     private void validateNoradCatalogId(
             Long noradCatalogId) {
@@ -717,6 +866,9 @@ public class OrbitalPropagationServiceImpl
 
     /**
      * CelesTrak normally uses U for unclassified objects.
+     *
+     * The propagation layer accepts a single
+     * classification character.
      */
     private void validateClassification(
             String classificationType) {
@@ -739,7 +891,7 @@ public class OrbitalPropagationServiceImpl
     }
 
     /**
-     * Validate Orekit TLE ephemeris type.
+     * Validates Orekit TLE ephemeris type.
      */
     private void validateEphemerisType(
             Integer ephemerisType) {
@@ -785,6 +937,29 @@ public class OrbitalPropagationServiceImpl
                     "Invalid international designator: "
                             + objectId
                             + ". Expected format YYYY-NNNPPP."
+            );
+        }
+    }
+
+    /**
+     * Validates a value produced by the orbital
+     * propagation calculation.
+     *
+     * This is especially important before the
+     * state reaches the Risk Module, where invalid
+     * values would corrupt distance or velocity
+     * calculations.
+     */
+    private void validateFinitePropagationValue(
+            double value,
+            String fieldName) {
+
+        if (!Double.isFinite(value)) {
+
+            throw new IllegalStateException(
+                    fieldName
+                            + " produced an invalid numerical value "
+                            + "during orbital propagation."
             );
         }
     }

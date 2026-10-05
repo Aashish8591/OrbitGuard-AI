@@ -5,59 +5,139 @@ import org.springframework.stereotype.Component;
 @Component
 public class ProbabilityCalculator {
 
-    /**
-     * Calculates collision probability.
+    /*
+     * ------------------------------------------------------------------
+     * Risk Probability Calculator
+     * ------------------------------------------------------------------
      *
      * Current Version:
-     * Rule-based algorithm.
+     * Rule-based heuristic algorithm.
      *
      * Future Version:
-     * Can be replaced with
-     * AI / Machine Learning model
-     * without changing the Service layer.
+     * This component can be replaced by an AI / Machine Learning model
+     * without changing the RiskAssessmentService layer.
      *
-     * @param closestApproachDistanceKm Minimum distance between satellite and debris.
-     * @param relativeVelocityKmPerSec Relative velocity.
-     * @return Collision probability in percentage (0 - 100).
+     * Important:
+     * The returned value is a rule-based risk score expressed as a
+     * percentage (0 - 100). It is not a physically validated collision
+     * probability model.
+     */
+
+    private static final double DISTANCE_WEIGHT = 0.70;
+    private static final double VELOCITY_WEIGHT = 0.30;
+
+    private static final double MAX_PROBABILITY = 100.0;
+
+    /**
+     * Calculates a rule-based collision-risk score.
+     *
+     * @param closestApproachDistanceKm
+     *        Distance between satellite and debris in kilometers.
+     *
+     * @param relativeVelocityKmPerSec
+     *        Relative velocity between satellite and debris in km/s.
+     *
+     * @return rule-based risk score in percentage (0 - 100)
      */
     public double calculateProbability(
             double closestApproachDistanceKm,
-            double relativeVelocityKmPerSec
-    ) {
+            double relativeVelocityKmPerSec) {
+
+        validateInputs(
+                closestApproachDistanceKm,
+                relativeVelocityKmPerSec
+        );
 
         /*
+         * --------------------------------------------------------------
          * Distance Score
+         * --------------------------------------------------------------
          *
-         * Smaller distance
-         * = Higher probability
+         * Smaller separation distance means greater collision risk.
+         *
+         * 0 km   -> 100
+         * 5 km   -> 50
+         * 10 km+ -> 0
          */
         double distanceScore =
-                Math.max(0, 100 - (closestApproachDistanceKm * 10));
+                Math.max(
+                        0.0,
+                        MAX_PROBABILITY
+                                - (closestApproachDistanceKm * 10.0)
+                );
 
         /*
+         * --------------------------------------------------------------
          * Velocity Score
+         * --------------------------------------------------------------
          *
-         * Higher velocity
-         * = Higher probability
+         * Higher relative velocity increases the severity of a
+         * potential conjunction.
+         *
+         * The score is capped at 100.
          */
         double velocityScore =
-                Math.min(relativeVelocityKmPerSec * 10, 100);
+                Math.min(
+                        relativeVelocityKmPerSec * 10.0,
+                        MAX_PROBABILITY
+                );
 
         /*
-         * Weighted Average
+         * --------------------------------------------------------------
+         * Weighted Risk Score
+         * --------------------------------------------------------------
          *
-         * Distance : 70%
-         * Velocity : 30%
+         * Distance  -> 70%
+         * Velocity  -> 30%
          */
         double probability =
-                (distanceScore * 0.70)
-                        + (velocityScore * 0.30);
+                (distanceScore * DISTANCE_WEIGHT)
+                        + (velocityScore * VELOCITY_WEIGHT);
 
         /*
-         * Keep value between
-         * 0 and 100.
+         * --------------------------------------------------------------
+         * Final Boundary Protection
+         * --------------------------------------------------------------
          */
-        return Math.max(0, Math.min(probability, 100));
+        return Math.max(
+                0.0,
+                Math.min(
+                        probability,
+                        MAX_PROBABILITY
+                )
+        );
     }
 
+    /**
+     * Validates propagated orbital measurements before calculating
+     * the rule-based risk score.
+     */
+    private void validateInputs(
+            double closestApproachDistanceKm,
+            double relativeVelocityKmPerSec) {
+
+        if (!Double.isFinite(closestApproachDistanceKm)) {
+            throw new IllegalArgumentException(
+                    "Closest approach distance must be a finite value."
+            );
+        }
+
+        if (!Double.isFinite(relativeVelocityKmPerSec)) {
+            throw new IllegalArgumentException(
+                    "Relative velocity must be a finite value."
+            );
+        }
+
+        if (closestApproachDistanceKm < 0) {
+            throw new IllegalArgumentException(
+                    "Closest approach distance cannot be negative."
+            );
+        }
+
+        if (relativeVelocityKmPerSec < 0) {
+            throw new IllegalArgumentException(
+                    "Relative velocity cannot be negative."
+            );
+        }
+    }
 }

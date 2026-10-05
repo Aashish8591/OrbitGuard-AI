@@ -41,5 +41,6 @@ public class PropagatedOrbitalState {
     private String frame;
 
     private Double altitude;
+
     private Double velocity;
 }

@@ -10,6 +10,7 @@ public class RiskAssessmentMapper {
 
     /**
      * Convert AnalyzeRiskRequest to CollisionRisk Entity.
+     *
      * Only maps client supplied fields.
      * Business fields are populated by the service layer.
      */
@@ -28,7 +29,8 @@ public class RiskAssessmentMapper {
     /**
      * Convert CollisionRisk Entity to Response DTO.
      */
-    public RiskAssessmentResponse toResponse(CollisionRisk collisionRisk) {
+    public RiskAssessmentResponse toResponse(
+            CollisionRisk collisionRisk) {
 
         if (collisionRisk == null) {
             return null;
@@ -39,9 +41,15 @@ public class RiskAssessmentMapper {
                 .riskCode(collisionRisk.getRiskCode())
                 .satelliteId(collisionRisk.getSatelliteId())
                 .debrisId(collisionRisk.getDebrisId())
-                .closestApproachDistanceKm(collisionRisk.getClosestApproachDistanceKm())
-                .relativeVelocityKmPerSec(collisionRisk.getRelativeVelocityKmPerSec())
-                .collisionProbability(collisionRisk.getCollisionProbability())
+                .closestApproachDistanceKm(
+                        collisionRisk.getClosestApproachDistanceKm()
+                )
+                .relativeVelocityKmPerSec(
+                        collisionRisk.getRelativeVelocityKmPerSec()
+                )
+                .collisionProbability(
+                        collisionRisk.getCollisionProbability()
+                )
                 .riskLevel(collisionRisk.getRiskLevel())
                 .status(collisionRisk.getStatus())
                 .assessmentType(collisionRisk.getAssessmentType())
@@ -52,5 +60,4 @@ public class RiskAssessmentMapper {
                 .updatedAt(collisionRisk.getUpdatedAt())
                 .build();
     }
-
 }

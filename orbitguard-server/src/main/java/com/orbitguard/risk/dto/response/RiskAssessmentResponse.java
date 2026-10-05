@@ -45,5 +45,4 @@ public class RiskAssessmentResponse {
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
-
 }

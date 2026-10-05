@@ -75,32 +75,63 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
     public ApiResponse<RiskAssessmentResponse> analyzeRisk(
             AnalyzeRiskRequest request) {
 
-        // Validate Request
-        if (request == null) {
-            throw new BadRequestException(
-                    "Risk analysis request cannot be null."
-            );
-        }
+        /*
+         * --------------------------------------------------------------
+         * Validate Request
+         * --------------------------------------------------------------
+         */
+        validateAnalyzeRiskRequest(request);
 
-        // Fetch Active Satellite
+        /*
+         * --------------------------------------------------------------
+         * Fetch Active Satellite
+         * --------------------------------------------------------------
+         */
         Satellite satellite =
                 getActiveSatellite(request.getSatelliteId());
 
-        // Fetch Active Space Debris
+        /*
+         * --------------------------------------------------------------
+         * Fetch Active Space Debris
+         * --------------------------------------------------------------
+         */
         SpaceDebris debris =
                 getActiveDebris(request.getDebrisId());
 
         /*
-         * Use one common timestamp for both orbital propagations.
+         * --------------------------------------------------------------
+         * Validate NORAD identifiers
          *
-         * This is important because the satellite and debris
-         * orbital states must represent the same point in time
-         * before calculating their relative position and velocity.
+         * Propagation layer contracts:
+         *
+         * Satellite -> Integer NORAD catalog ID
+         * Debris    -> Long NORAD ID
+         * --------------------------------------------------------------
          */
-        LocalDateTime assessmentTime = LocalDateTime.now();
+        validateSatelliteNoradId(
+                satellite.getNoradCatalogId()
+        );
+
+        validateDebrisNoradId(
+                debris.getNoradId()
+        );
 
         /*
-         * Propagate Satellite using its NORAD Catalog ID.
+         * --------------------------------------------------------------
+         * Common Assessment Time
+         *
+         * Both orbital states MUST be propagated at the same
+         * target timestamp before relative distance and velocity
+         * are calculated.
+         * --------------------------------------------------------------
+         */
+        LocalDateTime assessmentTime =
+                LocalDateTime.now();
+
+        /*
+         * --------------------------------------------------------------
+         * Propagate Satellite
+         * --------------------------------------------------------------
          */
         PropagatedOrbitalState satelliteState =
                 orbitalPropagationFacade.propagateSatellite(
@@ -108,8 +139,16 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
                         assessmentTime
                 );
 
+        validatePropagatedState(
+                satelliteState,
+                "satellite",
+                satellite.getNoradCatalogId()
+        );
+
         /*
-         * Propagate Debris using its NORAD ID.
+         * --------------------------------------------------------------
+         * Propagate Debris
+         * --------------------------------------------------------------
          */
         PropagatedOrbitalState debrisState =
                 orbitalPropagationFacade.propagateDebris(
@@ -117,48 +156,94 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
                         assessmentTime
                 );
 
-        // Calculate actual propagated orbital parameters
-        double closestDistance =
+        validatePropagatedState(
+                debrisState,
+                "debris",
+                debris.getNoradId()
+        );
+
+        /*
+         * --------------------------------------------------------------
+         * Calculate Instantaneous Separation Distance
+         *
+         * This is the 3D distance between the propagated satellite
+         * and debris positions at assessmentTime.
+         *
+         * Unit: kilometers
+         * --------------------------------------------------------------
+         */
+        double separationDistance =
                 calculateDistance(
                         satelliteState,
                         debrisState
                 );
 
+        /*
+         * --------------------------------------------------------------
+         * Calculate Relative Velocity
+         *
+         * Unit: kilometers per second
+         * --------------------------------------------------------------
+         */
         double relativeVelocity =
                 calculateRelativeVelocity(
                         satelliteState,
                         debrisState
                 );
 
-        // Calculate Collision Probability
+        /*
+         * --------------------------------------------------------------
+         * Calculate Collision Probability
+         *
+         * Current implementation is the existing rule-based
+         * ProbabilityCalculator.
+         * --------------------------------------------------------------
+         */
         double collisionProbability =
                 probabilityCalculator.calculateProbability(
-                        closestDistance,
+                        separationDistance,
                         relativeVelocity
                 );
 
-        // Determine Risk Level
+        /*
+         * --------------------------------------------------------------
+         * Determine Risk Level
+         * --------------------------------------------------------------
+         */
         RiskLevel riskLevel =
                 riskCalculator.calculateRiskLevel(
                         collisionProbability
                 );
 
-        // Generate Recommendation
+        /*
+         * --------------------------------------------------------------
+         * Generate Recommendation
+         * --------------------------------------------------------------
+         */
         String recommendation =
                 riskCalculator.generateRecommendation(
                         riskLevel
                 );
 
-        // Generate Business Code
-        String riskCode = generateRiskCode();
+        /*
+         * --------------------------------------------------------------
+         * Generate Business Code
+         * --------------------------------------------------------------
+         */
+        String riskCode =
+                generateRiskCode();
 
-        // Build Entity
+        /*
+         * --------------------------------------------------------------
+         * Build Collision Risk Entity
+         * --------------------------------------------------------------
+         */
         CollisionRisk collisionRisk =
                 CollisionRisk.builder()
                         .riskCode(riskCode)
                         .satelliteId(satellite.getId())
                         .debrisId(debris.getId())
-                        .closestApproachDistanceKm(closestDistance)
+                        .closestApproachDistanceKm(separationDistance)
                         .relativeVelocityKmPerSec(relativeVelocity)
                         .collisionProbability(collisionProbability)
                         .riskLevel(riskLevel)
@@ -172,15 +257,27 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
                         .updatedAt(assessmentTime)
                         .build();
 
-        // Save Assessment
+        /*
+         * --------------------------------------------------------------
+         * Save Assessment
+         * --------------------------------------------------------------
+         */
         CollisionRisk savedRisk =
                 collisionRiskRepository.save(collisionRisk);
 
-        // Convert Entity to Response
+        /*
+         * --------------------------------------------------------------
+         * Convert Entity -> Response
+         * --------------------------------------------------------------
+         */
         RiskAssessmentResponse response =
                 riskAssessmentMapper.toResponse(savedRisk);
 
-        // Return Success Response
+        /*
+         * --------------------------------------------------------------
+         * Return Success Response
+         * --------------------------------------------------------------
+         */
         return ResponseBuilder.success(
                 "Collision risk analyzed successfully.",
                 response
@@ -189,10 +286,161 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
 
     /**
      * ------------------------------------------------------------------
+     * Validate Analyze Risk Request
+     * ------------------------------------------------------------------
+     */
+    private void validateAnalyzeRiskRequest(
+            AnalyzeRiskRequest request) {
+
+        if (request == null) {
+            throw new BadRequestException(
+                    "Risk analysis request cannot be null."
+            );
+        }
+
+        if (request.getSatelliteId() == null
+                || request.getSatelliteId().isBlank()) {
+
+            throw new BadRequestException(
+                    "Satellite ID cannot be null or empty."
+            );
+        }
+
+        if (request.getDebrisId() == null
+                || request.getDebrisId().isBlank()) {
+
+            throw new BadRequestException(
+                    "Debris ID cannot be null or empty."
+            );
+        }
+    }
+
+    /**
+     * ------------------------------------------------------------------
+     * Validate Satellite NORAD ID
+     * ------------------------------------------------------------------
+     *
+     * Satellite propagation contract uses Integer.
+     */
+    private void validateSatelliteNoradId(
+            Integer noradCatalogId) {
+
+        if (noradCatalogId == null || noradCatalogId <= 0) {
+            throw new BadRequestException(
+                    "Satellite NORAD catalog ID must be greater than zero."
+            );
+        }
+    }
+
+    /**
+     * ------------------------------------------------------------------
+     * Validate Debris NORAD ID
+     * ------------------------------------------------------------------
+     *
+     * Debris propagation contract uses Long.
+     */
+    private void validateDebrisNoradId(
+            Long noradId) {
+
+        if (noradId == null || noradId <= 0) {
+            throw new BadRequestException(
+                    "Debris NORAD ID must be greater than zero."
+            );
+        }
+    }
+
+    /**
+     * ------------------------------------------------------------------
+     * Validate Propagated Orbital State
+     * ------------------------------------------------------------------
+     *
+     * Ensures the propagation layer returned a complete numerical
+     * state before risk calculations are performed.
+     */
+    private void validatePropagatedState(
+            PropagatedOrbitalState state,
+            String objectType,
+            Number noradId) {
+
+        if (state == null) {
+            throw new IllegalStateException(
+                    "Propagated orbital state is null for "
+                            + objectType
+                            + " NORAD ID: "
+                            + noradId
+            );
+        }
+
+        if (state.getPositionX() == null
+                || state.getPositionY() == null
+                || state.getPositionZ() == null) {
+
+            throw new IllegalStateException(
+                    "Incomplete propagated position data for "
+                            + objectType
+                            + " NORAD ID: "
+                            + noradId
+            );
+        }
+
+        if (state.getVelocityX() == null
+                || state.getVelocityY() == null
+                || state.getVelocityZ() == null) {
+
+            throw new IllegalStateException(
+                    "Incomplete propagated velocity data for "
+                            + objectType
+                            + " NORAD ID: "
+                            + noradId
+            );
+        }
+
+        if (!isFinite(
+                state.getPositionX(),
+                state.getPositionY(),
+                state.getPositionZ(),
+                state.getVelocityX(),
+                state.getVelocityY(),
+                state.getVelocityZ()
+        )) {
+
+            throw new IllegalStateException(
+                    "Invalid numerical values returned by orbital "
+                            + "propagation for "
+                            + objectType
+                            + " NORAD ID: "
+                            + noradId
+            );
+        }
+    }
+
+    /**
+     * ------------------------------------------------------------------
+     * Validate Numerical Values
+     * ------------------------------------------------------------------
+     */
+    private boolean isFinite(
+            double positionX,
+            double positionY,
+            double positionZ,
+            double velocityX,
+            double velocityY,
+            double velocityZ) {
+
+        return Double.isFinite(positionX)
+                && Double.isFinite(positionY)
+                && Double.isFinite(positionZ)
+                && Double.isFinite(velocityX)
+                && Double.isFinite(velocityY)
+                && Double.isFinite(velocityZ);
+    }
+
+    /**
+     * ------------------------------------------------------------------
      * Calculate Distance Between Propagated Orbital States
      * ------------------------------------------------------------------
      *
-     * Calculates the instantaneous 3D distance between
+     * Calculates the instantaneous 3D separation between the
      * satellite and debris positions.
      *
      * Unit:
@@ -214,11 +462,20 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
                 satelliteState.getPositionZ()
                         - debrisState.getPositionZ();
 
-        return Math.sqrt(
-                (deltaX * deltaX)
-                        + (deltaY * deltaY)
-                        + (deltaZ * deltaZ)
-        );
+        double distance =
+                Math.sqrt(
+                        (deltaX * deltaX)
+                                + (deltaY * deltaY)
+                                + (deltaZ * deltaZ)
+                );
+
+        if (!Double.isFinite(distance)) {
+            throw new IllegalStateException(
+                    "Unable to calculate a valid separation distance."
+            );
+        }
+
+        return distance;
     }
 
     /**
@@ -247,16 +504,25 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
                 satelliteState.getVelocityZ()
                         - debrisState.getVelocityZ();
 
-        return Math.sqrt(
-                (deltaVelocityX * deltaVelocityX)
-                        + (deltaVelocityY * deltaVelocityY)
-                        + (deltaVelocityZ * deltaVelocityZ)
-        );
+        double relativeVelocity =
+                Math.sqrt(
+                        (deltaVelocityX * deltaVelocityX)
+                                + (deltaVelocityY * deltaVelocityY)
+                                + (deltaVelocityZ * deltaVelocityZ)
+                );
+
+        if (!Double.isFinite(relativeVelocity)) {
+            throw new IllegalStateException(
+                    "Unable to calculate a valid relative velocity."
+            );
+        }
+
+        return relativeVelocity;
     }
 
     /**
      * ------------------------------------------------------------------
-     * Get Risk By Id
+     * Get Risk By ID
      * ------------------------------------------------------------------
      */
     @Override
@@ -264,14 +530,12 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
     public ApiResponse<RiskAssessmentResponse> getRiskById(
             String riskId) {
 
-        // Validate Input
         if (riskId == null || riskId.isBlank()) {
             throw new BadRequestException(
                     "Risk ID cannot be null or empty."
             );
         }
 
-        // Fetch Risk
         CollisionRisk collisionRisk =
                 collisionRiskRepository
                         .findByIdAndIsActiveTrue(riskId)
@@ -281,11 +545,9 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
                                                 + riskId
                                 ));
 
-        // Convert Entity to Response DTO
         RiskAssessmentResponse response =
                 riskAssessmentMapper.toResponse(collisionRisk);
 
-        // Return Success Response
         return ResponseBuilder.success(
                 "Collision risk retrieved successfully.",
                 response
@@ -310,42 +572,43 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
             LocalDateTime toDate,
             Pageable pageable) {
 
-        // Build Dynamic Query
-        Query query = riskQueryBuilder.buildQuery(
-                search,
-                riskLevel,
-                status,
-                assessmentType,
-                satelliteId,
-                debrisId,
-                fromDate,
-                toDate
-        );
+        if (pageable == null) {
+            throw new BadRequestException(
+                    "Pageable cannot be null."
+            );
+        }
 
-        // Count Total Records
+        Query query =
+                riskQueryBuilder.buildQuery(
+                        search,
+                        riskLevel,
+                        status,
+                        assessmentType,
+                        satelliteId,
+                        debrisId,
+                        fromDate,
+                        toDate
+                );
+
         long totalElements =
                 mongoTemplate.count(
                         query,
                         CollisionRisk.class
                 );
 
-        // Apply Pagination
         query.with(pageable);
 
-        // Fetch Records
         List<CollisionRisk> collisionRisks =
                 mongoTemplate.find(
                         query,
                         CollisionRisk.class
                 );
 
-        // Convert Entity -> Response DTO
         List<RiskAssessmentResponse> responses =
                 collisionRisks.stream()
                         .map(riskAssessmentMapper::toResponse)
                         .toList();
 
-        // Create Spring Page
         Page<RiskAssessmentResponse> page =
                 new PageImpl<>(
                         responses,
@@ -353,11 +616,9 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
                         totalElements
                 );
 
-        // Convert to PagedResponse
         PagedResponse<RiskAssessmentResponse> pagedResponse =
                 PagedResponse.from(page);
 
-        // Return Success Response
         return ResponseBuilder.success(
                 "Collision risks retrieved successfully.",
                 pagedResponse
@@ -375,21 +636,18 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
             String id,
             UpdateRiskStatusRequest request) {
 
-        // Validate Risk ID
         if (id == null || id.isBlank()) {
             throw new BadRequestException(
                     "Risk ID cannot be null or empty."
             );
         }
 
-        // Validate Request
         if (request == null) {
             throw new BadRequestException(
                     "Update request cannot be null."
             );
         }
 
-        // Fetch Active Risk
         CollisionRisk collisionRisk =
                 collisionRiskRepository
                         .findByIdAndIsActiveTrue(id)
@@ -399,24 +657,28 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
                                                 + id
                                 ));
 
-        // Update Status
-        collisionRisk.setStatus(request.getStatus());
+        if (request.getStatus() == null) {
+            throw new BadRequestException(
+                    "Risk status cannot be null."
+            );
+        }
 
-        // Update Remarks
-        collisionRisk.setRemarks(request.getRemarks());
+        collisionRisk.setStatus(
+                request.getStatus()
+        );
 
-        // Update Audit Fields
+        collisionRisk.setRemarks(
+                request.getRemarks()
+        );
+
         updateAuditFields(collisionRisk);
 
-        // Save Updated Risk
         CollisionRisk updatedRisk =
                 collisionRiskRepository.save(collisionRisk);
 
-        // Convert Entity to Response DTO
         RiskAssessmentResponse response =
                 riskAssessmentMapper.toResponse(updatedRisk);
 
-        // Return Success Response
         return ResponseBuilder.success(
                 "Collision risk status updated successfully.",
                 response
@@ -432,14 +694,12 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
     @Transactional
     public ApiResponse<Void> deleteRisk(String id) {
 
-        // Validate Risk ID
         if (id == null || id.isBlank()) {
             throw new BadRequestException(
                     "Risk ID cannot be null or empty."
             );
         }
 
-        // Fetch Active Risk
         CollisionRisk collisionRisk =
                 collisionRiskRepository
                         .findByIdAndIsActiveTrue(id)
@@ -449,28 +709,24 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
                                                 + id
                                 ));
 
-        // Soft Delete
         collisionRisk.setIsActive(false);
 
-        // Update Audit Fields
         updateAuditFields(collisionRisk);
 
-        // Save Updated Entity
         collisionRiskRepository.save(collisionRisk);
 
-        // Return Success Response
         return ResponseBuilder.success(
                 "Collision risk deleted successfully."
         );
     }
 
     /**
-     * Generates a unique business code for Collision Risk.
+     * ------------------------------------------------------------------
+     * Generate Risk Business Code
+     * ------------------------------------------------------------------
      *
      * Example:
      * RSK-000001
-     *
-     * @return Risk Business Code
      */
     private String generateRiskCode() {
 
@@ -486,11 +742,9 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
     }
 
     /**
-     * Fetches an active satellite by its MongoDB ID.
-     *
-     * @param satelliteId Satellite ID
-     * @return Active Satellite
-     * @throws ResourceNotFoundException if satellite does not exist
+     * ------------------------------------------------------------------
+     * Fetch Active Satellite
+     * ------------------------------------------------------------------
      */
     private Satellite getActiveSatellite(
             String satelliteId) {
@@ -505,11 +759,9 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
     }
 
     /**
-     * Fetches an active space debris by its MongoDB ID.
-     *
-     * @param debrisId Debris ID
-     * @return Active Space Debris
-     * @throws ResourceNotFoundException if debris does not exist
+     * ------------------------------------------------------------------
+     * Fetch Active Space Debris
+     * ------------------------------------------------------------------
      */
     private SpaceDebris getActiveDebris(
             String debrisId) {
@@ -524,9 +776,9 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
     }
 
     /**
-     * Updates audit timestamp.
-     *
-     * @param collisionRisk Risk Entity
+     * ------------------------------------------------------------------
+     * Update Audit Fields
+     * ------------------------------------------------------------------
      */
     private void updateAuditFields(
             CollisionRisk collisionRisk) {
