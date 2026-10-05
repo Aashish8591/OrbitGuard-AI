@@ -30,27 +30,25 @@ import {
  * - No API calls.
  * - No risk calculations.
  * - No backend data fetching.
- * - Page index is treated as ZERO-BASED.
+ * - Page index is ZERO-BASED internally.
+ * - User-visible page numbers are ONE-BASED.
  * - Backend remains the source of truth.
- * - Designed to work with Spring Data pagination.
+ * - Designed for Spring Data pagination.
  *
- * Expected backend pagination shape:
+ * Expected normalized pagination shape:
  *
  * {
- *   content: [...],
  *   pageNumber: 0,
  *   pageSize: 10,
  *   totalElements: 42,
- *   totalPages: 5,
- *   first: true,
- *   last: false
+ *   totalPages: 5
  * }
  *
- * If your PagedResponse uses different property names,
- * normalize them in the parent before passing them here.
+ * The parent component is responsible for converting the actual
+ * backend response into these values.
+ *
  * ================================================================
  */
-
 
 /* ================================================================
    CONSTANTS
@@ -166,14 +164,21 @@ const PaginationEllipsis = () => {
 /**
  * Creates a compact page-number range.
  *
- * Page numbers displayed to the user are ONE-BASED.
- * Backend page numbers remain ZERO-BASED.
+ * Internal page numbers:
+ * ZERO-BASED
+ *
+ * User-visible page numbers:
+ * ONE-BASED
  */
 const buildPageRange = (
     currentPage,
     totalPages,
 ) => {
-    if (totalPages <= 1) {
+    if (totalPages <= 0) {
+        return [];
+    }
+
+    if (totalPages === 1) {
         return [0];
     }
 
@@ -282,11 +287,6 @@ const RiskPagination = ({
        NORMALIZE PAGINATION VALUES
     ============================================================ */
 
-    const safeCurrentPage = Math.max(
-        0,
-        Number(currentPage) || 0,
-    );
-
     const safeTotalPages = Math.max(
         0,
         Number(totalPages) || 0,
@@ -302,9 +302,31 @@ const RiskPagination = ({
         Number(pageSize) || DEFAULT_PAGE_SIZE,
     );
 
+    const requestedCurrentPage = Math.max(
+        0,
+        Number(currentPage) || 0,
+    );
+
+    /*
+     * Protect the UI from stale/inconsistent pagination state.
+     *
+     * Example:
+     * backend says totalPages = 3,
+     * but parent still temporarily contains page = 5.
+     *
+     * We never allow the UI to display an impossible page.
+     */
+    const safeCurrentPage =
+        safeTotalPages > 0
+            ? Math.min(
+                  requestedCurrentPage,
+                  safeTotalPages - 1,
+              )
+            : 0;
+
 
     /* ============================================================
-       EMPTY / SINGLE PAGE
+       EMPTY RESULT
     ============================================================ */
 
     if (safeTotalElements === 0) {
@@ -312,16 +334,10 @@ const RiskPagination = ({
     }
 
 
-    /*
-     * Calculate visible record range.
-     *
-     * Example:
-     * page = 1
-     * pageSize = 10
-     * total = 42
-     *
-     * Showing 11–20 of 42
-     */
+    /* ============================================================
+       RECORD RANGE
+    ============================================================ */
+
     const firstRecord =
         safeCurrentPage * safePageSize + 1;
 
@@ -339,20 +355,21 @@ const RiskPagination = ({
         safeCurrentPage <= 0;
 
     const isLastPage =
-        safeTotalPages === 0 ||
+        safeTotalPages <= 0 ||
         safeCurrentPage >= safeTotalPages - 1;
 
 
-    /*
-     * Protect against stale pagination data.
-     */
-    const goToPage = (page) => {
+    /* ============================================================
+       PAGE CHANGE
+    ============================================================ */
 
+    const goToPage = (page) => {
         if (loading) {
             return;
         }
 
         if (
+            safeTotalPages <= 0 ||
             page < 0 ||
             page >= safeTotalPages
         ) {
@@ -367,6 +384,11 @@ const RiskPagination = ({
             return;
         }
 
+        /*
+         * Parent owns the actual backend request.
+         *
+         * We only emit the ZERO-BASED page index.
+         */
         onPageChange(page);
     };
 
@@ -621,5 +643,6 @@ const RiskPagination = ({
         </div>
     );
 };
+
 
 export default RiskPagination;

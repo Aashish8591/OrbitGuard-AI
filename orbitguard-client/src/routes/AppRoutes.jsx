@@ -16,7 +16,7 @@ import SatelliteDetails from "../pages/app/SatelliteDetails";
 import Debris from "../pages/app/Debris";
 import DebrisDetails from "../pages/app/DebrisDetails";
 
-import Risk from "../pages/app/Risks";
+import Risks from "../pages/app/Risks";
 
 function AppRoutes() {
   return (

@@ -7,6 +7,7 @@ import {
     FiSliders,
     FiX,
 } from "react-icons/fi";
+import { useRef } from "react";
 
 /**
  * ================================================================
@@ -15,47 +16,43 @@ import {
  *
  * PURPOSE
  * ----------------------------------------------------------------
- * Toolbar for the Collision Risk Operations Center.
+ * Compact filtering toolbar for the Collision Risk Operations
+ * section.
+ *
+ * VISIBLE FILTERS
+ * ----------------------------------------------------------------
+ * - Search
+ * - Risk Level
+ * - Satellite ID
+ * - Debris ID
+ * - Assessment Date
+ *
+ * REMOVED
+ * ----------------------------------------------------------------
+ * - Status
+ * - Assessment Type
+ * - End Date
+ * - Time selection
  *
  * RESPONSIBILITY
  * ----------------------------------------------------------------
- * - Search risk assessments
- * - Filter by risk level
- * - Filter by risk status
- * - Filter by assessment type
- * - Filter by satellite
- * - Filter by debris
- * - Filter by assessment date range
- * - Reset active filters
+ * This component only controls filter UI.
  *
- * IMPORTANT ARCHITECTURE
- * ----------------------------------------------------------------
- * This component DOES NOT:
- *
+ * It does NOT:
  * - call the API
  * - build API URLs
- * - perform backend requests
  * - calculate risk
  * - calculate probability
  * - manipulate backend data
  *
- * The parent RiskOverviewPage owns the actual filter state
- * and backend integration.
- *
- * Backend query parameters supported:
- *
- * search
- * riskLevel
- * status
- * assessmentType
- * satelliteId
- * debrisId
- * fromDate
- * toDate
+ * RiskOverviewPage remains responsible for:
+ * - filter state
+ * - backend integration
+ * - API query construction
+ * - loading state
  *
  * ================================================================
  */
-
 
 /* ================================================================
    CONSTANTS
@@ -84,81 +81,66 @@ const RISK_LEVEL_OPTIONS = [
     },
 ];
 
-
-const RISK_STATUS_OPTIONS = [
-    {
-        value: "",
-        label: "All Status",
-    },
-    {
-        value: "PENDING",
-        label: "Pending",
-    },
-    {
-        value: "ANALYZED",
-        label: "Analyzed",
-    },
-    {
-        value: "MITIGATED",
-        label: "Mitigated",
-    },
-    {
-        value: "CLOSED",
-        label: "Closed",
-    },
-];
-
-
-const ASSESSMENT_TYPE_OPTIONS = [
-    {
-        value: "",
-        label: "All Assessment Types",
-    },
-    {
-        value: "MANUAL",
-        label: "Manual",
-    },
-    {
-        value: "SCHEDULED",
-        label: "Scheduled",
-    },
-    {
-        value: "RULE_BASED",
-        label: "Rule Based",
-    },
-    {
-        value: "AI_GENERATED",
-        label: "AI Generated",
-    },
-];
-
-
 /* ================================================================
-   SMALL UI COMPONENTS
+   HELPERS
 ================================================================ */
 
 /**
- * Select field used by the toolbar.
+ * Convert internal filter value into readable UI text.
  */
+const getOptionLabel = (options, value) => {
+    if (!value) {
+        return "";
+    }
+
+    return (
+        options.find(
+            (option) => option.value === value,
+        )?.label ?? value
+    );
+};
+
+/**
+ * Format selected date for active filter chip.
+ *
+ * Example:
+ * 2026-10-05
+ * -> 05 Oct 2026
+ */
+const formatDateLabel = (value) => {
+    if (!value) {
+        return "";
+    }
+
+    const date = new Date(`${value}T00:00:00`);
+
+    if (Number.isNaN(date.getTime())) {
+        return value;
+    }
+
+    return new Intl.DateTimeFormat("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+    }).format(date);
+};
+
+/* ================================================================
+   SELECT FIELD
+================================================================ */
+
 const FilterSelect = ({
     value,
     onChange,
     options,
     ariaLabel,
-    className = "",
 }) => {
     return (
-        <div
-            className={`
-                relative
-                min-w-0
-                ${className}
-            `}
-        >
+        <div className="relative min-w-0">
             <select
                 value={value ?? ""}
                 onChange={(event) =>
-                    onChange(event.target.value)
+                    onChange?.(event.target.value)
                 }
                 aria-label={ariaLabel}
                 className="
@@ -172,7 +154,7 @@ const FilterSelect = ({
                     px-3
                     pr-9
                     font-['Inter']
-                    text-[11px]
+                    text-xs
                     font-medium
                     text-slate-300
                     outline-none
@@ -186,8 +168,6 @@ const FilterSelect = ({
 
                     [&>option]:bg-[#06111f]
                     [&>option]:text-slate-200
-
-                    sm:text-xs
                 "
             >
                 {options.map((option) => (
@@ -215,10 +195,10 @@ const FilterSelect = ({
     );
 };
 
+/* ================================================================
+   TEXT INPUT
+================================================================ */
 
-/**
- * Input used for satellite/debris IDs.
- */
 const FilterInput = ({
     value,
     onChange,
@@ -230,7 +210,7 @@ const FilterInput = ({
             type="text"
             value={value ?? ""}
             onChange={(event) =>
-                onChange(event.target.value)
+                onChange?.(event.target.value)
             }
             placeholder={placeholder}
             aria-label={ariaLabel}
@@ -243,67 +223,120 @@ const FilterInput = ({
                 bg-[#06111f]
                 px-3
                 font-['Inter']
-                text-[11px]
+                text-xs
                 font-medium
                 text-slate-300
                 outline-none
-                placeholder:text-slate-700
                 transition
+
+                placeholder:text-slate-700
 
                 hover:border-cyan-400/20
 
                 focus:border-cyan-400/40
                 focus:ring-1
                 focus:ring-cyan-400/10
-
-                sm:text-xs
             "
         />
     );
 };
 
+/* ================================================================
+   DATE FILTER
+================================================================ */
 
 /**
- * Date input.
+ * Single assessment date filter.
+ *
+ * DESIGN
+ * ----------------------------------------------------------------
+ * Left  -> OrbitGuard calendar identity icon
+ * Right -> visible OrbitGuard calendar action button
+ *
+ * The browser's native calendar indicator is hidden because its
+ * appearance cannot be reliably styled to match the OrbitGuard UI.
+ *
+ * The right calendar button opens the native date picker.
  */
 const DateFilter = ({
     value,
     onChange,
-    label,
 }) => {
+    const inputRef = useRef(null);
+
+    const openDatePicker = () => {
+        const input = inputRef.current;
+
+        if (!input) {
+            return;
+        }
+
+        /*
+         * Chromium / Edge / supported browsers.
+         *
+         * showPicker() opens the native date picker without exposing
+         * the browser's ugly default calendar icon.
+         */
+        if (typeof input.showPicker === "function") {
+            try {
+                input.showPicker();
+                return;
+            } catch {
+                // Fallback below.
+            }
+        }
+
+        /*
+         * Fallback for browsers that do not support showPicker().
+         */
+        input.focus();
+    };
+
     return (
         <div className="relative min-w-0">
+            {/* =====================================================
+                LEFT CALENDAR ICON
+            ===================================================== */}
 
             <FiCalendar
-                size={13}
+                size={15}
+                aria-hidden="true"
                 className="
                     pointer-events-none
                     absolute
                     left-3
                     top-1/2
+                    z-10
                     -translate-y-1/2
-                    text-slate-600
+                    text-cyan-400
                 "
             />
 
+            {/* =====================================================
+                DATE INPUT
+            ===================================================== */}
+
             <input
-                type="datetime-local"
+                ref={inputRef}
+                type="date"
                 value={value ?? ""}
                 onChange={(event) =>
-                    onChange(event.target.value)
+                    onChange?.(event.target.value)
                 }
-                aria-label={label}
+                aria-label="Assessment date"
+                title="Assessment date"
                 className="
                     h-10
                     w-full
+                    appearance-none
                     rounded-xl
                     border
                     border-white/[0.07]
                     bg-[#06111f]
-                    pl-9
-                    pr-3
+                    pl-10
+                    pr-11
                     font-['Inter']
-                    text-[10px]
+                    text-xs
                     font-medium
                     text-slate-300
                     outline-none
@@ -317,18 +350,62 @@ const DateFilter = ({
 
                     [color-scheme:dark]
 
-                    sm:text-[11px]
+                    /* Hide native browser calendar icon */
+                    [&::-webkit-calendar-picker-indicator]:opacity-0
+                    [&::-webkit-calendar-picker-indicator]:absolute
+                    [&::-webkit-calendar-picker-indicator]:right-0
+                    [&::-webkit-calendar-picker-indicator]:h-full
+                    [&::-webkit-calendar-picker-indicator]:w-10
+                    [&::-webkit-calendar-picker-indicator]:cursor-pointer
                 "
             />
 
+            {/* =====================================================
+                RIGHT CALENDAR ACTION
+            ===================================================== */}
+
+            <button
+                type="button"
+                onClick={openDatePicker}
+                aria-label="Open assessment date picker"
+                title="Select assessment date"
+                className="
+                    absolute
+                    right-2
+                    top-1/2
+                    flex
+                    h-7
+                    w-7
+                    -translate-y-1/2
+                    items-center
+                    justify-center
+                    rounded-lg
+                    text-cyan-400
+                    transition
+
+                    hover:bg-cyan-400/10
+                    hover:text-cyan-300
+
+                    focus:outline-none
+                    focus:ring-1
+                    focus:ring-cyan-400/30
+
+                    active:scale-95
+                "
+            >
+                <FiCalendar
+                    size={14}
+                    aria-hidden="true"
+                />
+            </button>
         </div>
     );
 };
 
+/* ================================================================
+   ACTIVE FILTER CHIP
+================================================================ */
 
-/**
- * Active filter chip.
- */
 const FilterChip = ({
     label,
     value,
@@ -380,7 +457,6 @@ const FilterChip = ({
     );
 };
 
-
 /* ================================================================
    MAIN COMPONENT
 ================================================================ */
@@ -390,49 +466,44 @@ const RiskToolbar = ({
 
     onSearchChange,
     onRiskLevelChange,
-    onStatusChange,
-    onAssessmentTypeChange,
     onSatelliteIdChange,
     onDebrisIdChange,
     onFromDateChange,
-    onToDateChange,
 
     onReset,
 
     loading = false,
 }) => {
-
     const {
         search = "",
         riskLevel = "",
-        status = "",
-        assessmentType = "",
         satelliteId = "",
         debrisId = "",
         fromDate = "",
-        toDate = "",
     } = filters;
-
 
     /* ============================================================
        ACTIVE FILTER COUNT
     ============================================================ */
 
     const activeFilterCount = [
+        search,
         riskLevel,
-        status,
-        assessmentType,
         satelliteId,
         debrisId,
         fromDate,
-        toDate,
     ].filter(Boolean).length;
 
+    const hasAnyFilter = activeFilterCount > 0;
 
-    const hasAnyFilter =
-        Boolean(search) ||
-        activeFilterCount > 0;
+    /* ============================================================
+       DISPLAY LABEL
+    ============================================================ */
 
+    const riskLevelLabel = getOptionLabel(
+        RISK_LEVEL_OPTIONS,
+        riskLevel,
+    );
 
     /* ============================================================
        RENDER
@@ -446,42 +517,29 @@ const RiskToolbar = ({
                 rounded-2xl
                 border
                 border-white/[0.06]
-                bg-[#020817]/80
+                bg-[#020817]/90
                 shadow-[0_12px_40px_rgba(0,0,0,0.16)]
                 backdrop-blur-xl
             "
         >
-
             {/* =====================================================
-                TOOLBAR HEADER
+                HEADER
             ===================================================== */}
 
             <div
                 className="
                     flex
-                    flex-col
-                    gap-3
+                    items-center
+                    justify-between
+                    gap-4
                     border-b
                     border-white/[0.045]
                     px-4
                     py-4
-
                     sm:px-5
-                    lg:flex-row
-                    lg:items-center
-                    lg:justify-between
                 "
             >
-
-                <div
-                    className="
-                        flex
-                        min-w-0
-                        items-center
-                        gap-3
-                    "
-                >
-
+                <div className="flex min-w-0 items-center gap-3">
                     <div
                         className="
                             flex
@@ -501,15 +559,7 @@ const RiskToolbar = ({
                     </div>
 
                     <div className="min-w-0">
-
-                        <div
-                            className="
-                                flex
-                                items-center
-                                gap-2
-                            "
-                        >
-
+                        <div className="flex items-center gap-2">
                             <h2
                                 className="
                                     font-['Orbitron']
@@ -542,7 +592,6 @@ const RiskToolbar = ({
                                     {activeFilterCount}
                                 </span>
                             )}
-
                         </div>
 
                         <p
@@ -556,11 +605,8 @@ const RiskToolbar = ({
                         >
                             Search and filter collision assessments
                         </p>
-
                     </div>
-
                 </div>
-
 
                 {/* RESET */}
 
@@ -572,7 +618,7 @@ const RiskToolbar = ({
                         className="
                             inline-flex
                             h-9
-                            w-fit
+                            shrink-0
                             items-center
                             gap-2
                             rounded-lg
@@ -603,41 +649,34 @@ const RiskToolbar = ({
                             }
                         />
 
-                        Reset Filters
+                        Reset
                     </button>
                 )}
-
             </div>
 
-
             {/* =====================================================
-                PRIMARY FILTERS
+                FILTER GRID
             ===================================================== */}
 
             <div className="p-4 sm:p-5">
-
                 <div
                     className="
                         grid
                         grid-cols-1
                         gap-3
-
                         md:grid-cols-2
-
                         xl:grid-cols-4
                     "
                 >
-
                     {/* SEARCH */}
 
                     <div
                         className="
                             relative
                             md:col-span-2
-                            xl:col-span-1
+                            xl:col-span-2
                         "
                     >
-
                         <FiSearch
                             size={14}
                             className="
@@ -658,7 +697,7 @@ const RiskToolbar = ({
                                     event.target.value,
                                 )
                             }
-                            placeholder="Search risk code, recommendation..."
+                            placeholder="Search risk code or recommendation..."
                             aria-label="Search risk assessments"
                             className="
                                 h-10
@@ -670,7 +709,7 @@ const RiskToolbar = ({
                                 pl-9
                                 pr-9
                                 font-['Inter']
-                                text-[11px]
+                                text-xs
                                 font-medium
                                 text-slate-300
                                 outline-none
@@ -683,8 +722,6 @@ const RiskToolbar = ({
                                 focus:ring-cyan-400/10
 
                                 placeholder:text-slate-700
-
-                                sm:text-xs
                             "
                         />
 
@@ -708,9 +745,7 @@ const RiskToolbar = ({
                                 <FiX size={13} />
                             </button>
                         )}
-
                     </div>
-
 
                     {/* RISK LEVEL */}
 
@@ -721,31 +756,16 @@ const RiskToolbar = ({
                         ariaLabel="Filter by risk level"
                     />
 
+                    {/* ASSESSMENT DATE */}
 
-                    {/* STATUS */}
-
-                    <FilterSelect
-                        value={status}
-                        onChange={onStatusChange}
-                        options={RISK_STATUS_OPTIONS}
-                        ariaLabel="Filter by risk status"
+                    <DateFilter
+                        value={fromDate}
+                        onChange={onFromDateChange}
                     />
-
-
-                    {/* ASSESSMENT TYPE */}
-
-                    <FilterSelect
-                        value={assessmentType}
-                        onChange={onAssessmentTypeChange}
-                        options={ASSESSMENT_TYPE_OPTIONS}
-                        ariaLabel="Filter by assessment type"
-                    />
-
                 </div>
 
-
                 {/* =================================================
-                    ADVANCED ENTITY FILTERS
+                    ENTITY FILTERS
                 ================================================= */}
 
                 <div
@@ -754,12 +774,11 @@ const RiskToolbar = ({
                         grid
                         grid-cols-1
                         gap-3
-
                         md:grid-cols-2
-
                         xl:grid-cols-4
                     "
                 >
+                    {/* SATELLITE */}
 
                     <FilterInput
                         value={satelliteId}
@@ -768,27 +787,15 @@ const RiskToolbar = ({
                         ariaLabel="Filter by satellite ID"
                     />
 
+                    {/* DEBRIS */}
+
                     <FilterInput
                         value={debrisId}
                         onChange={onDebrisIdChange}
                         placeholder="Debris ID"
                         ariaLabel="Filter by debris ID"
                     />
-
-                    <DateFilter
-                        value={fromDate}
-                        onChange={onFromDateChange}
-                        label="Assessment start date"
-                    />
-
-                    <DateFilter
-                        value={toDate}
-                        onChange={onToDateChange}
-                        label="Assessment end date"
-                    />
-
                 </div>
-
 
                 {/* =================================================
                     ACTIVE FILTERS
@@ -804,10 +811,9 @@ const RiskToolbar = ({
                             gap-2
                             border-t
                             border-white/[0.035]
-                            pt-4
+                            pt-3
                         "
                     >
-
                         <div
                             className="
                                 mr-1
@@ -825,28 +831,19 @@ const RiskToolbar = ({
                             Active
                         </div>
 
+                        <FilterChip
+                            label="Search"
+                            value={search}
+                            onClear={() =>
+                                onSearchChange?.("")
+                            }
+                        />
 
                         <FilterChip
                             label="Risk"
-                            value={riskLevel}
+                            value={riskLevelLabel}
                             onClear={() =>
                                 onRiskLevelChange?.("")
-                            }
-                        />
-
-                        <FilterChip
-                            label="Status"
-                            value={status}
-                            onClear={() =>
-                                onStatusChange?.("")
-                            }
-                        />
-
-                        <FilterChip
-                            label="Type"
-                            value={assessmentType}
-                            onClear={() =>
-                                onAssessmentTypeChange?.("")
                             }
                         />
 
@@ -866,11 +863,16 @@ const RiskToolbar = ({
                             }
                         />
 
+                        <FilterChip
+                            label="Date"
+                            value={formatDateLabel(fromDate)}
+                            onClear={() =>
+                                onFromDateChange?.("")
+                            }
+                        />
                     </div>
                 )}
-
             </div>
-
         </section>
     );
 };

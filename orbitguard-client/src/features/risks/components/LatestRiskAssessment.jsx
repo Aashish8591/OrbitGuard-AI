@@ -1,73 +1,48 @@
-import {
-    FiActivity,
-    FiAlertCircle,
-    FiArrowUpRight,
-    FiClock,
-    FiCompass,
-    FiCrosshair,
-    FiRadio,
-    FiShield,
-    FiTarget,
-    FiZap,
-} from "react-icons/fi";
-
 /**
  * ================================================================
  * OrbitGuard AI — Latest Risk Assessment
  * ================================================================
  *
  * PURPOSE
- * -------
- * Presentation component for the latest collision-risk assessment.
+ * ------------------------------------------------
+ * Compact presentation component for the latest collision-risk
+ * assessment.
  *
- * DATA FLOW
- * ---------
+ * ARCHITECTURE
+ * ------------------------------------------------
+ * - No API calls.
+ * - No dummy data.
+ * - No risk calculation.
+ * - Backend remains the source of truth.
+ * - Only visual formatting is performed here.
+ * - Null / undefined / empty values display as "—".
  *
- * RiskOverviewPage
- *        ↓
- * GET /api/v1/risk
- *        ↓
- * PagedResponse<RiskAssessmentResponse>
- *        ↓
- * LatestRiskAssessment
+ * UI PRINCIPLES
+ * ------------------------------------------------
+ * - Compact mission-control layout
+ * - Strong information hierarchy
+ * - No oversized numbers
+ * - No unnecessary recommendation/footer sections
+ * - Responsive at all breakpoints
+ * - Long IDs never break the layout
  *
- * IMPORTANT
- * ---------
- * - No API calls in this component.
- * - No dummy/generated risk calculations.
- * - Backend values are the source of truth.
- * - No frontend risk-level calculation.
- * - No frontend probability calculation.
- * - Null / undefined values are displayed as "—".
- *
- * Backend fields used:
- *
- * id
- * riskCode
- * satelliteId
- * debrisId
- * closestApproachDistanceKm
- * relativeVelocityKmPerSec
- * collisionProbability
- * riskLevel
- * status
- * assessmentType
- * recommendation
- * remarks
- * assessedAt
- * createdAt
- * updatedAt
  * ================================================================
  */
 
+import {
+    MdAnalytics,
+    MdCalendarToday,
+    MdCheckCircleOutline,
+    MdDeleteOutline,
+    MdOutlineAssessment,
+    MdSatelliteAlt,
+    MdWarningAmber,
+} from "react-icons/md";
 
 /* ================================================================
    FORMATTERS
 ================================================================ */
 
-/**
- * Safely display a backend value.
- */
 const displayValue = (value) => {
     if (
         value === null ||
@@ -80,10 +55,6 @@ const displayValue = (value) => {
     return String(value);
 };
 
-
-/**
- * Format numeric values without changing backend data.
- */
 const formatNumber = (
     value,
     maximumFractionDigits = 2,
@@ -107,10 +78,6 @@ const formatNumber = (
     });
 };
 
-
-/**
- * Format backend LocalDateTime / ISO date.
- */
 const formatDateTime = (value) => {
     if (!value) {
         return "—";
@@ -128,14 +95,10 @@ const formatDateTime = (value) => {
         year: "numeric",
         hour: "2-digit",
         minute: "2-digit",
-        hour12: true,
+        hour12: false,
     });
 };
 
-
-/**
- * Short date used in compact metadata.
- */
 const formatShortDate = (value) => {
     if (!value) {
         return "—";
@@ -154,14 +117,10 @@ const formatShortDate = (value) => {
     });
 };
 
-
 /* ================================================================
-   NORMALIZERS
+   NORMALIZER
 ================================================================ */
 
-/**
- * Normalize enum values from Spring Boot.
- */
 const normalizeEnum = (value) => {
     if (
         value === null ||
@@ -171,280 +130,192 @@ const normalizeEnum = (value) => {
         return "";
     }
 
-    return String(value).trim().toUpperCase();
+    return String(value)
+        .trim()
+        .toUpperCase();
 };
 
+/* ================================================================
+   RISK CONFIGURATION
+================================================================ */
 
-/**
- * Risk-level visual configuration.
- *
- * IMPORTANT:
- * This does NOT calculate risk.
- * It only determines how the backend-provided enum
- * should be visually represented.
- */
 const getRiskLevelConfig = (riskLevel) => {
     switch (normalizeEnum(riskLevel)) {
         case "CRITICAL":
             return {
                 label: "CRITICAL",
+                Icon: MdWarningAmber,
                 text: "text-rose-300",
-                border: "border-rose-400/30",
-                background: "bg-rose-400/[0.08]",
-                glow: "shadow-[0_0_30px_rgba(244,63,94,0.10)]",
-                dot: "bg-rose-400",
-                icon: FiAlertCircle,
+                border: "border-rose-400/25",
+                background: "bg-rose-400/[0.06]",
+                accent: "bg-rose-400",
+                iconBackground: "bg-rose-400/[0.06]",
             };
 
         case "HIGH":
             return {
                 label: "HIGH",
+                Icon: MdWarningAmber,
                 text: "text-orange-300",
-                border: "border-orange-400/30",
-                background: "bg-orange-400/[0.08]",
-                glow: "shadow-[0_0_30px_rgba(251,146,60,0.08)]",
-                dot: "bg-orange-400",
-                icon: FiAlertCircle,
+                border: "border-orange-400/25",
+                background: "bg-orange-400/[0.06]",
+                accent: "bg-orange-400",
+                iconBackground: "bg-orange-400/[0.06]",
             };
 
         case "MEDIUM":
             return {
                 label: "MEDIUM",
+                Icon: MdWarningAmber,
                 text: "text-amber-300",
-                border: "border-amber-400/30",
-                background: "bg-amber-400/[0.08]",
-                glow: "shadow-[0_0_30px_rgba(251,191,36,0.08)]",
-                dot: "bg-amber-400",
-                icon: FiActivity,
+                border: "border-amber-400/25",
+                background: "bg-amber-400/[0.06]",
+                accent: "bg-amber-400",
+                iconBackground: "bg-amber-400/[0.06]",
             };
 
         case "LOW":
             return {
                 label: "LOW",
+                Icon: MdCheckCircleOutline,
                 text: "text-emerald-300",
-                border: "border-emerald-400/30",
-                background: "bg-emerald-400/[0.08]",
-                glow: "shadow-[0_0_30px_rgba(52,211,153,0.07)]",
-                dot: "bg-emerald-400",
-                icon: FiShield,
+                border: "border-emerald-400/25",
+                background: "bg-emerald-400/[0.06]",
+                accent: "bg-emerald-400",
+                iconBackground: "bg-emerald-400/[0.06]",
             };
 
         default:
             return {
-                label: "UNKNOWN",
+                label: displayValue(riskLevel),
+                Icon: MdOutlineAssessment,
                 text: "text-slate-300",
                 border: "border-white/[0.08]",
-                background: "bg-white/[0.03]",
-                glow: "",
-                dot: "bg-slate-500",
-                icon: FiActivity,
+                background: "bg-white/[0.025]",
+                accent: "bg-slate-500",
+                iconBackground: "bg-white/[0.025]",
             };
     }
 };
 
+/* ================================================================
+   STATUS CONFIGURATION
+================================================================ */
 
-/**
- * Status visual configuration.
- */
 const getStatusConfig = (status) => {
     switch (normalizeEnum(status)) {
         case "ANALYZED":
             return {
                 label: "ANALYZED",
                 className:
-                    "border-cyan-400/20 bg-cyan-400/[0.07] text-cyan-300",
+                    "border-cyan-400/20 bg-cyan-400/[0.06] text-cyan-300",
             };
 
         case "PENDING":
             return {
                 label: "PENDING",
                 className:
-                    "border-amber-400/20 bg-amber-400/[0.07] text-amber-300",
+                    "border-amber-400/20 bg-amber-400/[0.06] text-amber-300",
             };
 
         case "MITIGATED":
             return {
                 label: "MITIGATED",
                 className:
-                    "border-emerald-400/20 bg-emerald-400/[0.07] text-emerald-300",
+                    "border-emerald-400/20 bg-emerald-400/[0.06] text-emerald-300",
             };
 
         case "CLOSED":
             return {
                 label: "CLOSED",
                 className:
-                    "border-slate-500/30 bg-slate-500/[0.06] text-slate-400",
+                    "border-slate-500/25 bg-slate-500/[0.05] text-slate-400",
             };
 
         default:
             return {
                 label: displayValue(status),
                 className:
-                    "border-white/[0.08] bg-white/[0.03] text-slate-400",
+                    "border-white/[0.08] bg-white/[0.025] text-slate-400",
             };
     }
 };
 
-
 /* ================================================================
-   SMALL COMPONENTS
+   SECTION LABEL
 ================================================================ */
 
-/**
- * Compact section label.
- */
 const SectionLabel = ({
-    icon: Icon,
+    Icon,
     children,
 }) => {
     return (
-        <div
-            className="
-                flex
-                items-center
-                gap-2
-                font-['Orbitron']
-                text-[9px]
-                font-semibold
-                uppercase
-                tracking-[0.18em]
-                text-slate-500
-            "
-        >
-            <Icon
-                size={12}
-                className="text-cyan-400/70"
-            />
+        <div className="flex min-w-0 items-center gap-2">
+            {Icon && (
+                <Icon
+                    size={13}
+                    className="shrink-0 text-cyan-400"
+                    aria-hidden="true"
+                />
+            )}
 
-            <span>{children}</span>
-        </div>
-    );
-};
-
-
-/**
- * Small telemetry metric.
- */
-const TelemetryMetric = ({
-    icon: Icon,
-    label,
-    value,
-    unit,
-}) => {
-    return (
-        <div
-            className="
-                min-w-0
-                rounded-xl
-                border
-                border-white/[0.055]
-                bg-[#030b17]/70
-                px-3
-                py-3
-            "
-        >
-            <div
+            <span
                 className="
-                    flex
-                    items-center
-                    gap-1.5
-                    font-['Inter']
-                    text-[9px]
+                    truncate
+                    font-['Orbitron']
+                    text-[8px]
+                    font-semibold
                     uppercase
-                    tracking-[0.08em]
-                    text-slate-600
+                    tracking-[0.16em]
+                    text-slate-500
                 "
             >
-                <Icon size={11} />
-
-                <span className="truncate">
-                    {label}
-                </span>
-            </div>
-
-            <div
-                className="
-                    mt-2
-                    flex
-                    min-w-0
-                    items-baseline
-                    gap-1
-                "
-            >
-                <span
-                    className="
-                        truncate
-                        font-mono
-                        text-sm
-                        font-semibold
-                        tabular-nums
-                        text-slate-200
-                        sm:text-base
-                    "
-                >
-                    {value}
-                </span>
-
-                {unit && (
-                    <span
-                        className="
-                            shrink-0
-                            font-['Inter']
-                            text-[9px]
-                            text-slate-600
-                        "
-                    >
-                        {unit}
-                    </span>
-                )}
-            </div>
+                {children}
+            </span>
         </div>
     );
 };
 
+/* ================================================================
+   OBJECT ROW
+================================================================ */
 
-/**
- * Relationship identifier.
- */
-const ObjectLink = ({
+const ObjectRow = ({
+    Icon,
     label,
     value,
-    icon: Icon,
 }) => {
     return (
-        <div
-            className="
-                flex
-                min-w-0
-                items-center
-                gap-2
-            "
-        >
+        <div className="flex min-w-0 items-center gap-3">
             <div
                 className="
                     flex
-                    h-7
-                    w-7
+                    h-9
+                    w-9
                     shrink-0
                     items-center
                     justify-center
                     rounded-lg
                     border
-                    border-cyan-400/10
-                    bg-cyan-400/[0.04]
-                    text-cyan-400/70
+                    border-cyan-400/15
+                    bg-cyan-400/[0.035]
                 "
             >
-                <Icon size={12} />
+                <Icon
+                    size={18}
+                    className="text-cyan-300"
+                    aria-hidden="true"
+                />
             </div>
 
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
                 <p
                     className="
                         font-['Inter']
-                        text-[8px]
+                        text-[7px]
+                        font-medium
                         uppercase
-                        tracking-[0.08em]
+                        tracking-[0.10em]
                         text-slate-600
                     "
                 >
@@ -453,10 +324,13 @@ const ObjectLink = ({
 
                 <p
                     className="
-                        mt-0.5
-                        truncate
+                        mt-1
+                        overflow-hidden
+                        text-ellipsis
+                        whitespace-nowrap
                         font-mono
                         text-[10px]
+                        font-semibold
                         text-slate-300
                     "
                     title={displayValue(value)}
@@ -468,6 +342,72 @@ const ObjectLink = ({
     );
 };
 
+/* ================================================================
+   TELEMETRY CARD
+================================================================ */
+
+const TelemetryCard = ({
+    label,
+    value,
+    unit,
+}) => {
+    return (
+        <div
+            className="
+                min-w-0
+                rounded-lg
+                border
+                border-white/[0.055]
+                bg-[#020914]/65
+                px-3
+                py-2.5
+            "
+        >
+            <p
+                className="
+                    truncate
+                    font-['Inter']
+                    text-[7px]
+                    font-medium
+                    uppercase
+                    tracking-[0.10em]
+                    text-slate-600
+                "
+            >
+                {label}
+            </p>
+
+            <div className="mt-1 flex min-w-0 items-baseline gap-1">
+                <span
+                    className="
+                        min-w-0
+                        truncate
+                        font-mono
+                        text-[13px]
+                        font-semibold
+                        tabular-nums
+                        text-slate-200
+                    "
+                >
+                    {value}
+                </span>
+
+                {unit && (
+                    <span
+                        className="
+                            shrink-0
+                            font-['Inter']
+                            text-[7px]
+                            text-slate-600
+                        "
+                    >
+                        {unit}
+                    </span>
+                )}
+            </div>
+        </div>
+    );
+};
 
 /* ================================================================
    EMPTY STATE
@@ -477,48 +417,50 @@ const EmptyLatestRisk = () => {
     return (
         <section
             className="
-                rounded-2xl
+                w-full
+                overflow-hidden
+                rounded-xl
                 border
                 border-white/[0.06]
-                bg-[#020817]/75
-                p-5
-                shadow-[0_15px_50px_rgba(0,0,0,0.20)]
-                backdrop-blur-xl
-                sm:p-6
+                bg-[#020817]/90
             "
         >
             <div
                 className="
                     flex
-                    min-h-[260px]
+                    min-h-[170px]
                     flex-col
                     items-center
                     justify-center
+                    px-5
                     text-center
                 "
             >
                 <div
                     className="
                         flex
-                        h-12
-                        w-12
+                        h-10
+                        w-10
                         items-center
                         justify-center
-                        rounded-2xl
+                        rounded-lg
                         border
                         border-cyan-400/15
-                        bg-cyan-400/[0.05]
-                        text-cyan-400/70
+                        bg-cyan-400/[0.035]
                     "
                 >
-                    <FiCrosshair size={20} />
+                    <MdOutlineAssessment
+                        size={20}
+                        className="text-cyan-400"
+                        aria-hidden="true"
+                    />
                 </div>
 
                 <h3
                     className="
-                        mt-4
+                        mt-3
                         font-['Orbitron']
-                        text-xs
+                        text-[9px]
                         font-semibold
                         uppercase
                         tracking-[0.12em]
@@ -530,193 +472,178 @@ const EmptyLatestRisk = () => {
 
                 <p
                     className="
-                        mt-2
-                        max-w-sm
+                        mt-1.5
+                        max-w-xs
                         font-['Inter']
-                        text-[11px]
-                        leading-5
+                        text-[9px]
+                        leading-4
                         text-slate-600
                     "
                 >
-                    No active collision-risk assessment is
-                    currently available from the backend.
+                    No collision-risk assessment is currently
+                    available from the backend.
                 </p>
             </div>
         </section>
     );
 };
 
-
 /* ================================================================
    MAIN COMPONENT
 ================================================================ */
 
-/**
- * Latest Risk Assessment
- *
- * Expected usage:
- *
- * <LatestRiskAssessment risk={latestRisk} />
- *
- * OR:
- *
- * <LatestRiskAssessment assessment={latestRisk} />
- */
 const LatestRiskAssessment = ({
     risk,
     assessment,
 }) => {
-
+    /*
+     * Backend remains the source of truth.
+     *
+     * Supports both prop names without creating
+     * or transforming backend data.
+     */
     const latestRisk = risk ?? assessment;
-
-    /* ============================================================
-       NO DATA
-    ============================================================ */
 
     if (!latestRisk) {
         return <EmptyLatestRisk />;
     }
 
+    const riskConfig = getRiskLevelConfig(
+        latestRisk.riskLevel,
+    );
 
-    /* ============================================================
-       VISUAL CONFIG
-    ============================================================ */
+    const statusConfig = getStatusConfig(
+        latestRisk.status,
+    );
 
-    const riskConfig =
-        getRiskLevelConfig(
-            latestRisk.riskLevel,
-        );
+    const RiskIcon = riskConfig.Icon;
 
-    const statusConfig =
-        getStatusConfig(
-            latestRisk.status,
-        );
+    /* ------------------------------------------------------------
+       Probability
+    ------------------------------------------------------------ */
 
-    const RiskIcon =
-        riskConfig.icon;
+    const probability = Number(
+        latestRisk.collisionProbability,
+    );
 
+    const hasProbability =
+        Number.isFinite(probability);
 
-    /* ============================================================
-       RENDER
-    ============================================================ */
+    const probabilityWidth = hasProbability
+        ? Math.max(
+              0,
+              Math.min(probability, 100),
+          )
+        : 0;
+
+    /* ------------------------------------------------------------
+       Render
+    ------------------------------------------------------------ */
 
     return (
         <section
             aria-labelledby="latest-risk-assessment-heading"
-            className={`
+            className="
+                w-full
+                min-w-0
                 overflow-hidden
-                rounded-2xl
+                rounded-xl
                 border
-                border-white/[0.06]
-                bg-[#020817]/80
-                shadow-[0_15px_50px_rgba(0,0,0,0.20)]
+                border-white/[0.065]
+                bg-[#020817]/90
+                shadow-[0_12px_40px_rgba(0,0,0,0.18)]
                 backdrop-blur-xl
-                ${riskConfig.glow}
-            `}
+            "
         >
-
-            {/* =====================================================
+            {/* ====================================================
                 HEADER
-            ===================================================== */}
+            ==================================================== */}
 
-            <div
+            <header
                 className="
                     flex
+                    min-w-0
                     flex-col
-                    gap-4
+                    gap-3
                     border-b
                     border-white/[0.05]
                     px-4
-                    py-4
+                    py-3.5
                     sm:px-5
+                    sm:py-4
                     lg:flex-row
-                    lg:items-center
+                    lg:items-start
                     lg:justify-between
                 "
             >
-
                 <div className="min-w-0">
-
-                    <SectionLabel icon={FiRadio}>
-                        Collision Risk Monitor
+                    <SectionLabel Icon={MdOutlineAssessment}>
+                        Latest Assessment
                     </SectionLabel>
 
-                    <div
+                    <h2
+                        id="latest-risk-assessment-heading"
                         className="
-                            mt-2
-                            flex
-                            min-w-0
-                            flex-wrap
-                            items-center
-                            gap-x-3
-                            gap-y-2
+                            mt-1.5
+                            font-['Orbitron']
+                            text-[11px]
+                            font-semibold
+                            uppercase
+                            leading-[1.35]
+                            tracking-[0.07em]
+                            text-slate-100
+                            sm:text-xs
                         "
                     >
-                        <h2
-                            id="latest-risk-assessment-heading"
-                            className="
-                                font-['Orbitron']
-                                text-sm
-                                font-semibold
-                                uppercase
-                                tracking-[0.08em]
-                                text-slate-100
-                                sm:text-base
-                            "
-                        >
-                            Latest Assessment
-                        </h2>
+                        Latest Risk Assessment
+                    </h2>
 
+                    <div className="mt-1.5 flex items-center gap-2">
                         <span
                             className="
-                                h-1
-                                w-1
+                                h-1.5
+                                w-1.5
+                                shrink-0
                                 rounded-full
-                                bg-slate-700
+                                bg-slate-600
                             "
                         />
 
                         <span
                             className="
+                                truncate
                                 font-mono
-                                text-[10px]
-                                text-slate-500
+                                text-[8px]
+                                text-slate-600
                             "
+                            title={displayValue(
+                                latestRisk.riskCode,
+                            )}
                         >
                             {displayValue(
                                 latestRisk.riskCode,
                             )}
                         </span>
                     </div>
-
                 </div>
 
-
-                {/* STATUS + RISK */}
-
-                <div
-                    className="
-                        flex
-                        flex-wrap
-                        items-center
-                        gap-2
-                    "
-                >
+                <div className="flex shrink-0 items-center gap-2">
+                    {/* STATUS */}
 
                     <div
                         className={`
                             inline-flex
                             items-center
                             gap-1.5
-                            rounded-full
+                            rounded-lg
                             border
                             px-2.5
                             py-1.5
                             font-['Orbitron']
-                            text-[8px]
+                            text-[7px]
                             font-semibold
                             uppercase
-                            tracking-[0.10em]
+                            tracking-[0.07em]
                             ${statusConfig.className}
                         `}
                     >
@@ -732,589 +659,403 @@ const LatestRiskAssessment = ({
                         {statusConfig.label}
                     </div>
 
+                    {/* RISK */}
 
                     <div
                         className={`
                             inline-flex
                             items-center
                             gap-1.5
-                            rounded-full
+                            rounded-lg
                             border
                             px-2.5
                             py-1.5
                             font-['Orbitron']
-                            text-[8px]
+                            text-[7px]
                             font-semibold
                             uppercase
-                            tracking-[0.10em]
+                            tracking-[0.07em]
                             ${riskConfig.border}
                             ${riskConfig.background}
                             ${riskConfig.text}
                         `}
                     >
-                        <RiskIcon size={11} />
+                        <RiskIcon
+                            size={12}
+                            aria-hidden="true"
+                        />
 
                         {riskConfig.label}
                     </div>
-
                 </div>
+            </header>
 
-            </div>
+            {/* ====================================================
+                MAIN CONTENT
+            ==================================================== */}
 
-
-            {/* =====================================================
-                MAIN ASSESSMENT
-            ===================================================== */}
-
-            <div className="p-4 sm:p-5">
-
+            <div className="grid min-w-0 grid-cols-1 gap-3 p-3.5 sm:p-4 lg:grid-cols-[0.9fr_1.1fr]">
                 {/* =================================================
-                    PRIMARY RISK SIGNAL
+                    LEFT — RISK SUMMARY
                 ================================================= */}
 
                 <div
                     className="
-                        grid
-                        grid-cols-1
-                        gap-5
-                        lg:grid-cols-[minmax(0,1fr)_260px]
+                        min-w-0
+                        rounded-xl
+                        border
+                        border-white/[0.055]
+                        bg-[#030b17]/70
+                        p-4
                     "
                 >
-
-                    {/* LEFT SIDE */}
-
-                    <div className="min-w-0">
-
-                        <div
-                            className="
-                                rounded-2xl
-                                border
-                                border-white/[0.055]
-                                bg-[#030b17]/70
-                                p-4
-                                sm:p-5
-                            "
-                        >
-
-                            <div
+                    <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                            <p
                                 className="
-                                    flex
-                                    flex-col
-                                    gap-5
-                                    sm:flex-row
-                                    sm:items-center
-                                    sm:justify-between
+                                    font-['Inter']
+                                    text-[8px]
+                                    font-medium
+                                    uppercase
+                                    tracking-[0.11em]
+                                    text-slate-600
                                 "
                             >
+                                Collision Probability
+                            </p>
 
-                                {/* PROBABILITY */}
-
-                                <div>
-
-                                    <p
-                                        className="
-                                            font-['Inter']
-                                            text-[9px]
-                                            uppercase
-                                            tracking-[0.12em]
-                                            text-slate-600
-                                        "
-                                    >
-                                        Collision Probability
-                                    </p>
-
-                                    <div
-                                        className="
-                                            mt-2
-                                            flex
-                                            items-baseline
-                                            gap-2
-                                        "
-                                    >
-                                        <span
-                                            className={`
-                                                font-['Orbitron']
-                                                text-4xl
-                                                font-semibold
-                                                leading-none
-                                                tracking-tight
-                                                sm:text-5xl
-                                                ${riskConfig.text}
-                                            `}
-                                        >
-                                            {formatNumber(
-                                                latestRisk.collisionProbability,
-                                                2,
-                                            )}
-                                        </span>
-
-                                        <span
-                                            className="
-                                                font-['Orbitron']
-                                                text-sm
-                                                text-slate-600
-                                            "
-                                        >
-                                            %
-                                        </span>
-                                    </div>
-
-                                    <p
-                                        className="
-                                            mt-2
-                                            font-['Inter']
-                                            text-[10px]
-                                            text-slate-600
-                                        "
-                                    >
-                                        Backend risk-engine assessment
-                                    </p>
-
-                                </div>
-
-
-                                {/* RISK ICON */}
-
-                                <div
+                            <div className="mt-1 flex items-baseline gap-1">
+                                <span
                                     className={`
-                                        flex
-                                        h-16
-                                        w-16
-                                        shrink-0
-                                        items-center
-                                        justify-center
-                                        self-start
-                                        rounded-2xl
-                                        border
-                                        sm:self-center
-                                        ${riskConfig.border}
-                                        ${riskConfig.background}
+                                        font-['Orbitron']
+                                        text-[2rem]
+                                        font-semibold
+                                        leading-none
+                                        tracking-tight
                                         ${riskConfig.text}
+                                        sm:text-[1.3rem]
                                     `}
                                 >
-                                    <RiskIcon size={27} />
-                                </div>
+                                    {formatNumber(
+                                        latestRisk.collisionProbability,
+                                        2,
+                                    )}
+                                </span>
 
-                            </div>
-
-
-                            {/* PROBABILITY INDICATOR */}
-
-                            <div className="mt-5">
-
-                                <div
+                                <span
                                     className="
-                                        h-1.5
-                                        overflow-hidden
-                                        rounded-full
-                                        bg-white/[0.045]
+                                        font-['Orbitron']
+                                        text-[12px]
+                                        text-slate-600
                                     "
                                 >
-                                    <div
-                                        className={`
-                                            h-full
-                                            rounded-full
-                                            ${riskConfig.dot}
-                                        `}
-                                        style={{
-                                            width:
-                                                Number.isFinite(
-                                                    Number(
-                                                        latestRisk.collisionProbability,
-                                                    ),
-                                                )
-                                                    ? `${Math.max(
-                                                        0,
-                                                        Math.min(
-                                                            Number(
-                                                                latestRisk.collisionProbability,
-                                                            ),
-                                                            100,
-                                                        ),
-                                                    )}%`
-                                                    : "0%",
-                                        }}
-                                    />
-                                </div>
-
-                                <div
-                                    className="
-                                        mt-2
-                                        flex
-                                        justify-between
-                                        font-mono
-                                        text-[8px]
-                                        text-slate-700
-                                    "
-                                >
-                                    <span>0%</span>
-                                    <span>25%</span>
-                                    <span>50%</span>
-                                    <span>75%</span>
-                                    <span>100%</span>
-                                </div>
-
+                                    %
+                                </span>
                             </div>
 
+                            <p
+                                className="
+                                    mt-1.5
+                                    font-['Inter']
+                                    text-[8px]
+                                    text-slate-600
+                                "
+                            >
+                                Backend risk-engine result
+                            </p>
                         </div>
 
-
-                        {/* =================================================
-                            TELEMETRY
-                        ================================================= */}
+                        {/* SMALL RISK ICON */}
 
                         <div
-                            className="
-                                mt-3
-                                grid
-                                grid-cols-1
-                                gap-2
-                                sm:grid-cols-2
-                            "
+                            className={`
+                                flex
+                                h-10
+                                w-10
+                                shrink-0
+                                items-center
+                                justify-center
+                                rounded-lg
+                                border
+                                ${riskConfig.border}
+                                ${riskConfig.iconBackground}
+                                ${riskConfig.text}
+                            `}
                         >
-
-                            <TelemetryMetric
-                                icon={FiTarget}
-                                label="Closest Approach"
-                                value={formatNumber(
-                                    latestRisk.closestApproachDistanceKm,
-                                    3,
-                                )}
-                                unit="km"
+                            <RiskIcon
+                                size={21}
+                                aria-hidden="true"
                             />
-
-                            <TelemetryMetric
-                                icon={FiZap}
-                                label="Relative Velocity"
-                                value={formatNumber(
-                                    latestRisk.relativeVelocityKmPerSec,
-                                    3,
-                                )}
-                                unit="km/s"
-                            />
-
                         </div>
-
                     </div>
 
+                    {/* PROBABILITY BAR */}
 
-                    {/* RIGHT SIDE — OBJECT PAIR */}
-
-                    <div
-                        className="
-                            rounded-2xl
-                            border
-                            border-white/[0.055]
-                            bg-[#030b17]/70
-                            p-4
-                            sm:p-5
-                        "
-                    >
-
-                        <SectionLabel icon={FiCrosshair}>
-                            Object Pair
-                        </SectionLabel>
+                    <div className="mt-4">
+                        <div
+                            className="
+                                h-1.5
+                                overflow-hidden
+                                rounded-full
+                                bg-white/[0.045]
+                            "
+                        >
+                            <div
+                                className={`
+                                    h-full
+                                    rounded-full
+                                    ${riskConfig.accent}
+                                `}
+                                style={{
+                                    width: `${probabilityWidth}%`,
+                                }}
+                            />
+                        </div>
 
                         <div
                             className="
-                                mt-4
-                                space-y-4
+                                mt-1.5
+                                flex
+                                justify-between
+                                font-mono
+                                text-[6px]
+                                text-slate-700
                             "
                         >
+                            <span>0%</span>
+                            <span>25%</span>
+                            <span>50%</span>
+                            <span>75%</span>
+                            <span>100%</span>
+                        </div>
+                    </div>
 
-                            <ObjectLink
-                                icon={FiRadio}
-                                label="Satellite ID"
-                                value={
-                                    latestRisk.satelliteId
-                                }
-                            />
+                    {/* TELEMETRY */}
 
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                        <TelemetryCard
+                            label="Closest Approach"
+                            value={formatNumber(
+                                latestRisk.closestApproachDistanceKm,
+                                3,
+                            )}
+                            unit="km"
+                        />
+
+                        <TelemetryCard
+                            label="Relative Velocity"
+                            value={formatNumber(
+                                latestRisk.relativeVelocityKmPerSec,
+                                3,
+                            )}
+                            unit="km/s"
+                        />
+                    </div>
+                </div>
+
+                {/* =================================================
+                    RIGHT — OBJECT PAIR
+                ================================================= */}
+
+                <div
+                    className="
+                        min-w-0
+                        rounded-xl
+                        border
+                        border-white/[0.055]
+                        bg-[#030b17]/70
+                        p-4
+                    "
+                >
+                    <SectionLabel Icon={MdAnalytics}>
+                        Object Pair
+                    </SectionLabel>
+
+                    <div className="mt-4 space-y-3">
+                        <ObjectRow
+                            Icon={MdSatelliteAlt}
+                            label="Satellite ID"
+                            value={
+                                latestRisk.satelliteId
+                            }
+                        />
+
+                        <div className="flex items-center gap-3 pl-4">
                             <div
                                 className="
-                                    ml-3.5
-                                    h-5
+                                    h-4
                                     border-l
                                     border-dashed
                                     border-cyan-400/15
                                 "
                             />
 
-                            <ObjectLink
-                                icon={FiActivity}
-                                label="Debris ID"
-                                value={
-                                    latestRisk.debrisId
-                                }
-                            />
-
-                        </div>
-
-
-                        <div
-                            className="
-                                mt-5
-                                border-t
-                                border-white/[0.045]
-                                pt-4
-                            "
-                        >
-
-                            <div
+                            <span
                                 className="
                                     flex
+                                    h-5
+                                    w-5
                                     items-center
-                                    justify-between
-                                    gap-3
+                                    justify-center
+                                    rounded-full
+                                    border
+                                    border-cyan-400/10
+                                    bg-[#030b17]
                                 "
                             >
-
                                 <span
                                     className="
-                                        font-['Inter']
-                                        text-[9px]
-                                        uppercase
-                                        tracking-[0.08em]
-                                        text-slate-600
-                                    "
-                                >
-                                    Assessment Type
-                                </span>
-
-                                <span
-                                    className="
-                                        rounded-md
-                                        border
-                                        border-white/[0.06]
-                                        bg-white/[0.025]
-                                        px-2
-                                        py-1
                                         font-mono
-                                        text-[8px]
-                                        text-slate-400
+                                        text-[9px]
+                                        text-cyan-400
                                     "
                                 >
-                                    {displayValue(
-                                        latestRisk.assessmentType,
-                                    )}
+                                    ↕
                                 </span>
-
-                            </div>
-
+                            </span>
                         </div>
 
+                        <ObjectRow
+                            Icon={MdDeleteOutline}
+                            label="Debris ID"
+                            value={
+                                latestRisk.debrisId
+                            }
+                        />
                     </div>
 
-                </div>
-
-
-                {/* =====================================================
-                    RECOMMENDATION
-                ===================================================== */}
-
-                <div
-                    className="
-                        mt-4
-                        rounded-2xl
-                        border
-                        border-cyan-400/10
-                        bg-cyan-400/[0.025]
-                        p-4
-                        sm:p-5
-                    "
-                >
+                    {/* ASSESSMENT TYPE */}
 
                     <div
                         className="
+                            mt-4
                             flex
-                            items-start
+                            items-center
+                            justify-between
                             gap-3
+                            border-t
+                            border-white/[0.05]
+                            pt-3.5
                         "
                     >
-
-                        <div
+                        <span
                             className="
-                                flex
-                                h-8
-                                w-8
-                                shrink-0
-                                items-center
-                                justify-center
-                                rounded-lg
+                                font-['Inter']
+                                text-[8px]
+                                font-medium
+                                uppercase
+                                tracking-[0.09em]
+                                text-slate-600
+                            "
+                        >
+                            Assessment Type
+                        </span>
+
+                        <span
+                            className="
+                                max-w-[140px]
+                                truncate
+                                rounded-md
                                 border
-                                border-cyan-400/15
-                                bg-cyan-400/[0.05]
-                                text-cyan-300
+                                border-white/[0.07]
+                                bg-white/[0.025]
+                                px-2
+                                py-1.5
+                                font-mono
+                                text-[7px]
+                                font-medium
+                                text-slate-400
                             "
+                            title={displayValue(
+                                latestRisk.assessmentType,
+                            )}
                         >
-                            <FiCompass size={14} />
-                        </div>
-
-                        <div className="min-w-0">
-
-                            <p
-                                className="
-                                    font-['Orbitron']
-                                    text-[9px]
-                                    font-semibold
-                                    uppercase
-                                    tracking-[0.14em]
-                                    text-cyan-300
-                                "
-                            >
-                                Risk Engine Recommendation
-                            </p>
-
-                            <p
-                                className="
-                                    mt-2
-                                    font-['Inter']
-                                    text-[11px]
-                                    leading-5
-                                    text-slate-400
-                                "
-                            >
-                                {displayValue(
-                                    latestRisk.recommendation,
-                                )}
-                            </p>
-
-                        </div>
-
+                            {displayValue(
+                                latestRisk.assessmentType,
+                            )}
+                        </span>
                     </div>
-
                 </div>
+            </div>
 
+            {/* ====================================================
+                SMALL METADATA FOOTER
+            ==================================================== */}
 
-                {/* =====================================================
-                    FOOTER METADATA
-                ===================================================== */}
+            <footer
+                className="
+                    flex
+                    flex-wrap
+                    items-center
+                    justify-between
+                    gap-2
+                    border-t
+                    border-white/[0.045]
+                    px-4
+                    py-2.5
+                    sm:px-5
+                "
+            >
+                <div className="flex items-center gap-1.5">
+                    <MdCalendarToday
+                        size={10}
+                        className="text-slate-700"
+                        aria-hidden="true"
+                    />
 
-                <div
-                    className="
-                        mt-4
-                        flex
-                        flex-col
-                        gap-3
-                        border-t
-                        border-white/[0.045]
-                        pt-4
-                        sm:flex-row
-                        sm:items-center
-                        sm:justify-between
-                    "
-                >
-
-                    <div
+                    <span
                         className="
-                            flex
-                            flex-wrap
-                            items-center
-                            gap-x-4
-                            gap-y-2
-                        "
-                    >
-
-                        <div
-                            className="
-                                flex
-                                items-center
-                                gap-1.5
-                            "
-                        >
-                            <FiClock
-                                size={11}
-                                className="text-slate-700"
-                            />
-
-                            <span
-                                className="
-                                    font-['Inter']
-                                    text-[9px]
-                                    text-slate-600
-                                "
-                            >
-                                Assessed
-                            </span>
-
-                            <span
-                                className="
-                                    font-mono
-                                    text-[9px]
-                                    text-slate-500
-                                "
-                            >
-                                {formatDateTime(
-                                    latestRisk.assessedAt,
-                                )}
-                            </span>
-                        </div>
-
-
-                        <div
-                            className="
-                                flex
-                                items-center
-                                gap-1.5
-                            "
-                        >
-                            <FiActivity
-                                size={11}
-                                className="text-slate-700"
-                            />
-
-                            <span
-                                className="
-                                    font-['Inter']
-                                    text-[9px]
-                                    text-slate-600
-                                "
-                            >
-                                Updated
-                            </span>
-
-                            <span
-                                className="
-                                    font-mono
-                                    text-[9px]
-                                    text-slate-500
-                                "
-                            >
-                                {formatShortDate(
-                                    latestRisk.updatedAt,
-                                )}
-                            </span>
-                        </div>
-
-                    </div>
-
-
-                    {/* DETAIL INDICATOR */}
-
-                    <div
-                        className="
-                            inline-flex
-                            items-center
-                            gap-1.5
-                            self-start
-                            font-['Orbitron']
-                            text-[8px]
-                            uppercase
-                            tracking-[0.12em]
+                            font-['Inter']
+                            text-[7px]
                             text-slate-600
                         "
                     >
-                        <span>
-                            Risk Assessment Record
-                        </span>
+                        Assessed
+                    </span>
 
-                        <FiArrowUpRight size={11} />
-                    </div>
-
+                    <span
+                        className="
+                            font-mono
+                            text-[7px]
+                            text-slate-500
+                        "
+                    >
+                        {formatDateTime(
+                            latestRisk.assessedAt,
+                        )}
+                    </span>
                 </div>
 
-            </div>
+                <div className="flex items-center gap-1.5">
+                    <MdCheckCircleOutline
+                        size={10}
+                        className="text-slate-700"
+                        aria-hidden="true"
+                    />
 
+                    <span
+                        className="
+                            font-['Inter']
+                            text-[7px]
+                            text-slate-600
+                        "
+                    >
+                        Updated
+                    </span>
+
+                    <span
+                        className="
+                            font-mono
+                            text-[7px]
+                            text-slate-500
+                        "
+                    >
+                        {formatShortDate(
+                            latestRisk.updatedAt,
+                        )}
+                    </span>
+                </div>
+            </footer>
         </section>
     );
 };

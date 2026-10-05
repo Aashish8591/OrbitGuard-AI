@@ -23,8 +23,11 @@ import {
  * Present paginated collision-risk assessments returned by the
  * OrbitGuard backend.
  *
- * This component:
+ * IMPORTANT
+ * ----------------------------------------------------------------
+ * This component is intentionally presentational.
  *
+ * It:
  * - DOES NOT call the API
  * - DOES NOT calculate risk
  * - DOES NOT modify backend values
@@ -33,7 +36,6 @@ import {
  * - DOES NOT calculate collision probability
  *
  * Parent/container is responsible for:
- *
  * - API requests
  * - pagination state
  * - filtering
@@ -60,7 +62,7 @@ import {
  *   updatedAt
  * }
  *
- * Expected pagination object:
+ * Expected Spring Boot pagination response:
  *
  * {
  *   content: [],
@@ -71,6 +73,7 @@ import {
  *   first,
  *   last
  * }
+ *
  * ================================================================
  */
 
@@ -81,6 +84,8 @@ import {
 
 /**
  * Safely display backend values.
+ *
+ * Backend data is never modified.
  */
 const displayValue = (value) => {
     if (
@@ -98,8 +103,7 @@ const displayValue = (value) => {
 /**
  * Format numeric backend values.
  *
- * This is presentation-only.
- * No backend value is changed.
+ * Presentation-only.
  */
 const formatNumber = (
     value,
@@ -130,9 +134,10 @@ const formatNumber = (
 
 
 /**
- * Format probability returned by backend.
+ * Format collision probability.
  *
- * Backend stores probability as 0 - 100.
+ * Backend contract:
+ * 0 - 100
  */
 const formatProbability = (value) => {
     if (
@@ -154,7 +159,35 @@ const formatProbability = (value) => {
 
 
 /**
- * Format assessment timestamp.
+ * Convert backend probability into a presentation width.
+ *
+ * IMPORTANT:
+ * This does not modify the backend value.
+ */
+const getProbabilityWidth = (value) => {
+    if (
+        value === null ||
+        value === undefined ||
+        value === ""
+    ) {
+        return "0%";
+    }
+
+    const numericValue = Number(value);
+
+    if (!Number.isFinite(numericValue)) {
+        return "0%";
+    }
+
+    return `${Math.min(
+        Math.max(numericValue, 0),
+        100,
+    )}%`;
+};
+
+
+/**
+ * Format backend timestamp.
  */
 const formatDateTime = (value) => {
     if (!value) {
@@ -194,13 +227,11 @@ const formatDateTime = (value) => {
  * CRITICAL
  */
 const getRiskConfig = (riskLevel) => {
-    const normalized =
-        riskLevel
-            ? String(riskLevel).toUpperCase()
-            : "";
+    const normalized = riskLevel
+        ? String(riskLevel).toUpperCase()
+        : "";
 
     switch (normalized) {
-
         case "CRITICAL":
             return {
                 label: "CRITICAL",
@@ -260,12 +291,8 @@ const getRiskConfig = (riskLevel) => {
 const RiskLevelBadge = ({
     riskLevel,
 }) => {
-
-    const config =
-        getRiskConfig(riskLevel);
-
-    const Icon =
-        config.icon;
+    const config = getRiskConfig(riskLevel);
+    const Icon = config.icon;
 
     return (
         <span
@@ -273,6 +300,7 @@ const RiskLevelBadge = ({
                 inline-flex
                 items-center
                 gap-1.5
+                whitespace-nowrap
                 rounded-full
                 border
                 px-2.5
@@ -282,11 +310,9 @@ const RiskLevelBadge = ({
                 font-semibold
                 uppercase
                 tracking-[0.08em]
-                whitespace-nowrap
                 ${config.className}
             `}
         >
-
             <span
                 className={`
                     h-1.5
@@ -303,7 +329,6 @@ const RiskLevelBadge = ({
             />
 
             {config.label}
-
         </span>
     );
 };
@@ -322,14 +347,11 @@ const RiskLevelBadge = ({
  * CLOSED
  */
 const getStatusConfig = (status) => {
-
-    const normalized =
-        status
-            ? String(status).toUpperCase()
-            : "";
+    const normalized = status
+        ? String(status).toUpperCase()
+        : "";
 
     switch (normalized) {
-
         case "ANALYZED":
             return {
                 label: "ANALYZED",
@@ -381,9 +403,7 @@ const getStatusConfig = (status) => {
 const StatusBadge = ({
     status,
 }) => {
-
-    const config =
-        getStatusConfig(status);
+    const config = getStatusConfig(status);
 
     return (
         <span
@@ -391,6 +411,7 @@ const StatusBadge = ({
                 inline-flex
                 items-center
                 gap-1.5
+                whitespace-nowrap
                 rounded-full
                 border
                 px-2
@@ -400,22 +421,20 @@ const StatusBadge = ({
                 font-medium
                 uppercase
                 tracking-[0.05em]
-                whitespace-nowrap
                 ${config.className}
             `}
         >
-
             <span
                 className={`
                     h-1.5
                     w-1.5
+                    shrink-0
                     rounded-full
                     ${config.dotClass}
                 `}
             />
 
             {config.label}
-
         </span>
     );
 };
@@ -428,11 +447,9 @@ const StatusBadge = ({
 const AssessmentTypeBadge = ({
     assessmentType,
 }) => {
-
-    const normalized =
-        assessmentType
-            ? String(assessmentType).toUpperCase()
-            : "";
+    const normalized = assessmentType
+        ? String(assessmentType).toUpperCase()
+        : "";
 
     return (
         <span
@@ -470,6 +487,7 @@ const TableHeader = ({
 }) => {
     return (
         <th
+            scope="col"
             className={`
                 whitespace-nowrap
                 px-4
@@ -508,7 +526,6 @@ const EmptyState = () => {
                 text-center
             "
         >
-
             <div
                 className="
                     mb-4
@@ -553,7 +570,6 @@ const EmptyState = () => {
                 No collision-risk assessments match the
                 current operational filters.
             </p>
-
         </div>
     );
 };
@@ -571,10 +587,10 @@ const LoadingState = () => {
                 px-4
                 py-8
             "
+            aria-label="Loading risk assessments"
+            aria-busy="true"
         >
-
             <div className="space-y-3">
-
                 {Array.from(
                     { length: 6 },
                 ).map((_, index) => (
@@ -588,9 +604,7 @@ const LoadingState = () => {
                         "
                     />
                 ))}
-
             </div>
-
         </div>
     );
 };
@@ -615,8 +629,8 @@ const ErrorState = ({
                 py-12
                 text-center
             "
+            role="alert"
         >
-
             <div
                 className="
                     mb-4
@@ -660,7 +674,6 @@ const ErrorState = ({
             >
                 {displayValue(message)}
             </p>
-
         </div>
     );
 };
@@ -679,41 +692,74 @@ const Pagination = ({
     last,
     onPageChange,
 }) => {
+    const safePageNumber = Number.isFinite(
+        Number(pageNumber),
+    )
+        ? Number(pageNumber)
+        : 0;
 
-    const safePageNumber =
-        Number.isFinite(Number(pageNumber))
-            ? Number(pageNumber)
-            : 0;
+    const safePageSize = Number.isFinite(
+        Number(pageSize),
+    )
+        ? Number(pageSize)
+        : 10;
 
-    const safePageSize =
-        Number.isFinite(Number(pageSize))
-            ? Number(pageSize)
-            : 10;
+    const safeTotalElements = Number.isFinite(
+        Number(totalElements),
+    )
+        ? Number(totalElements)
+        : 0;
 
-    const safeTotalElements =
-        Number.isFinite(Number(totalElements))
-            ? Number(totalElements)
-            : 0;
-
-    const safeTotalPages =
-        Number.isFinite(Number(totalPages))
-            ? Number(totalPages)
-            : 0;
+    const safeTotalPages = Number.isFinite(
+        Number(totalPages),
+    )
+        ? Number(totalPages)
+        : 0;
 
     const start =
         safeTotalElements === 0
             ? 0
             : (safePageNumber * safePageSize) + 1;
 
-    const end =
-        Math.min(
-            (safePageNumber + 1) * safePageSize,
-            safeTotalElements,
-        );
+    const end = Math.min(
+        (safePageNumber + 1) * safePageSize,
+        safeTotalElements,
+    );
 
     if (safeTotalElements === 0) {
         return null;
     }
+
+    const isFirstPage =
+        Boolean(first) ||
+        safePageNumber <= 0;
+
+    const isLastPage =
+        Boolean(last) ||
+        (
+            safeTotalPages > 0 &&
+            safePageNumber >= safeTotalPages - 1
+        );
+
+    const handlePrevious = () => {
+        if (isFirstPage) {
+            return;
+        }
+
+        onPageChange?.(
+            safePageNumber - 1,
+        );
+    };
+
+    const handleNext = () => {
+        if (isLastPage) {
+            return;
+        }
+
+        onPageChange?.(
+            safePageNumber + 1,
+        );
+    };
 
     return (
         <div
@@ -731,7 +777,6 @@ const Pagination = ({
                 sm:px-5
             "
         >
-
             <div
                 className="
                     font-['Inter']
@@ -754,7 +799,6 @@ const Pagination = ({
                 {" assessments"}
             </div>
 
-
             <div
                 className="
                     flex
@@ -762,18 +806,10 @@ const Pagination = ({
                     gap-2
                 "
             >
-
                 <button
                     type="button"
-                    disabled={
-                        first ||
-                        safePageNumber <= 0
-                    }
-                    onClick={() =>
-                        onPageChange?.(
-                            safePageNumber - 1,
-                        )
-                    }
+                    disabled={isFirstPage}
+                    onClick={handlePrevious}
                     className="
                         inline-flex
                         h-8
@@ -797,7 +833,6 @@ const Pagination = ({
                     <FiChevronLeft size={14} />
                 </button>
 
-
                 <div
                     className="
                         flex
@@ -820,18 +855,10 @@ const Pagination = ({
                         : `${safePageNumber + 1} / ${safeTotalPages}`}
                 </div>
 
-
                 <button
                     type="button"
-                    disabled={
-                        last ||
-                        safePageNumber >= safeTotalPages - 1
-                    }
-                    onClick={() =>
-                        onPageChange?.(
-                            safePageNumber + 1,
-                        )
-                    }
+                    disabled={isLastPage}
+                    onClick={handleNext}
                     className="
                         inline-flex
                         h-8
@@ -854,9 +881,7 @@ const Pagination = ({
                 >
                     <FiChevronRight size={14} />
                 </button>
-
             </div>
-
         </div>
     );
 };
@@ -881,19 +906,17 @@ const RiskTable = ({
     onPageChange,
     onViewRisk,
 }) => {
-
-    /*
-     * ------------------------------------------------------------
-     * Normalize content
-     * ------------------------------------------------------------
+    /**
+     * The parent should pass backend `content`
+     * as `risks`.
      *
-     * Backend PagedResponse normally provides content.
-     * This component receives the already extracted array.
+     * This component deliberately does not know
+     * anything about Axios, API URLs, authentication,
+     * or Spring Boot services.
      */
-    const records =
-        Array.isArray(risks)
-            ? risks
-            : [];
+    const records = Array.isArray(risks)
+        ? risks
+        : [];
 
 
     /* ------------------------------------------------------------
@@ -961,7 +984,6 @@ const RiskTable = ({
                 backdrop-blur-xl
             "
         >
-
             {/* =====================================================
                 TABLE HEADER
             ===================================================== */}
@@ -981,7 +1003,6 @@ const RiskTable = ({
                     sm:px-5
                 "
             >
-
                 <div
                     className="
                         flex
@@ -990,7 +1011,6 @@ const RiskTable = ({
                         gap-3
                     "
                 >
-
                     <div
                         className="
                             flex
@@ -1010,7 +1030,6 @@ const RiskTable = ({
                     </div>
 
                     <div className="min-w-0">
-
                         <h2
                             id="risk-table-heading"
                             className="
@@ -1038,11 +1057,8 @@ const RiskTable = ({
                             Live assessment records from the
                             OrbitGuard risk engine.
                         </p>
-
                     </div>
-
                 </div>
-
 
                 <div
                     className="
@@ -1066,13 +1082,16 @@ const RiskTable = ({
                         className="text-cyan-400"
                     />
 
-                    {totalElements}{" "}
-                    {totalElements === 1
+                    {Number.isFinite(Number(totalElements))
+                        ? Number(totalElements)
+                        : 0}
+
+                    {" "}
+
+                    {Number(totalElements) === 1
                         ? "assessment"
                         : "assessments"}
-
                 </div>
-
             </div>
 
 
@@ -1081,13 +1100,9 @@ const RiskTable = ({
             ===================================================== */}
 
             {records.length === 0 ? (
-
                 <EmptyState />
-
             ) : (
-
                 <div className="w-full overflow-x-auto">
-
                     <table
                         className="
                             min-w-[1120px]
@@ -1095,7 +1110,6 @@ const RiskTable = ({
                             border-collapse
                         "
                     >
-
                         <thead
                             className="
                                 border-b
@@ -1103,9 +1117,7 @@ const RiskTable = ({
                                 bg-white/[0.015]
                             "
                         >
-
                             <tr>
-
                                 <TableHeader>
                                     Risk
                                 </TableHeader>
@@ -1141,30 +1153,26 @@ const RiskTable = ({
                                 <TableHeader className="text-right">
                                     Action
                                 </TableHeader>
-
                             </tr>
-
                         </thead>
 
-
                         <tbody>
-
                             {records.map(
                                 (risk, index) => {
-
                                     const riskId =
                                         risk?.id;
 
                                     const riskLevel =
                                         risk?.riskLevel;
 
+                                    const rowKey =
+                                        riskId ??
+                                        risk?.riskCode ??
+                                        `risk-${index}`;
+
                                     return (
                                         <tr
-                                            key={
-                                                riskId ||
-                                                risk?.riskCode ||
-                                                index
-                                            }
+                                            key={rowKey}
                                             className="
                                                 group
                                                 border-b
@@ -1174,13 +1182,11 @@ const RiskTable = ({
                                                 hover:bg-cyan-400/[0.018]
                                             "
                                         >
-
-                                            {/* =================================
+                                            {/* =================================================
                                                 RISK IDENTITY
-                                            ================================= */}
+                                            ================================================= */}
 
                                             <td className="px-4 py-4">
-
                                                 <div
                                                     className="
                                                         flex
@@ -1188,7 +1194,6 @@ const RiskTable = ({
                                                         gap-3
                                                     "
                                                 >
-
                                                     <div
                                                         className="
                                                             mt-0.5
@@ -1214,7 +1219,6 @@ const RiskTable = ({
                                                     </div>
 
                                                     <div className="min-w-0">
-
                                                         <div
                                                             className="
                                                                 font-['Orbitron']
@@ -1242,22 +1246,17 @@ const RiskTable = ({
                                                                 riskId,
                                                             )}
                                                         </div>
-
                                                     </div>
-
                                                 </div>
-
                                             </td>
 
 
-                                            {/* =================================
+                                            {/* =================================================
                                                 SATELLITE / DEBRIS
-                                            ================================= */}
+                                            ================================================= */}
 
                                             <td className="px-4 py-4">
-
                                                 <div className="space-y-2">
-
                                                     <div
                                                         className="
                                                             flex
@@ -1265,7 +1264,6 @@ const RiskTable = ({
                                                             gap-2
                                                         "
                                                     >
-
                                                         <FiRadio
                                                             size={11}
                                                             className="
@@ -1275,7 +1273,6 @@ const RiskTable = ({
                                                         />
 
                                                         <div className="min-w-0">
-
                                                             <div
                                                                 className="
                                                                     font-['Inter']
@@ -1295,19 +1292,16 @@ const RiskTable = ({
                                                                     text-[9px]
                                                                     text-slate-500
                                                                 "
-                                                                title={
-                                                                    risk?.satelliteId
-                                                                }
+                                                                title={displayValue(
+                                                                    risk?.satelliteId,
+                                                                )}
                                                             >
                                                                 {displayValue(
                                                                     risk?.satelliteId,
                                                                 )}
                                                             </div>
-
                                                         </div>
-
                                                     </div>
-
 
                                                     <div
                                                         className="
@@ -1316,7 +1310,6 @@ const RiskTable = ({
                                                             gap-2
                                                         "
                                                     >
-
                                                         <FiCircle
                                                             size={11}
                                                             className="
@@ -1326,7 +1319,6 @@ const RiskTable = ({
                                                         />
 
                                                         <div className="min-w-0">
-
                                                             <div
                                                                 className="
                                                                     font-['Inter']
@@ -1346,30 +1338,25 @@ const RiskTable = ({
                                                                     text-[9px]
                                                                     text-slate-500
                                                                 "
-                                                                title={
-                                                                    risk?.debrisId
-                                                                }
+                                                                title={displayValue(
+                                                                    risk?.debrisId,
+                                                                )}
                                                             >
                                                                 {displayValue(
                                                                     risk?.debrisId,
                                                                 )}
                                                             </div>
-
                                                         </div>
-
                                                     </div>
-
                                                 </div>
-
                                             </td>
 
 
-                                            {/* =================================
+                                            {/* =================================================
                                                 DISTANCE
-                                            ================================= */}
+                                            ================================================= */}
 
                                             <td className="px-4 py-4">
-
                                                 <div
                                                     className="
                                                         font-['Inter']
@@ -1379,15 +1366,10 @@ const RiskTable = ({
                                                         text-slate-200
                                                     "
                                                 >
-                                                    {risk?.closestApproachDistanceKm !==
-                                                    null &&
-                                                    risk?.closestApproachDistanceKm !==
-                                                    undefined
-                                                        ? formatNumber(
-                                                            risk.closestApproachDistanceKm,
-                                                            3,
-                                                        )
-                                                        : "—"}
+                                                    {formatNumber(
+                                                        risk?.closestApproachDistanceKm,
+                                                        3,
+                                                    )}
                                                 </div>
 
                                                 <div
@@ -1402,16 +1384,14 @@ const RiskTable = ({
                                                 >
                                                     kilometers
                                                 </div>
-
                                             </td>
 
 
-                                            {/* =================================
+                                            {/* =================================================
                                                 RELATIVE VELOCITY
-                                            ================================= */}
+                                            ================================================= */}
 
                                             <td className="px-4 py-4">
-
                                                 <div
                                                     className="
                                                         font-['Inter']
@@ -1421,15 +1401,10 @@ const RiskTable = ({
                                                         text-slate-200
                                                     "
                                                 >
-                                                    {risk?.relativeVelocityKmPerSec !==
-                                                    null &&
-                                                    risk?.relativeVelocityKmPerSec !==
-                                                    undefined
-                                                        ? formatNumber(
-                                                            risk.relativeVelocityKmPerSec,
-                                                            3,
-                                                        )
-                                                        : "—"}
+                                                    {formatNumber(
+                                                        risk?.relativeVelocityKmPerSec,
+                                                        3,
+                                                    )}
                                                 </div>
 
                                                 <div
@@ -1444,16 +1419,14 @@ const RiskTable = ({
                                                 >
                                                     km/s
                                                 </div>
-
                                             </td>
 
 
-                                            {/* =================================
+                                            {/* =================================================
                                                 PROBABILITY
-                                            ================================= */}
+                                            ================================================= */}
 
                                             <td className="px-4 py-4">
-
                                                 <div
                                                     className="
                                                         flex
@@ -1462,7 +1435,6 @@ const RiskTable = ({
                                                         gap-2
                                                     "
                                                 >
-
                                                     <div
                                                         className="
                                                             h-1.5
@@ -1472,7 +1444,6 @@ const RiskTable = ({
                                                             bg-white/[0.05]
                                                         "
                                                     >
-
                                                         <div
                                                             className="
                                                                 h-full
@@ -1481,24 +1452,11 @@ const RiskTable = ({
                                                             "
                                                             style={{
                                                                 width:
-                                                                    Number.isFinite(
-                                                                        Number(
-                                                                            risk?.collisionProbability,
-                                                                        ),
-                                                                    )
-                                                                        ? `${Math.min(
-                                                                            Math.max(
-                                                                                Number(
-                                                                                    risk.collisionProbability,
-                                                                                ),
-                                                                                0,
-                                                                            ),
-                                                                            100,
-                                                                        )}%`
-                                                                        : "0%",
+                                                                    getProbabilityWidth(
+                                                                        risk?.collisionProbability,
+                                                                    ),
                                                             }}
                                                         />
-
                                                     </div>
 
                                                     <span
@@ -1514,35 +1472,29 @@ const RiskTable = ({
                                                             risk?.collisionProbability,
                                                         )}
                                                     </span>
-
                                                 </div>
-
                                             </td>
 
 
-                                            {/* =================================
+                                            {/* =================================================
                                                 RISK LEVEL
-                                            ================================= */}
+                                            ================================================= */}
 
                                             <td className="px-4 py-4">
-
                                                 <RiskLevelBadge
                                                     riskLevel={
                                                         riskLevel
                                                     }
                                                 />
-
                                             </td>
 
 
-                                            {/* =================================
+                                            {/* =================================================
                                                 STATUS
-                                            ================================= */}
+                                            ================================================= */}
 
                                             <td className="px-4 py-4">
-
                                                 <div className="space-y-1.5">
-
                                                     <StatusBadge
                                                         status={
                                                             risk?.status
@@ -1554,18 +1506,15 @@ const RiskTable = ({
                                                             risk?.assessmentType
                                                         }
                                                     />
-
                                                 </div>
-
                                             </td>
 
 
-                                            {/* =================================
+                                            {/* =================================================
                                                 ASSESSED
-                                            ================================= */}
+                                            ================================================= */}
 
                                             <td className="px-4 py-4">
-
                                                 <div
                                                     className="
                                                         flex
@@ -1573,7 +1522,6 @@ const RiskTable = ({
                                                         gap-2
                                                     "
                                                 >
-
                                                     <FiCalendar
                                                         size={11}
                                                         className="
@@ -1594,31 +1542,37 @@ const RiskTable = ({
                                                             risk?.assessedAt,
                                                         )}
                                                     </span>
-
                                                 </div>
-
                                             </td>
 
 
-                                            {/* =================================
+                                            {/* =================================================
                                                 ACTION
-                                            ================================= */}
+                                            ================================================= */}
 
                                             <td className="px-4 py-4">
-
                                                 <div className="flex justify-end">
-
                                                     <button
                                                         type="button"
-                                                        onClick={() =>
-                                                            onViewRisk?.(
+                                                        onClick={() => {
+                                                            if (
+                                                                !riskId ||
+                                                                !onViewRisk
+                                                            ) {
+                                                                return;
+                                                            }
+
+                                                            onViewRisk(
                                                                 risk,
-                                                            )
-                                                        }
+                                                            );
+                                                        }}
                                                         disabled={
-                                                            !riskId
+                                                            !riskId ||
+                                                            typeof onViewRisk !==
+                                                                "function"
                                                         }
                                                         className="
+                                                            group
                                                             inline-flex
                                                             items-center
                                                             gap-2
@@ -1643,7 +1597,6 @@ const RiskTable = ({
                                                             risk?.riskCode,
                                                         )}`}
                                                     >
-
                                                         <FiEye
                                                             size={12}
                                                         />
@@ -1659,24 +1612,16 @@ const RiskTable = ({
                                                                 group-hover:translate-x-0.5
                                                             "
                                                         />
-
                                                     </button>
-
                                                 </div>
-
                                             </td>
-
                                         </tr>
                                     );
                                 },
                             )}
-
                         </tbody>
-
                     </table>
-
                 </div>
-
             )}
 
 
@@ -1688,28 +1633,18 @@ const RiskTable = ({
                 !error &&
                 records.length > 0 && (
                     <Pagination
-                        pageNumber={
-                            pageNumber
-                        }
-                        pageSize={
-                            pageSize
-                        }
-                        totalElements={
-                            totalElements
-                        }
-                        totalPages={
-                            totalPages
-                        }
+                        pageNumber={pageNumber}
+                        pageSize={pageSize}
+                        totalElements={totalElements}
+                        totalPages={totalPages}
                         first={first}
                         last={last}
-                        onPageChange={
-                            onPageChange
-                        }
+                        onPageChange={onPageChange}
                     />
                 )}
-
         </section>
     );
 };
+
 
 export default RiskTable;

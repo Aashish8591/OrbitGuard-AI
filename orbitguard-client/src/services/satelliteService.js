@@ -5,78 +5,80 @@ import api from "./api";
  * OrbitGuard AI - Satellite Service
  * ================================================================
  *
- * Satellite-specific API communication layer.
- *
- * Responsibilities:
- * - Communicate with SatelliteController
- * - Build query parameters
- * - Handle Satellite API response envelope
- * - Expose clean methods to React pages/components
- *
- * This file does NOT:
- * - Manage React state
- * - Contain UI logic
- * - Perform filtering in the browser
- * - Contain satellite business rules
- *
- * Backend base:
+ * Backend:
  * /api/satellites
  *
- * Shared Axios configuration:
- * services/api.js
+ * This service:
+ * - communicates with SatelliteController
+ * - builds query parameters
+ * - unwraps ApiResponse
+ * - exposes clean methods to React
+ *
+ * It does NOT:
+ * - manage React state
+ * - perform browser-side filtering
+ * - calculate orbital values
+ * - contain UI logic
  * ================================================================
  */
 
 const SATELLITE_API_PATH = "/api/satellites";
 
+
 /* ================================================================
    RESPONSE HELPERS
 ================================================================ */
 
-/**
- * Extract the actual backend payload from OrbitGuard's
- * common ApiResponse structure.
- *
- * Expected backend response:
- *
- * {
- *     success: true,
- *     message: "...",
- *     data: {
- *         ...
- *     }
- * }
- */
-const extractData = (response) => {
-    return response?.data?.data;
+const unwrapResponse = (response) => {
+    const body = response?.data;
+
+    if (!body) {
+        return null;
+    }
+
+    if (
+        Object.prototype.hasOwnProperty.call(
+            body,
+            "data"
+        )
+    ) {
+        return body.data;
+    }
+
+    return body;
 };
 
+
+const assertApiSuccess = (response) => {
+    const body = response?.data;
+
+    if (
+        body &&
+        Object.prototype.hasOwnProperty.call(
+            body,
+            "success"
+        ) &&
+        body.success === false
+    ) {
+        const error = new Error(
+            body.message ||
+            body.error ||
+            "Satellite operation was not successful."
+        );
+
+        error.response = response;
+
+        throw error;
+    }
+
+    return response;
+};
+
+
 /* ================================================================
-   SATELLITE CRUD
+   GET SATELLITES
 ================================================================ */
 
-/**
- * Get paginated satellites.
- *
- * Backend:
- * GET /api/satellites
- *
- * Supported query parameters:
- * - page
- * - size
- * - sortBy
- * - direction
- * - keyword
- *
- * @param {Object} params
- * @param {number} params.page
- * @param {number} params.size
- * @param {string} params.sortBy
- * @param {string} params.direction
- * @param {string} params.keyword
- *
- * @returns {Promise<PagedResponse<SatelliteResponse>>}
- */
 export const getSatellites = async ({
     page = 0,
     size = 10,
@@ -84,59 +86,97 @@ export const getSatellites = async ({
     direction = "desc",
     keyword = "",
 } = {}) => {
-    const response = await api.get(
-        SATELLITE_API_PATH,
-        {
-            params: {
-                page,
-                size,
-                sortBy,
-                direction,
-                ...(keyword?.trim()
-                    ? { keyword: keyword.trim() }
-                    : {}),
-            },
-        }
-    );
+    const parsedPage = Number(page);
+    const parsedSize = Number(size);
 
-    return extractData(response);
-};
+    const normalizedPage =
+        Number.isInteger(parsedPage) &&
+        parsedPage >= 0
+            ? parsedPage
+            : 0;
 
+    const normalizedSize =
+        Number.isInteger(parsedSize) &&
+        parsedSize > 0
+            ? parsedSize
+            : 10;
 
-/**
- * Get a single satellite by ID.
- *
- * Backend:
- * GET /api/satellites/{satelliteId}
- *
- * @param {string} satelliteId
- * @returns {Promise<SatelliteResponse>}
- */
-export const getSatelliteById = async (satelliteId) => {
-    if (!satelliteId) {
-        throw new Error("Satellite ID is required.");
+    const params = {
+        page: normalizedPage,
+        size: normalizedSize,
+        sortBy:
+            typeof sortBy === "string" &&
+            sortBy.trim()
+                ? sortBy.trim()
+                : "createdAt",
+        direction:
+            typeof direction === "string" &&
+            direction.trim()
+                ? direction.trim()
+                : "desc",
+    };
+
+    if (
+        typeof keyword === "string" &&
+        keyword.trim()
+    ) {
+        params.keyword =
+            keyword.trim();
     }
 
     const response = await api.get(
-        `${SATELLITE_API_PATH}/${encodeURIComponent(satelliteId)}`
+        SATELLITE_API_PATH,
+        {
+            params,
+        }
     );
 
-    return extractData(response);
+    assertApiSuccess(response);
+
+    return unwrapResponse(response);
 };
 
 
-/**
- * Create a new satellite.
- *
- * Backend:
- * POST /api/satellites
- *
- * @param {Object} satelliteData
- * @returns {Promise<SatelliteResponse>}
- */
-export const createSatellite = async (satelliteData) => {
+/* ================================================================
+   GET SATELLITE BY ID
+================================================================ */
+
+export const getSatelliteById = async (
+    satelliteId
+) => {
+    if (
+        satelliteId === null ||
+        satelliteId === undefined ||
+        satelliteId === ""
+    ) {
+        throw new Error(
+            "Satellite ID is required."
+        );
+    }
+
+    const response = await api.get(
+        `${SATELLITE_API_PATH}/${encodeURIComponent(
+            satelliteId
+        )}`
+    );
+
+    assertApiSuccess(response);
+
+    return unwrapResponse(response);
+};
+
+
+/* ================================================================
+   CREATE SATELLITE
+================================================================ */
+
+export const createSatellite = async (
+    satelliteData
+) => {
     if (!satelliteData) {
-        throw new Error("Satellite data is required.");
+        throw new Error(
+            "Satellite data is required."
+        );
     }
 
     const response = await api.post(
@@ -144,75 +184,82 @@ export const createSatellite = async (satelliteData) => {
         satelliteData
     );
 
-    return extractData(response);
+    assertApiSuccess(response);
+
+    return unwrapResponse(response);
 };
 
 
-/**
- * Update an existing satellite.
- *
- * Backend:
- * PUT /api/satellites/{satelliteId}
- *
- * @param {string} satelliteId
- * @param {Object} satelliteData
- * @returns {Promise<SatelliteResponse>}
- */
+/* ================================================================
+   UPDATE SATELLITE
+================================================================ */
+
 export const updateSatellite = async (
     satelliteId,
     satelliteData
 ) => {
-    if (!satelliteId) {
-        throw new Error("Satellite ID is required.");
+    if (
+        satelliteId === null ||
+        satelliteId === undefined ||
+        satelliteId === ""
+    ) {
+        throw new Error(
+            "Satellite ID is required."
+        );
     }
 
     if (!satelliteData) {
-        throw new Error("Satellite data is required.");
+        throw new Error(
+            "Satellite data is required."
+        );
     }
 
     const response = await api.put(
-        `${SATELLITE_API_PATH}/${encodeURIComponent(satelliteId)}`,
+        `${SATELLITE_API_PATH}/${encodeURIComponent(
+            satelliteId
+        )}`,
         satelliteData
     );
 
-    return extractData(response);
+    assertApiSuccess(response);
+
+    return unwrapResponse(response);
 };
 
 
-/**
- * Soft delete a satellite.
- *
- * Backend:
- * DELETE /api/satellites/{satelliteId}
- *
- * @param {string} satelliteId
- * @returns {Promise<*>}
- */
-export const deleteSatellite = async (satelliteId) => {
-    if (!satelliteId) {
-        throw new Error("Satellite ID is required.");
+/* ================================================================
+   DELETE SATELLITE
+================================================================ */
+
+export const deleteSatellite = async (
+    satelliteId
+) => {
+    if (
+        satelliteId === null ||
+        satelliteId === undefined ||
+        satelliteId === ""
+    ) {
+        throw new Error(
+            "Satellite ID is required."
+        );
     }
 
     const response = await api.delete(
-        `${SATELLITE_API_PATH}/${encodeURIComponent(satelliteId)}`
+        `${SATELLITE_API_PATH}/${encodeURIComponent(
+            satelliteId
+        )}`
     );
 
-    return extractData(response);
+    assertApiSuccess(response);
+
+    return unwrapResponse(response);
 };
 
+
 /* ================================================================
-   CELESTRAK / ORBITAL DATA
+   GET SATELLITE ORBITAL DATA
 ================================================================ */
 
-/**
- * Get current orbital data from CelesTrak.
- *
- * Backend:
- * GET /api/satellites/{noradCatalogId}/orbital-data
- *
- * @param {number} noradCatalogId
- * @returns {Promise<CelesTrakOrbitalData[]>}
- */
 export const getSatelliteOrbitalData = async (
     noradCatalogId
 ) => {
@@ -232,24 +279,23 @@ export const getSatelliteOrbitalData = async (
         )}/orbital-data`
     );
 
-    return extractData(response);
+    assertApiSuccess(response);
+
+    return unwrapResponse(response);
 };
+
 
 /* ================================================================
    CELESTRAK SYNCHRONIZATION
 ================================================================ */
 
-/**
- * Synchronize satellites from CelesTrak.
- *
- * Backend:
- * POST /api/satellites/synchronize?group={group}
- *
- * @param {string} group
- * @returns {Promise<*>}
- */
-export const synchronizeSatellites = async (group) => {
-    if (!group?.trim()) {
+export const synchronizeSatellites = async (
+    group
+) => {
+    if (
+        typeof group !== "string" ||
+        !group.trim()
+    ) {
         throw new Error(
             "CelesTrak group is required."
         );
@@ -265,8 +311,11 @@ export const synchronizeSatellites = async (group) => {
         }
     );
 
-    return extractData(response);
+    assertApiSuccess(response);
+
+    return unwrapResponse(response);
 };
+
 
 /* ================================================================
    DEFAULT SERVICE OBJECT
