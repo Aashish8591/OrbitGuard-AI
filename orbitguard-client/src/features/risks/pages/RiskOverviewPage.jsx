@@ -37,12 +37,9 @@ const DEFAULT_DEBRIS_SORT = "debrisName,asc";
 const DEFAULT_FILTERS = {
   search: "",
   riskLevel: "",
-  status: "",
-  assessmentType: "",
   satelliteId: "",
   debrisId: "",
   fromDate: "",
-  toDate: "",
 };
 
 const EMPTY_SUMMARY = {
@@ -844,18 +841,24 @@ const RiskOverviewPage = () => {
        VIEW RISK
     ==================================================================== */
 
-  const handleViewRisk = useCallback(
+const handleViewRisk = useCallback(
     (risk) => {
-      const riskId = normalizeId(risk?.id ?? risk?._id);
+        const riskId = normalizeId(
+            risk?.id ?? risk?._id,
+        );
 
-      if (!riskId) {
-        return;
-      }
+        if (!riskId) {
+            return;
+        }
 
-      navigate(`/app/risks/${riskId}`);
+        navigate(`/risks/${riskId}`, {
+            state: {
+                risk,
+            },
+        });
     },
     [navigate],
-  );
+);
 
   /* ====================================================================
        RENDER
@@ -1039,16 +1042,11 @@ const RiskOverviewPage = () => {
             onRiskLevelChange={(value) =>
               handleFilterChange("riskLevel", value)
             }
-            onStatusChange={(value) => handleFilterChange("status", value)}
-            onAssessmentTypeChange={(value) =>
-              handleFilterChange("assessmentType", value)
-            }
             onSatelliteIdChange={(value) =>
               handleFilterChange("satelliteId", value)
             }
             onDebrisIdChange={(value) => handleFilterChange("debrisId", value)}
             onFromDateChange={(value) => handleFilterChange("fromDate", value)}
-            onToDateChange={(value) => handleFilterChange("toDate", value)}
             onReset={handleClearFilters}
             loading={loading}
           />

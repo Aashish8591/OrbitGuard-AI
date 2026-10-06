@@ -1,4 +1,4 @@
-import RiskDetailPage from "../../features/risk/pages/RiskDetailPage";
+import RiskDetailPage from "../../features/risks/pages/RiskDetailPage";
 
 /**
  * Risk Details

@@ -17,6 +17,7 @@ import Debris from "../pages/app/Debris";
 import DebrisDetails from "../pages/app/DebrisDetails";
 
 import Risks from "../pages/app/Risks";
+import RiskDetails from "../pages/app/RiskDetails";
 
 function AppRoutes() {
   return (
@@ -25,20 +26,11 @@ function AppRoutes() {
           PUBLIC ROUTES
           ========================================================= */}
 
-      <Route
-        path="/"
-        element={<Landing />}
-      />
+      <Route path="/" element={<Landing />} />
 
-      <Route
-        path="/login"
-        element={<Login />}
-      />
+      <Route path="/login" element={<Login />} />
 
-      <Route
-        path="/register"
-        element={<Register />}
-      />
+      <Route path="/register" element={<Register />} />
 
       {/* =========================================================
           PROTECTED APPLICATION
@@ -46,24 +38,17 @@ function AppRoutes() {
 
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
-
           {/* =====================================================
               DASHBOARD
               ===================================================== */}
 
-          <Route
-            path="/dashboard"
-            element={<Dashboard />}
-          />
+          <Route path="/dashboard" element={<Dashboard />} />
 
           {/* =====================================================
               SATELLITES
               ===================================================== */}
 
-          <Route
-            path="/satellites"
-            element={<Satellites />}
-          />
+          <Route path="/satellites" element={<Satellites />} />
 
           <Route
             path="/satellites/:satelliteId"
@@ -74,84 +59,53 @@ function AppRoutes() {
               DEBRIS
               ===================================================== */}
 
-          <Route
-            path="/debris"
-            element={<Debris />}
-          />
+          <Route path="/debris" element={<Debris />} />
 
-          <Route
-            path="/debris/:debrisId"
-            element={<DebrisDetails />}
-          />
+          <Route path="/debris/:debrisId" element={<DebrisDetails />} />
 
           {/* =====================================================
               RISKS
               ===================================================== */}
 
-          <Route
-            path="/risks"
-            element={<Risks />}
-          />
+          <Route path="/risks" element={<Risks />} />
 
-          <Route
-            path="/risks/:id"
-            element={<div>Risk Details</div>}
-          />
+          <Route path="/risks/:id" element={<RiskDetails />} />
 
           {/* =====================================================
               VISUALIZATION
               ===================================================== */}
 
-          <Route
-            path="/visualization"
-            element={<div>Visualization</div>}
-          />
+          <Route path="/visualization" element={<div>Visualization</div>} />
 
           {/* =====================================================
               ALERTS
               ===================================================== */}
 
-          <Route
-            path="/alerts"
-            element={<div>Alerts</div>}
-          />
+          <Route path="/alerts" element={<div>Alerts</div>} />
 
           {/* =====================================================
               NOTIFICATIONS
               ===================================================== */}
 
-          <Route
-            path="/notifications"
-            element={<div>Notifications</div>}
-          />
+          <Route path="/notifications" element={<div>Notifications</div>} />
 
           {/* =====================================================
               REPORTS
               ===================================================== */}
 
-          <Route
-            path="/reports"
-            element={<div>Reports</div>}
-          />
+          <Route path="/reports" element={<div>Reports</div>} />
 
           {/* =====================================================
               AI ASSISTANT
               ===================================================== */}
 
-          <Route
-            path="/ai-assistant"
-            element={<AIAssistant />}
-          />
+          <Route path="/ai-assistant" element={<AIAssistant />} />
 
           {/* =====================================================
               SETTINGS
               ===================================================== */}
 
-          <Route
-            path="/settings"
-            element={<div>Settings</div>}
-          />
-
+          <Route path="/settings" element={<div>Settings</div>} />
         </Route>
       </Route>
 
@@ -159,10 +113,7 @@ function AppRoutes() {
           FALLBACK
           ========================================================= */}
 
-      <Route
-        path="*"
-        element={<div>Page Not Found</div>}
-      />
+      <Route path="*" element={<div>Page Not Found</div>} />
     </Routes>
   );
 }
