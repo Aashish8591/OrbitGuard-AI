@@ -1,18 +1,22 @@
 package com.orbitguard.orbit.propagation.service;
 
+import com.orbitguard.debris.entity.SpaceDebris;
 import com.orbitguard.debris.integration.celestrak.dto.CelesTrakOrbitalData;
 import com.orbitguard.debris.integration.celestrak.service.CelesTrakDebrisService;
+import com.orbitguard.debris.repository.DebrisRepository;
 import com.orbitguard.orbit.propagation.dto.OrbitalPropagationInput;
 import com.orbitguard.orbit.propagation.dto.PropagatedOrbitalData;
 import com.orbitguard.orbit.propagation.dto.PropagatedOrbitalState;
 import com.orbitguard.orbit.propagation.mapper.DebrisOrbitalPropagationMapper;
 import com.orbitguard.orbit.propagation.mapper.SatelliteOrbitalPropagationMapper;
+import com.orbitguard.satellite.entity.Satellite;
 import com.orbitguard.satellite.integration.celestrak.service.CelesTrakService;
-
+import com.orbitguard.satellite.repository.SatelliteRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -36,8 +40,16 @@ public class OrbitalPropagationFacadeImpl
     private final CoordinateConversionService
             coordinateConversionService;
 
+    private final SatelliteRepository satelliteRepository;
+
+    private final DebrisRepository debrisRepository;
+
     /**
-     * Propagate a satellite using its NORAD catalog ID.
+     * ================================================================
+     * SINGLE SATELLITE PROPAGATION
+     * ================================================================
+     *
+     * Existing single-object flow is intentionally preserved.
      *
      * Flow:
      *
@@ -54,21 +66,19 @@ public class OrbitalPropagationFacadeImpl
      * OrbitalPropagationService
      *        ↓
      * PropagatedOrbitalState
-     *
-     * The satellite integration layer currently uses Integer
-     * for NORAD catalog IDs. The propagation layer is responsible
-     * for its own Long-based orbital propagation contract.
      */
     @Override
     public PropagatedOrbitalState propagateSatellite(
             Integer noradCatalogId,
-            LocalDateTime targetTime) {
+            LocalDateTime targetTime
+    ) {
 
         validateSatelliteNoradId(noradCatalogId);
         validateTargetTime(targetTime);
 
-        List<com.orbitguard.satellite.integration.celestrak.dto.CelesTrakOrbitalData>
-                orbitalDataList =
+        List<
+                com.orbitguard.satellite.integration.celestrak.dto.CelesTrakOrbitalData
+                > orbitalDataList =
                 celesTrakService.fetchSatelliteOrbitalData(
                         noradCatalogId
                 );
@@ -108,16 +118,17 @@ public class OrbitalPropagationFacadeImpl
     }
 
     /**
-     * Propagate a debris object using its NORAD ID.
+     * ================================================================
+     * SINGLE DEBRIS PROPAGATION
+     * ================================================================
      *
-     * The debris integration layer currently uses Long for
-     * the NORAD identifier, so that type is intentionally
-     * preserved here.
+     * Existing single-object flow is intentionally preserved.
      */
     @Override
     public PropagatedOrbitalState propagateDebris(
             Long noradId,
-            LocalDateTime targetTime) {
+            LocalDateTime targetTime
+    ) {
 
         validateDebrisNoradId(noradId);
         validateTargetTime(targetTime);
@@ -150,13 +161,15 @@ public class OrbitalPropagationFacadeImpl
     }
 
     /**
-     * Propagate a satellite and additionally calculate
-     * its geodetic position.
+     * ================================================================
+     * SINGLE SATELLITE WITH POSITION
+     * ================================================================
      */
     @Override
     public PropagatedOrbitalData propagateSatelliteWithPosition(
             Integer noradCatalogId,
-            LocalDateTime targetTime) {
+            LocalDateTime targetTime
+    ) {
 
         PropagatedOrbitalState orbitalState =
                 propagateSatellite(
@@ -168,13 +181,15 @@ public class OrbitalPropagationFacadeImpl
     }
 
     /**
-     * Propagate a debris object and additionally calculate
-     * its geodetic position.
+     * ================================================================
+     * SINGLE DEBRIS WITH POSITION
+     * ================================================================
      */
     @Override
     public PropagatedOrbitalData propagateDebrisWithPosition(
             Long noradId,
-            LocalDateTime targetTime) {
+            LocalDateTime targetTime
+    ) {
 
         PropagatedOrbitalState orbitalState =
                 propagateDebris(
@@ -186,14 +201,352 @@ public class OrbitalPropagationFacadeImpl
     }
 
     /**
-     * Build the combined propagation response.
+     * ================================================================
+     * BULK PROPAGATION FOR 3D VISUALIZATION
+     * ================================================================
      *
-     * The orbital state is produced by Orekit propagation,
-     * while geodetic position is calculated by the coordinate
-     * conversion layer.
+     * IMPORTANT:
+     *
+     * This method does NOT call CelesTrak.
+     *
+     * All required orbital elements have already been synchronized
+     * and stored in MongoDB.
+     *
+     * Flow:
+     *
+     * MongoDB
+     *   ├── active satellites
+     *   └── active debris
+     *          ↓
+     * OrbitalPropagationInput
+     *          ↓
+     * Existing SGP4/Orekit engine
+     *          ↓
+     * PropagatedOrbitalState
+     *          ↓
+     * TEME → coordinate conversion
+     *          ↓
+     * PropagatedOrbitalData
+     */
+    @Override
+    public List<PropagatedOrbitalData> propagateAllWithPosition(
+            LocalDateTime targetTime
+    ) {
+
+        validateTargetTime(targetTime);
+
+        List<PropagatedOrbitalData> results =
+                new ArrayList<>();
+
+        /*
+         * ------------------------------------------------------------
+         * SATELLITES
+         * ------------------------------------------------------------
+         */
+        List<Satellite> satellites =
+                satelliteRepository.findByActiveTrue();
+
+        if (satellites != null && !satellites.isEmpty()) {
+
+            for (Satellite satellite : satellites) {
+
+                if (!hasRequiredSatellitePropagationData(satellite)) {
+                    continue;
+                }
+
+                try {
+
+                    OrbitalPropagationInput input =
+                            buildSatellitePropagationInput(
+                                    satellite,
+                                    targetTime
+                            );
+
+                    PropagatedOrbitalState orbitalState =
+                            orbitalPropagationService.propagate(
+                                    input
+                            );
+
+                    if (orbitalState == null) {
+                        continue;
+                    }
+
+                    results.add(
+                            buildPropagatedOrbitalData(
+                                    orbitalState
+                            )
+                    );
+
+                } catch (RuntimeException exception) {
+
+                    /*
+                     * One invalid satellite must not prevent the
+                     * remaining orbital objects from appearing
+                     * in the 3D visualization.
+                     */
+                    continue;
+                }
+            }
+        }
+
+        /*
+         * ------------------------------------------------------------
+         * DEBRIS
+         * ------------------------------------------------------------
+         *
+         * IMPORTANT:
+         * The repository exposes findByIsActiveTrue().
+         * Do not use findAllByIsActiveTrue().
+         */
+        List<SpaceDebris> debrisObjects =
+                debrisRepository.findByIsActiveTrue();
+
+        if (debrisObjects != null && !debrisObjects.isEmpty()) {
+
+            for (SpaceDebris debris : debrisObjects) {
+
+                if (!hasRequiredDebrisPropagationData(debris)) {
+                    continue;
+                }
+
+                try {
+
+                    OrbitalPropagationInput input =
+                            buildDebrisPropagationInput(
+                                    debris,
+                                    targetTime
+                            );
+
+                    PropagatedOrbitalState orbitalState =
+                            orbitalPropagationService.propagate(
+                                    input
+                            );
+
+                    if (orbitalState == null) {
+                        continue;
+                    }
+
+                    results.add(
+                            buildPropagatedOrbitalData(
+                                    orbitalState
+                            )
+                    );
+
+                } catch (RuntimeException exception) {
+
+                    /*
+                     * One invalid debris record must not stop the
+                     * complete visualization dataset.
+                     */
+                    continue;
+                }
+            }
+        }
+
+        return results;
+    }
+
+    /**
+     * ================================================================
+     * SATELLITE -> PROPAGATION INPUT
+     * ================================================================
+     *
+     * Builds the normalized propagation input directly from the
+     * MongoDB satellite entity.
+     *
+     * This avoids an unnecessary CelesTrak request during bulk
+     * visualization.
+     */
+    private OrbitalPropagationInput buildSatellitePropagationInput(
+            Satellite satellite,
+            LocalDateTime targetTime
+    ) {
+
+        return OrbitalPropagationInput.builder()
+                .noradCatalogId(
+                        satellite.getNoradCatalogId() != null
+                                ? satellite.getNoradCatalogId().longValue()
+                                : null
+                )
+                .classificationType(
+                        satellite.getClassificationType()
+                )
+                .epoch(
+                        satellite.getEpoch()
+                )
+                .objectId(
+                        satellite.getObjectId()
+                )
+                .ephemerisType(
+                        satellite.getEphemerisType()
+                )
+                .meanMotion(
+                        satellite.getMeanMotion()
+                )
+                .meanMotionDot(
+                        satellite.getMeanMotionDot()
+                )
+                .meanMotionDdot(
+                        satellite.getMeanMotionDdot()
+                )
+                .eccentricity(
+                        satellite.getEccentricity()
+                )
+                .inclination(
+                        satellite.getInclination()
+                )
+                .rightAscensionOfAscendingNode(
+                        satellite.getRightAscensionOfAscendingNode()
+                )
+                .argumentOfPericenter(
+                        satellite.getArgumentOfPericenter()
+                )
+                .meanAnomaly(
+                        satellite.getMeanAnomaly()
+                )
+                .bstar(
+                        satellite.getBstar()
+                )
+                .elementSetNumber(
+                        satellite.getElementSetNumber()
+                )
+                .revolutionAtEpoch(
+                        satellite.getRevolutionAtEpoch() != null
+                                ? satellite.getRevolutionAtEpoch().longValue()
+                                : null
+                )
+                .targetTime(targetTime)
+                .build();
+    }
+
+    /**
+     * ================================================================
+     * DEBRIS -> PROPAGATION INPUT
+     * ================================================================
+     */
+    private OrbitalPropagationInput buildDebrisPropagationInput(
+            SpaceDebris debris,
+            LocalDateTime targetTime
+    ) {
+
+        return OrbitalPropagationInput.builder()
+                .noradCatalogId(
+                        debris.getNoradId()
+                )
+                .classificationType(
+                        debris.getClassificationType()
+                )
+                .epoch(
+                        debris.getEpoch()
+                )
+                .objectId(
+                        debris.getObjectId()
+                )
+                .ephemerisType(
+                        debris.getEphemerisType()
+                )
+                .meanMotion(
+                        debris.getMeanMotion()
+                )
+                .meanMotionDot(
+                        debris.getMeanMotionDot()
+                )
+                .meanMotionDdot(
+                        debris.getMeanMotionDdot()
+                )
+                .eccentricity(
+                        debris.getEccentricity()
+                )
+                .inclination(
+                        debris.getInclination()
+                )
+                .rightAscensionOfAscendingNode(
+                        debris.getRightAscensionOfAscendingNode()
+                )
+                .argumentOfPericenter(
+                        debris.getArgumentOfPericenter()
+                )
+                .meanAnomaly(
+                        debris.getMeanAnomaly()
+                )
+                .bstar(
+                        debris.getBstar()
+                )
+                .elementSetNumber(
+                        debris.getElementSetNumber()
+                )
+                .revolutionAtEpoch(
+                        debris.getRevolutionAtEpoch()
+                )
+                .targetTime(targetTime)
+                .build();
+    }
+
+    /**
+     * ================================================================
+     * SATELLITE PROPAGATION DATA VALIDATION
+     * ================================================================
+     */
+    private boolean hasRequiredSatellitePropagationData(
+            Satellite satellite
+    ) {
+
+        if (satellite == null) {
+            return false;
+        }
+
+        return satellite.getNoradCatalogId() != null
+                && satellite.getNoradCatalogId() > 0
+                && satellite.getEpoch() != null
+                && satellite.getMeanMotion() != null
+                && satellite.getEccentricity() != null
+                && satellite.getInclination() != null
+                && satellite.getRightAscensionOfAscendingNode() != null
+                && satellite.getArgumentOfPericenter() != null
+                && satellite.getMeanAnomaly() != null;
+    }
+
+    /**
+     * ================================================================
+     * DEBRIS PROPAGATION DATA VALIDATION
+     * ================================================================
+     */
+    private boolean hasRequiredDebrisPropagationData(
+            SpaceDebris debris
+    ) {
+
+        if (debris == null) {
+            return false;
+        }
+
+        return debris.getNoradId() != null
+                && debris.getNoradId() > 0
+                && debris.getEpoch() != null
+                && debris.getMeanMotion() != null
+                && debris.getEccentricity() != null
+                && debris.getInclination() != null
+                && debris.getRightAscensionOfAscendingNode() != null
+                && debris.getArgumentOfPericenter() != null
+                && debris.getMeanAnomaly() != null;
+    }
+
+    /**
+     * ================================================================
+     * BUILD PROPAGATED DATA
+     * ================================================================
+     *
+     * Converts the propagated orbital state into the combined
+     * propagation data object.
+     *
+     * CoordinateConversionService is responsible for converting
+     * the propagated TEME position into:
+     *
+     * - ITRF Earth-fixed Cartesian coordinates
+     * - WGS84 geodetic coordinates
      */
     private PropagatedOrbitalData buildPropagatedOrbitalData(
-            PropagatedOrbitalState orbitalState) {
+            PropagatedOrbitalState orbitalState
+    ) {
 
         if (orbitalState == null) {
             throw new IllegalStateException(
@@ -207,16 +560,21 @@ public class OrbitalPropagationFacadeImpl
                         coordinateConversionService
                                 .toGeodeticPosition(orbitalState)
                 )
+                .earthFixedPosition(
+                        coordinateConversionService
+                                .toEarthFixedPosition(orbitalState)
+                )
                 .build();
     }
 
     /**
-     * Validate satellite NORAD catalog ID.
-     *
-     * Satellite integration currently uses Integer.
+     * ================================================================
+     * VALIDATION
+     * ================================================================
      */
     private void validateSatelliteNoradId(
-            Integer noradCatalogId) {
+            Integer noradCatalogId
+    ) {
 
         if (noradCatalogId == null || noradCatalogId <= 0) {
             throw new IllegalArgumentException(
@@ -225,13 +583,9 @@ public class OrbitalPropagationFacadeImpl
         }
     }
 
-    /**
-     * Validate debris NORAD ID.
-     *
-     * Debris integration currently uses Long.
-     */
     private void validateDebrisNoradId(
-            Long noradId) {
+            Long noradId
+    ) {
 
         if (noradId == null || noradId <= 0) {
             throw new IllegalArgumentException(
@@ -240,12 +594,9 @@ public class OrbitalPropagationFacadeImpl
         }
     }
 
-    /**
-     * Target propagation time is required by both
-     * satellite and debris propagation.
-     */
     private void validateTargetTime(
-            LocalDateTime targetTime) {
+            LocalDateTime targetTime
+    ) {
 
         if (targetTime == null) {
             throw new IllegalArgumentException(

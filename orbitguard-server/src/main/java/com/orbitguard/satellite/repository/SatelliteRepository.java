@@ -12,67 +12,145 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Repository interface for managing Satellite documents.
+ *
+ * <p>
+ * Provides database access operations for:
+ * </p>
+ *
+ * <ul>
+ *     <li>CRUD operations</li>
+ *     <li>Duplicate validation</li>
+ *     <li>Active satellite retrieval</li>
+ *     <li>Searching and filtering</li>
+ *     <li>Pagination and sorting</li>
+ *     <li>NORAD-based lookup</li>
+ * </ul>
+ *
+ * <p>
+ * Custom business logic belongs in the service layer and should not
+ * be implemented in this repository.
+ * </p>
+ */
 @Repository
-public interface SatelliteRepository extends MongoRepository<Satellite, String> {
+public interface SatelliteRepository
+        extends MongoRepository<Satellite, String> {
 
     /**
-     * Find satellite by unique code.
+     * Finds a satellite by its unique business code.
+     *
+     * @param satelliteCode unique satellite business code
+     * @return satellite if found
      */
-    Optional<Satellite> findBySatelliteCode(String satelliteCode);
+    Optional<Satellite> findBySatelliteCode(
+            String satelliteCode
+    );
 
     /**
-     * Check duplicate satellite code.
+     * Checks whether a satellite business code already exists.
+     *
+     * @param satelliteCode satellite business code
+     * @return true if the code exists
      */
-    boolean existsBySatelliteCode(String satelliteCode);
+    boolean existsBySatelliteCode(
+            String satelliteCode
+    );
 
     /**
-     * Find active satellite by ID.
+     * Finds an active satellite by its MongoDB document ID.
+     *
+     * @param id MongoDB document ID
+     * @return active satellite if found
      */
-    Optional<Satellite> findByIdAndActiveTrue(String id);
+    Optional<Satellite> findByIdAndActiveTrue(
+            String id
+    );
 
     /**
-     * Find active satellite by code.
+     * Finds an active satellite by its business code.
+     *
+     * @param satelliteCode satellite business code
+     * @return active satellite if found
      */
-    Optional<Satellite> findBySatelliteCodeAndActiveTrue(String satelliteCode);
+    Optional<Satellite> findBySatelliteCodeAndActiveTrue(
+            String satelliteCode
+    );
 
     /**
-     * Get all active satellites.
+     * Gets all active satellites.
+     *
+     * <p>
+     * This method is also used by the bulk 3D visualization
+     * propagation flow. The visualization pipeline reads the
+     * orbital elements already stored in MongoDB and passes them
+     * to the existing SGP4/Orekit propagation engine.
+     * </p>
+     *
+     * <p>
+     * This avoids making an individual CelesTrak request for every
+     * satellite during 3D visualization.
+     * </p>
+     *
+     * @return all active satellites
      */
     List<Satellite> findByActiveTrue();
 
     /**
-     * Get all active satellites with pagination.
+     * Gets all active satellites with pagination.
+     *
+     * @param pageable pagination and sorting configuration
+     * @return paginated active satellites
      */
-    Page<Satellite> findByActiveTrue(Pageable pageable);
+    Page<Satellite> findByActiveTrue(
+            Pageable pageable
+    );
 
     /**
-     * Search active satellites by name.
+     * Searches active satellites by name.
+     *
+     * @param keyword search keyword
+     * @param pageable pagination and sorting configuration
+     * @return matching active satellites
      */
-    Page<Satellite> findByActiveTrueAndSatelliteNameContainingIgnoreCase(
+    Page<Satellite>
+    findByActiveTrueAndSatelliteNameContainingIgnoreCase(
             String keyword,
             Pageable pageable
     );
 
     /**
-     * Filter active satellites by mission status.
+     * Filters active satellites by mission status.
+     *
+     * @param missionStatus mission status
+     * @return matching active satellites
      */
     List<Satellite> findByMissionStatusAndActiveTrue(
             MissionStatus missionStatus
     );
 
     /**
-     * Filter active satellites by orbit type.
+     * Filters active satellites by orbit type.
+     *
+     * @param orbitType orbit type
+     * @return matching active satellites
      */
     List<Satellite> findByOrbitTypeAndActiveTrue(
             OrbitType orbitType
     );
 
     /**
-     * Find satellite by NORAD catalog ID.
+     * Finds a satellite by its NORAD catalog ID.
      *
-     * Used during CelesTrak synchronization
-     * to determine whether a satellite already exists.
+     * <p>
+     * Used during CelesTrak synchronization to determine whether
+     * a satellite already exists.
+     * </p>
+     *
+     * @param noradCatalogId NORAD catalog ID
+     * @return satellite if found
      */
-    Optional<Satellite> findByNoradCatalogId(Integer noradCatalogId);
-
+    Optional<Satellite> findByNoradCatalogId(
+            Integer noradCatalogId
+    );
 }

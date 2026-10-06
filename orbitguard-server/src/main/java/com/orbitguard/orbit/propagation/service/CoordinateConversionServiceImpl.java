@@ -1,5 +1,6 @@
 package com.orbitguard.orbit.propagation.service;
 
+import com.orbitguard.orbit.propagation.dto.EarthFixedPosition;
 import com.orbitguard.orbit.propagation.dto.GeodeticPosition;
 import com.orbitguard.orbit.propagation.dto.PropagatedOrbitalState;
 
@@ -19,13 +20,33 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 
+/**
+ * Converts propagated orbital coordinates between orbital and
+ * Earth-referenced coordinate systems.
+ *
+ * <p>
+ * The orbital propagation engine produces Cartesian coordinates
+ * in the TEME reference frame. This service converts those
+ * coordinates into the Earth-fixed ITRF frame and then derives
+ * WGS84 geodetic coordinates.
+ * </p>
+ *
+ * <p>
+ * The conversion is performed using Orekit at the exact propagation
+ * timestamp.
+ * </p>
+ */
 @Service
 public class CoordinateConversionServiceImpl
         implements CoordinateConversionService {
 
     private static final double KILOMETERS_TO_METERS = 1000.0;
 
+    private static final double METERS_TO_KILOMETERS = 0.001;
+
     private static final String TEME_FRAME = "TEME";
+
+    private static final String ITRF_FRAME = "ITRF";
 
     private final Frame temeFrame;
 
@@ -34,15 +55,17 @@ public class CoordinateConversionServiceImpl
     private final OneAxisEllipsoid earth;
 
     /**
-     * Initialize the Orekit reference frames and WGS84 Earth model.
+     * Initializes the Orekit reference frames and WGS84 Earth model.
      *
+     * <p>
      * TEME:
      * True Equator Mean Equinox.
+     * </p>
      *
+     * <p>
      * ITRF:
      * International Terrestrial Reference Frame.
-     *
-     * The WGS84 ellipsoid is attached to the ITRF frame.
+     * </p>
      */
     public CoordinateConversionServiceImpl() {
 
@@ -74,49 +97,145 @@ public class CoordinateConversionServiceImpl
     }
 
     /**
-     * Convert propagated TEME Cartesian coordinates into
-     * geodetic latitude, longitude and altitude.
+     * Converts a propagated TEME Cartesian position into
+     * WGS84 geodetic coordinates.
      *
-     * Expected input:
+     * <p>
+     * Input position:
+     * kilometres, TEME.
+     * </p>
      *
-     * Position:
-     * kilometers
-     *
-     * Reference frame:
-     * TEME
-     *
-     * Timestamp:
-     * UTC-based LocalDateTime
-     *
+     * <p>
      * Output:
+     * latitude and longitude in degrees,
+     * altitude in kilometres.
+     * </p>
      *
-     * Latitude:
-     * degrees
-     *
-     * Longitude:
-     * degrees
-     *
-     * Altitude:
-     * kilometers
+     * @param propagatedState propagated orbital state in TEME
+     * @return WGS84 geodetic position
      */
     @Override
     public GeodeticPosition toGeodeticPosition(
-            PropagatedOrbitalState propagatedState) {
+            PropagatedOrbitalState propagatedState
+    ) {
 
         validateInput(propagatedState);
 
-        LocalDateTime timestamp =
-                propagatedState.getTimestamp();
-
         AbsoluteDate date =
-                toAbsoluteDate(timestamp);
+                toAbsoluteDate(
+                        propagatedState.getTimestamp()
+                );
+
+        Vector3D earthFixedPosition =
+                convertTemeToEarthFixed(
+                        propagatedState,
+                        date
+                );
 
         /*
-         * OrbitalPropagationService stores position
-         * in kilometers.
+         * Convert the Earth-fixed Cartesian coordinates into
+         * WGS84 geodetic coordinates.
          *
-         * Orekit uses SI units internally,
-         * therefore convert kilometers -> meters.
+         * Orekit returns:
+         *
+         * latitude  -> radians
+         * longitude -> radians
+         * altitude  -> metres
+         */
+        GeodeticPoint geodeticPoint =
+                earth.transform(
+                        earthFixedPosition,
+                        earthFixedFrame,
+                        date
+                );
+
+        return GeodeticPosition.builder()
+                .latitude(
+                        Math.toDegrees(
+                                geodeticPoint.getLatitude()
+                        )
+                )
+                .longitude(
+                        Math.toDegrees(
+                                geodeticPoint.getLongitude()
+                        )
+                )
+                .altitude(
+                        geodeticPoint.getAltitude()
+                                * METERS_TO_KILOMETERS
+                )
+                .build();
+    }
+
+    /**
+     * Converts a propagated TEME Cartesian position into
+     * Earth-fixed ITRF Cartesian coordinates.
+     *
+     * <p>
+     * This method is specifically required by the 3D Earth
+     * visualization. Three.js must receive Earth-fixed
+     * coordinates rather than raw TEME coordinates.
+     * </p>
+     *
+     * <p>
+     * Returned coordinates are expressed in kilometres.
+     * </p>
+     *
+     * @param propagatedState propagated orbital state in TEME
+     * @return Earth-fixed ITRF Cartesian position in kilometres
+     */
+    @Override
+    public EarthFixedPosition toEarthFixedPosition(
+            PropagatedOrbitalState propagatedState
+    ) {
+
+        validateInput(propagatedState);
+
+        AbsoluteDate date =
+                toAbsoluteDate(
+                        propagatedState.getTimestamp()
+                );
+
+        Vector3D earthFixedPosition =
+                convertTemeToEarthFixed(
+                        propagatedState,
+                        date
+                );
+
+        return EarthFixedPosition.builder()
+                .xKm(
+                        earthFixedPosition.getX()
+                                * METERS_TO_KILOMETERS
+                )
+                .yKm(
+                        earthFixedPosition.getY()
+                                * METERS_TO_KILOMETERS
+                )
+                .zKm(
+                        earthFixedPosition.getZ()
+                                * METERS_TO_KILOMETERS
+                )
+                .frame(ITRF_FRAME)
+                .build();
+    }
+
+    /**
+     * Performs the actual TEME -> ITRF transformation.
+     *
+     * <p>
+     * This method is shared by both geodetic and Earth-fixed
+     * coordinate conversion so that the transformation logic
+     * exists in exactly one place.
+     * </p>
+     */
+    private Vector3D convertTemeToEarthFixed(
+            PropagatedOrbitalState propagatedState,
+            AbsoluteDate date
+    ) {
+
+        /*
+         * OrbitalPropagationService stores position in kilometres,
+         * while Orekit operates internally using SI units.
          */
         Vector3D temePosition =
                 new Vector3D(
@@ -131,13 +250,13 @@ public class CoordinateConversionServiceImpl
                 );
 
         /*
-         * Convert:
+         * Transform:
          *
          * TEME
          *   ↓
          * ITRF
          *
-         * The transform is evaluated at the exact
+         * The transformation is evaluated at the exact
          * propagation timestamp.
          */
         Transform temeToEarthFixed =
@@ -146,59 +265,22 @@ public class CoordinateConversionServiceImpl
                         date
                 );
 
-        Vector3D earthFixedPosition =
-                temeToEarthFixed.transformPosition(
-                        temePosition
-                );
-
-        /*
-         * Convert Earth-fixed Cartesian coordinates
-         * into WGS84 geodetic coordinates.
-         *
-         * Orekit returns:
-         * latitude  -> radians
-         * longitude -> radians
-         * altitude  -> meters
-         */
-        GeodeticPoint geodeticPoint =
-                earth.transform(
-                        earthFixedPosition,
-                        earthFixedFrame,
-                        date
-                );
-
-        return GeodeticPosition.builder()
-
-                .latitude(
-                        Math.toDegrees(
-                                geodeticPoint.getLatitude()
-                        )
-                )
-
-                .longitude(
-                        Math.toDegrees(
-                                geodeticPoint.getLongitude()
-                        )
-                )
-
-                .altitude(
-                        geodeticPoint.getAltitude()
-                                / KILOMETERS_TO_METERS
-                )
-
-                .build();
+        return temeToEarthFixed.transformPosition(
+                temePosition
+        );
     }
 
     /**
-     * Convert OrbitGuard LocalDateTime into Orekit AbsoluteDate.
+     * Converts OrbitGuard LocalDateTime into Orekit AbsoluteDate.
      *
-     * OrbitGuard currently represents orbital timestamps
-     * using LocalDateTime, without a timezone component.
-     *
-     * Therefore this integration treats the value as UTC.
+     * <p>
+     * LocalDateTime does not contain timezone information, so
+     * OrbitGuard treats orbital timestamps as UTC.
+     * </p>
      */
     private AbsoluteDate toAbsoluteDate(
-            LocalDateTime dateTime) {
+            LocalDateTime dateTime
+    ) {
 
         if (dateTime == null) {
 
@@ -224,11 +306,12 @@ public class CoordinateConversionServiceImpl
     }
 
     /**
-     * Validate the propagated orbital state before
-     * performing coordinate conversion.
+     * Validates the propagated orbital state before performing
+     * coordinate conversion.
      */
     private void validateInput(
-            PropagatedOrbitalState propagatedState) {
+            PropagatedOrbitalState propagatedState
+    ) {
 
         if (propagatedState == null) {
 
@@ -280,17 +363,16 @@ public class CoordinateConversionServiceImpl
     }
 
     /**
-     * Validate a Cartesian coordinate.
+     * Validates a Cartesian coordinate.
      *
-     * Coordinates must:
-     *
-     * - not be null
-     * - not be NaN
-     * - not be infinite
+     * <p>
+     * Coordinates must not be null, NaN, or infinite.
+     * </p>
      */
     private void validateFiniteCoordinate(
             Double value,
-            String fieldName) {
+            String fieldName
+    ) {
 
         if (value == null) {
 
