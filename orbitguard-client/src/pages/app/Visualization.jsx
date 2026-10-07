@@ -19,9 +19,28 @@ import VisualizationLegend from "../../features/visualization/components/Visuali
 import CameraControls from "../../features/visualization/components/CameraControls";
 import OrbitalTimeline from "../../features/visualization/components/OrbitalTimeline";
 
-// import {
-//   getAllObjects,
-// } from "../../features/visualization/visualizationService";
+/**
+ * ================================================================
+ * BACKEND VISUALIZATION SERVICE
+ * ================================================================
+ *
+ * Backend source of truth:
+ *
+ * GET /api/visualization/objects
+ *
+ * The shared visualization service is responsible for:
+ *
+ * - Axios communication
+ * - JWT authentication through api.js
+ * - backend response extraction
+ * - targetTime formatting
+ * - API error propagation
+ *
+ * This page only consumes the returned visualization data.
+ */
+import {
+  getAllVisualizationObjects,
+} from "../../services/visualizationService";
 
 /**
  * ============================================================================
@@ -55,29 +74,6 @@ import OrbitalTimeline from "../../features/visualization/components/OrbitalTime
  * Backend remains the source of truth.
  *
  * ============================================================================
- * UI ARCHITECTURE
- * ============================================================================
- *
- * Desktop:
- *
- * ┌─────────────────────────────────────────────────────────────┐
- * │                    TOP STATUS                              │
- * │                                                             │
- * │  SPACE OBJECTS                              INSPECTOR       │
- * │                                                             │
- * │                                                             │
- * │                     3D SCENE                               │
- * │                                                             │
- * │  LEGEND                  TIMELINE          CAMERA           │
- * └─────────────────────────────────────────────────────────────┘
- *
- * The important rule is:
- *
- * NO desktop overlay owns another overlay's position.
- *
- * Every control gets a dedicated visual zone.
- *
- * ============================================================================
  */
 
 const VISUALIZATION_PAGE_VARIANTS = {
@@ -94,26 +90,23 @@ const VISUALIZATION_PAGE_VARIANTS = {
   },
 };
 
-const DEFAULT_DISPLAY_OPTIONS =
-  Object.freeze({
-    satellites: true,
-    debris: true,
-    orbitalTrails: true,
-    atmosphere: true,
-  });
+const DEFAULT_DISPLAY_OPTIONS = Object.freeze({
+  satellites: true,
+  debris: true,
+  orbitalTrails: true,
+  atmosphere: true,
+});
 
-const VISUALIZATION_FILTERS =
-  Object.freeze({
-    ALL: "ALL",
-    SATELLITE: "SATELLITE",
-    DEBRIS: "DEBRIS",
-  });
+const VISUALIZATION_FILTERS = Object.freeze({
+  ALL: "ALL",
+  SATELLITE: "SATELLITE",
+  DEBRIS: "DEBRIS",
+});
 
-const MOBILE_PANELS =
-  Object.freeze({
-    OBJECTS: "objects",
-    INSPECTOR: "inspector",
-  });
+const MOBILE_PANELS = Object.freeze({
+  OBJECTS: "objects",
+  INSPECTOR: "inspector",
+});
 
 const DEFAULT_TIMELINE_OFFSET = 0;
 const DEFAULT_PLAYBACK_SPEED = 1;
@@ -151,9 +144,22 @@ const getObjectId = (object) => {
   );
 };
 
-const normalizeVisualizationResponse = (
-  response,
-) => {
+/**
+ * Normalize the visualization payload returned by the service.
+ *
+ * The visualization service already unwraps the backend ApiResponse.
+ *
+ * Expected service result:
+ *
+ * {
+ *   objects: [...],
+ *   propagatedAt: "..."
+ * }
+ *
+ * The helper remains defensive because the visualization page
+ * should never assume an invalid response is usable data.
+ */
+const normalizeVisualizationResponse = (response) => {
   if (Array.isArray(response)) {
     return {
       objects: response.filter(Boolean),
@@ -161,19 +167,14 @@ const normalizeVisualizationResponse = (
     };
   }
 
-  if (
-    !response ||
-    typeof response !== "object"
-  ) {
+  if (!response || typeof response !== "object") {
     return {
       objects: [],
       propagatedAt: null,
     };
   }
 
-  const objects = Array.isArray(
-    response.objects,
-  )
+  const objects = Array.isArray(response.objects)
     ? response.objects.filter(Boolean)
     : [];
 
@@ -191,77 +192,125 @@ const normalizeVisualizationResponse = (
  * ========================================================================== */
 
 const Visualization = () => {
-  const shouldReduceMotion =
-    useReducedMotion();
+  const shouldReduceMotion = useReducedMotion();
 
   /* ==========================================================================
    * BACKEND DATA
    * ======================================================================== */
 
-  const [objects, setObjects] =
-    useState([]);
+  const [objects, setObjects] = useState([]);
 
-  const [dataEpoch, setDataEpoch] =
-    useState(null);
+  const [dataEpoch, setDataEpoch] = useState(null);
 
-  const [isLoading, setIsLoading] =
-    useState(true);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const [loadError, setLoadError] =
-    useState(null);
+  const [loadError, setLoadError] = useState(null);
 
+  /**
+   * ========================================================================
+   * LOAD REAL BACKEND VISUALIZATION DATA
+   * ========================================================================
+   *
+   * IMPORTANT:
+   *
+   * This is now connected to the actual Spring Boot backend.
+   *
+   * Request flow:
+   *
+   * Visualization.jsx
+   *        ↓
+   * getAllVisualizationObjects()
+   *        ↓
+   * visualizationService.js
+   *        ↓
+   * api.js
+   *        ↓
+   * JWT Authorization
+   *        ↓
+   * GET /api/visualization/objects
+   *        ↓
+   * Spring Boot VisualizationController
+   *
+   * We intentionally do not pass targetTime here yet.
+   *
+   * When targetTime is omitted, the backend controller uses:
+   *
+   * LocalDateTime.now(ZoneOffset.UTC)
+   *
+   * This gives us the cleanest first end-to-end integration test.
+   */
   useEffect(() => {
     let active = true;
 
-    const loadVisualizationObjects =
-      async () => {
-        try {
-          setIsLoading(true);
-          setLoadError(null);
+    const loadVisualizationObjects = async () => {
+      try {
+        setIsLoading(true);
+        setLoadError(null);
 
-          const response =
-            await getAllObjects();
-
-          if (!active) {
-            return;
-          }
-
-          const normalized =
-            normalizeVisualizationResponse(
-              response,
-            );
-
-          setObjects(
-            normalized.objects,
+        if (import.meta.env.DEV) {
+          console.info(
+            "[OrbitGuard Visualization] Loading real backend visualization data...",
           );
-
-          setDataEpoch(
-            normalized.propagatedAt,
-          );
-        } catch (error) {
-          if (!active) {
-            return;
-          }
-
-          console.error(
-            "OrbitGuard visualization data loading failed:",
-            error,
-          );
-
-          setObjects([]);
-          setDataEpoch(null);
-
-          setLoadError(
-            error instanceof Error
-              ? error.message
-              : "Unable to load visualization data.",
-          );
-        } finally {
-          if (active) {
-            setIsLoading(false);
-          }
         }
-      };
+
+        /**
+         * Backend will use current UTC time because no targetTime
+         * is supplied.
+         */
+        const response =
+          await getAllVisualizationObjects();
+
+        if (!active) {
+          return;
+        }
+
+        const normalized =
+          normalizeVisualizationResponse(response);
+
+        /**
+         * Store only the real backend objects.
+         *
+         * No dummy/fallback visualization objects are created.
+         */
+        setObjects(normalized.objects);
+
+        setDataEpoch(normalized.propagatedAt);
+
+        if (import.meta.env.DEV) {
+          console.info(
+            "[OrbitGuard Visualization] Backend visualization data loaded successfully.",
+            {
+              objectCount:
+                normalized.objects.length,
+              propagatedAt:
+                normalized.propagatedAt,
+            },
+          );
+        }
+      } catch (error) {
+        if (!active) {
+          return;
+        }
+
+        console.error(
+          "[OrbitGuard Visualization] Backend visualization data loading failed:",
+          error,
+        );
+
+        setObjects([]);
+        setDataEpoch(null);
+
+        setLoadError(
+          error instanceof Error
+            ? error.message
+            : "Unable to load visualization data.",
+        );
+      } finally {
+        if (active) {
+          setIsLoading(false);
+        }
+      }
+    };
 
     loadVisualizationObjects();
 
@@ -833,13 +882,6 @@ const Visualization = () => {
         >
           {/* ================================================================
               LEFT COMMAND DOCK
-
-              This is the important layout change.
-
-              Space Objects and Legend are now treated as one
-              left-side control column.
-
-              Therefore the legend can NEVER overlap the panel.
               ================================================================ */}
 
           <div
@@ -860,9 +902,9 @@ const Visualization = () => {
               gap-3
             "
           >
-            {/* --------------------------------------------------------------
+            {/* ================================================================
                 SPACE OBJECTS
-                -------------------------------------------------------------- */}
+                ================================================================ */}
 
             <div
               className="
@@ -905,12 +947,9 @@ const Visualization = () => {
               />
             </div>
 
-            {/* --------------------------------------------------------------
+            {/* ================================================================
                 LEGEND
-
-                Dedicated area.
-                No overlap.
-                -------------------------------------------------------------- */}
+                ================================================================ */}
 
             <div
               className="
