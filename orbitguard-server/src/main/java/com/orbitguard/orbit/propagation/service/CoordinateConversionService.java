@@ -1,59 +1,87 @@
 package com.orbitguard.orbit.propagation.service;
 
+import com.orbitguard.orbit.propagation.dto.CoordinateConversionResult;
 import com.orbitguard.orbit.propagation.dto.EarthFixedPosition;
 import com.orbitguard.orbit.propagation.dto.GeodeticPosition;
 import com.orbitguard.orbit.propagation.dto.PropagatedOrbitalState;
 
 /**
- * Service responsible for converting propagated orbital coordinates
- * into Earth-referenced coordinate systems.
+ * ================================================================
+ * OrbitGuard AI - Coordinate Conversion Service
+ * ================================================================
  *
- * <p>
- * The orbital propagation engine produces position coordinates in
- * the TEME reference frame. This service is responsible for converting
- * those coordinates into Earth-fixed and geodetic representations
- * required by the application and 3D visualization layer.
- * </p>
+ * Service responsible for converting propagated orbital coordinates
+ * between orbital and Earth-referenced coordinate systems.
+ *
+ * The orbital propagation engine produces Cartesian coordinates in
+ * the TEME reference frame.
+ *
+ * This service converts those coordinates into:
+ *
+ * 1. Earth-fixed ITRF Cartesian coordinates.
+ * 2. WGS84 geodetic coordinates.
+ *
+ * IMPORTANT PERFORMANCE DESIGN:
+ *
+ * The bulk visualization pipeline needs BOTH representations.
+ *
+ * Therefore the primary conversion method is:
+ *
+ *     convert(...)
+ *
+ * It performs the TEME -> ITRF transformation exactly once and
+ * returns both results.
  */
 public interface CoordinateConversionService {
 
     /**
-     * Converts a propagated TEME orbital position into geodetic
-     * coordinates using the WGS84 Earth model.
+     * ================================================================
+     * COMBINED COORDINATE CONVERSION
+     * ================================================================
      *
-     * <p>
-     * The returned position contains:
-     * </p>
+     * Performs one complete TEME -> ITRF conversion and derives:
      *
-     * <ul>
-     *     <li>Latitude in degrees</li>
-     *     <li>Longitude in degrees</li>
-     *     <li>Altitude in kilometres</li>
-     * </ul>
+     * - WGS84 geodetic position
+     * - Earth-fixed ITRF Cartesian position
+     *
+     * Both results originate from the same Earth-fixed Cartesian
+     * transformation.
+     *
+     * This method is the preferred method for the bulk visualization
+     * pipeline.
      *
      * @param propagatedState propagated orbital state in TEME
-     * @return geodetic position
+     * @return combined coordinate conversion result
+     */
+    CoordinateConversionResult convert(
+            PropagatedOrbitalState propagatedState
+    );
+
+    /**
+     * ================================================================
+     * GEODETIC CONVERSION
+     * ================================================================
+     *
+     * Compatibility method for existing callers that only need
+     * geodetic coordinates.
+     *
+     * @param propagatedState propagated orbital state in TEME
+     * @return WGS84 geodetic position
      */
     GeodeticPosition toGeodeticPosition(
             PropagatedOrbitalState propagatedState
     );
 
     /**
-     * Converts a propagated TEME position into an Earth-fixed
-     * Cartesian position.
+     * ================================================================
+     * EARTH-FIXED CONVERSION
+     * ================================================================
      *
-     * <p>
-     * The returned coordinates are expressed in the ITRF frame and
-     * are suitable for placing orbital objects around a rotating
-     * Earth in the 3D visualization.
-     * </p>
-     *
-     * <p>
-     * Coordinates returned by this method are expressed in kilometres.
-     * </p>
+     * Compatibility method for existing callers that only need
+     * Earth-fixed Cartesian coordinates.
      *
      * @param propagatedState propagated orbital state in TEME
-     * @return Earth-fixed Cartesian position in ITRF coordinates
+     * @return Earth-fixed ITRF Cartesian position
      */
     EarthFixedPosition toEarthFixedPosition(
             PropagatedOrbitalState propagatedState
