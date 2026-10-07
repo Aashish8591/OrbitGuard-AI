@@ -19,6 +19,8 @@ import DebrisDetails from "../pages/app/DebrisDetails";
 import Risks from "../pages/app/Risks";
 import RiskDetails from "../pages/app/RiskDetails";
 
+import Visualization from "../pages/app/Visualization";
+
 function AppRoutes() {
   return (
     <Routes>
@@ -75,7 +77,7 @@ function AppRoutes() {
               VISUALIZATION
               ===================================================== */}
 
-          <Route path="/visualization" element={<div>Visualization</div>} />
+          <Route path="/visualization" element={<Visualization />} />
 
           {/* =====================================================
               ALERTS
