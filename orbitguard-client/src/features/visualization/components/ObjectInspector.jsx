@@ -47,28 +47,7 @@ import {
  * MOBILE
  * ----------------------------------------------------------------------------
  *
- * Compact bottom-sheet presentation:
- *
- *   ┌──────────────────────────────┐
- *   │ drag handle                  │
- *   │ icon OBJECT NAME        X    │
- *   │      NORAD ID                │
- *   │                              │
- *   │ altitude / velocity / inc.  │
- *   │                              │
- *   │ latitude             value   │
- *   │ longitude            value   │
- *   │ object type          value   │
- *   │ frame                value   │
- *   │ last updated          value   │
- *   │                              │
- *   │ ITRF CARTESIAN               │
- *   │ X                    value   │
- *   │ Y                    value   │
- *   │ Z                    value   │
- *   │                              │
- *   │        FOCUS                │
- *   └──────────────────────────────┘
+ * Compact bottom-sheet presentation.
  *
  * IMPORTANT
  * ----------------------------------------------------------------------------
@@ -108,6 +87,43 @@ const TABS = Object.freeze([
 ]);
 
 const DEFAULT_TAB = "overview";
+
+/* ============================================================================
+ * LOCAL OBJECT IMAGES
+ * ========================================================================== */
+
+/**
+ * Local presentation assets.
+ *
+ * These files are served from the Vite public directory:
+ *
+ * public/images/satellite/satellite-01.png
+ * public/images/debris/debris-01.png
+ *
+ * The mapping is intentionally deterministic.
+ *
+ * We do NOT use Math.random() here because the inspector can re-render
+ * whenever selectedObject, tabs, or parent state changes. Random selection
+ * would make the displayed image appear to change unexpectedly.
+ */
+const OBJECT_IMAGES = Object.freeze({
+  SATELLITE: "/images/satellite/satellite-01.png",
+  DEBRIS: "/images/debris/debris-01.png",
+});
+
+/**
+ * Resolve the local presentation image from the actual backend object type.
+ *
+ * Returns null for unsupported object types so the existing icon fallback
+ * remains available without changing the rest of the inspector behavior.
+ */
+const getObjectImage = (object) => {
+  const type = String(object?.objectType ?? "")
+    .trim()
+    .toUpperCase();
+
+  return OBJECT_IMAGES[type] ?? null;
+};
 
 /* ============================================================================
  * FORMAT HELPERS
@@ -164,7 +180,9 @@ const normalizeTimestampForUtc = (value) => {
   }
 
   if (
-    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(stringValue)
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(
+      stringValue,
+    )
   ) {
     return `${stringValue}Z`;
   }
@@ -555,8 +573,8 @@ const EmptyInspector = () => (
         text-slate-600
       "
     >
-      Select a satellite or debris object from the orbital scene to inspect its
-      telemetry.
+      Select a satellite or debris object from the orbital scene to inspect
+      its telemetry.
     </p>
   </div>
 );
@@ -572,7 +590,16 @@ const ObjectHeader = ({ object, theme }) => {
 
   const statusLabel = status || "TRACKED";
 
-  const imageUrl = object?.imageUrl ?? object?.image ?? null;
+  /**
+   * Local deterministic image based on object type.
+   *
+   * Backend-provided imageUrl/image is still respected if it exists.
+   * Otherwise the correct local satellite/debris image is used.
+   */
+  const imageUrl =
+    object?.imageUrl ??
+    object?.image ??
+    getObjectImage(object);
 
   return (
     <div
@@ -603,7 +630,7 @@ const ObjectHeader = ({ object, theme }) => {
         {imageUrl ? (
           <img
             src={imageUrl}
-            alt=""
+            alt={`${type} object`}
             className="
               h-full
               w-full
@@ -804,7 +831,13 @@ const getInclination = (object) =>
  * MOBILE METRIC
  * ========================================================================== */
 
-const MobileMetric = ({ icon: Icon, label, value, unit, accent = "cyan" }) => {
+const MobileMetric = ({
+  icon: Icon,
+  label,
+  value,
+  unit,
+  accent = "cyan",
+}) => {
   const accentClass =
     accent === "red"
       ? "text-red-300"
@@ -933,6 +966,14 @@ const MobileObjectHeader = ({ object, theme, onClose }) => {
 
   const isHighRisk = risk === "HIGH";
 
+  /**
+   * Same deterministic image mapping used by desktop inspector.
+   */
+  const imageUrl =
+    object?.imageUrl ??
+    object?.image ??
+    getObjectImage(object);
+
   return (
     <div
       className="
@@ -950,13 +991,25 @@ const MobileObjectHeader = ({ object, theme, onClose }) => {
           shrink-0
           items-center
           justify-center
+          overflow-hidden
           rounded-xl
           border
           bg-black/20
           ${theme.border}
         `}
       >
-        {type === "DEBRIS" ? (
+        {imageUrl ? (
+          <img
+            src={imageUrl}
+            alt={`${type} object`}
+            className="
+              h-full
+              w-full
+              object-cover
+            "
+            draggable="false"
+          />
+        ) : type === "DEBRIS" ? (
           <FiAlertTriangle
             className="
               h-5
@@ -1130,7 +1183,8 @@ const MobileObjectInspector = ({
 
   const hasInclination = hasValue(inclination);
 
-  const metricCount = 1 + (hasVelocity ? 1 : 0) + (hasInclination ? 1 : 0);
+  const metricCount =
+    1 + (hasVelocity ? 1 : 0) + (hasInclination ? 1 : 0);
 
   const metricGridClass =
     metricCount === 1
@@ -1149,51 +1203,32 @@ const MobileObjectInspector = ({
 
   return (
     <>
-      {/* ---------------------------------------------------------------------
-          MOBILE BOTTOM SHEET
-
-          IMPORTANT:
-          The previous full-screen black backdrop has intentionally been
-          removed. It was the source of the dark layer visible behind the
-          inspector in the mobile screenshot.
-          ------------------------------------------------------------------ */}
-
       <aside
         aria-label="Mobile object inspector"
         className="
-    pointer-events-auto
-    absolute
-    left-0
-    right-0
-    bottom-0
-    z-50
-
-    flex
-    max-h-[45dvh]
-    min-h-0
-    flex-col
-    overflow-hidden
-
-    rounded-t-[22px]
-    rounded-b-none
-
-    border
-    border-cyan-400/15
-    border-b-0
-
-    bg-[#06111c]/[0.985]
-
-    text-slate-100
-
-    shadow-[0_-12px_40px_rgba(0,0,0,0.45)]
-
-    backdrop-blur-xl
-
-    lg:hidden
-  "
+          pointer-events-auto
+          absolute
+          left-0
+          right-0
+          bottom-0
+          z-50
+          flex
+          max-h-[45dvh]
+          min-h-0
+          flex-col
+          overflow-hidden
+          rounded-t-[22px]
+          rounded-b-none
+          border
+          border-cyan-400/15
+          border-b-0
+          bg-[#06111c]/[0.985]
+          text-slate-100
+          shadow-[0_-12px_40px_rgba(0,0,0,0.45)]
+          backdrop-blur-xl
+          lg:hidden
+        "
       >
-        {/* Drag handle */}
-
         <div
           className="
             flex
@@ -1214,8 +1249,6 @@ const MobileObjectInspector = ({
           />
         </div>
 
-        {/* Header */}
-
         <div
           className="
             shrink-0
@@ -1231,8 +1264,6 @@ const MobileObjectInspector = ({
           />
         </div>
 
-        {/* Scrollable content */}
-
         <div
           className="
             min-h-0
@@ -1246,8 +1277,6 @@ const MobileObjectInspector = ({
             scrollbar-thumb-cyan-400/10
           "
         >
-          {/* KEY METRICS */}
-
           <div
             className={`
               grid
@@ -1280,8 +1309,6 @@ const MobileObjectInspector = ({
               />
             )}
           </div>
-
-          {/* POSITION / TELEMETRY */}
 
           <div
             className="
@@ -1341,8 +1368,6 @@ const MobileObjectInspector = ({
               />
             )}
           </div>
-
-          {/* ITRF POSITION */}
 
           <div
             className="
@@ -1420,19 +1445,17 @@ const MobileObjectInspector = ({
           </div>
         </div>
 
-        {/* ACTION BAR */}
-
         <div
           className="
-    shrink-0
-    w-full
-    border-t
-    border-cyan-400/[0.08]
-    bg-[#06111c]/[0.99]
-    px-3
-    pt-3
-    pb-3
-  "
+            shrink-0
+            w-full
+            border-t
+            border-cyan-400/[0.08]
+            bg-[#06111c]/[0.99]
+            px-3
+            pt-3
+            pb-3
+          "
         >
           <button
             type="button"
@@ -1499,7 +1522,9 @@ const OverviewTab = ({ object }) => {
   const type = normalizeObjectType(object?.objectType);
 
   const xKm = getXKm(object);
+
   const yKm = getYKm(object);
+
   const zKm = getZKm(object);
 
   return (
@@ -1556,7 +1581,11 @@ const OverviewTab = ({ object }) => {
         />
       </div>
 
-      <SectionHeader icon={FiMapPin} title="CURRENT POSITION" trailing="ITRF" />
+      <SectionHeader
+        icon={FiMapPin}
+        title="CURRENT POSITION"
+        trailing="ITRF"
+      />
 
       <div
         className="
@@ -1598,7 +1627,11 @@ const OrbitTab = ({ object }) => (
     <SectionHeader icon={FiActivity} title="ORBITAL PARAMETERS" />
 
     <div className="px-3">
-      <DataRow icon={FiCompass} label="Orbit Type" value={object?.orbitType} />
+      <DataRow
+        icon={FiCompass}
+        label="Orbit Type"
+        value={object?.orbitType}
+      />
 
       <DataRow
         icon={FiArrowUpRight}
@@ -1661,7 +1694,9 @@ const OrbitTab = ({ object }) => (
 
 const PositionTab = ({ object }) => {
   const xKm = getXKm(object);
+
   const yKm = getYKm(object);
+
   const zKm = getZKm(object);
 
   return (
@@ -1841,7 +1876,8 @@ const ObjectInspector = ({
   className = "",
 }) => {
   const resolveInitialTab = useCallback(
-    (value) => (TABS.some((tab) => tab.id === value) ? value : DEFAULT_TAB),
+    (value) =>
+      TABS.some((tab) => tab.id === value) ? value : DEFAULT_TAB,
     [],
   );
 
@@ -1861,7 +1897,10 @@ const ObjectInspector = ({
     setActiveTab(DEFAULT_TAB);
   }, [selectedObject?.id, selectedObject?.noradId]);
 
-  const theme = useMemo(() => getObjectTheme(selectedObject), [selectedObject]);
+  const theme = useMemo(
+    () => getObjectTheme(selectedObject),
+    [selectedObject],
+  );
 
   const handleTabChange = useCallback((tabId) => {
     if (TABS.some((tab) => tab.id === tabId)) {
@@ -1870,9 +1909,7 @@ const ObjectInspector = ({
   }, []);
 
   /**
-   * ==========================================================================
    * FOCUS OBJECT
-   * ==========================================================================
    *
    * This component intentionally does not perform camera calculations.
    *
@@ -2103,7 +2140,10 @@ const ObjectInspector = ({
                   ========================================================== */}
 
               <div className="shrink-0">
-                <ObjectHeader object={selectedObject} theme={theme} />
+                <ObjectHeader
+                  object={selectedObject}
+                  theme={theme}
+                />
               </div>
 
               {/* =============================================================
@@ -2139,40 +2179,40 @@ const ObjectInspector = ({
                         aria-controls={`object-panel-${tab.id}`}
                         onClick={() => handleTabChange(tab.id)}
                         className={`
-                            relative
-                            min-h-[38px]
-                            px-1
-                            font-['Orbitron']
-                            text-[7px]
-                            font-medium
-                            uppercase
-                            tracking-[0.05em]
-                            transition-colors
-                            duration-200
-                            focus-visible:outline-none
-                            focus-visible:ring-1
-                            focus-visible:ring-inset
-                            focus-visible:ring-cyan-400/60
+                          relative
+                          min-h-[38px]
+                          px-1
+                          font-['Orbitron']
+                          text-[7px]
+                          font-medium
+                          uppercase
+                          tracking-[0.05em]
+                          transition-colors
+                          duration-200
+                          focus-visible:outline-none
+                          focus-visible:ring-1
+                          focus-visible:ring-inset
+                          focus-visible:ring-cyan-400/60
 
-                            ${
-                              active
-                                ? "text-cyan-300"
-                                : "text-slate-600 hover:text-slate-300"
-                            }
-                          `}
+                          ${
+                            active
+                              ? "text-cyan-300"
+                              : "text-slate-600 hover:text-slate-300"
+                          }
+                        `}
                       >
                         {tab.label}
 
                         {active && (
                           <span
                             className="
-                                absolute
-                                inset-x-2
-                                bottom-0
-                                h-px
-                                bg-cyan-400
-                                shadow-[0_0_8px_rgba(34,211,238,0.65)]
-                              "
+                              absolute
+                              inset-x-2
+                              bottom-0
+                              h-px
+                              bg-cyan-400
+                              shadow-[0_0_8px_rgba(34,211,238,0.65)]
+                            "
                           />
                         )}
                       </button>
