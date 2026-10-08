@@ -1,9 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   FiActivity,
@@ -30,47 +25,68 @@ import {
  * OrbitGuard AI — Object Inspector
  * ============================================================================
  *
- * RIGHT-SIDE OBJECT TELEMETRY / INSPECTION PANEL
- *
- * ----------------------------------------------------------------------------
  * RESPONSIBILITY
  * ----------------------------------------------------------------------------
  *
- * Presentation-only inspector for the currently selected orbital object.
+ * Presentation and user-action boundary for the currently selected orbital
+ * object.
  *
- * Owns:
- * - inspector presentation
- * - inspector tabs
- * - metadata presentation
- * - orbital telemetry presentation
- * - ITRF Cartesian telemetry presentation
- * - WGS84 geodetic telemetry presentation
- * - focus-object action
- * - show-orbit action
- * - responsive panel presentation
+ * DESKTOP
+ * ----------------------------------------------------------------------------
  *
- * Does NOT own:
- * - API requests
- * - orbital propagation
- * - SGP4 calculations
- * - Orekit calculations
- * - coordinate conversion
- * - risk calculations
- * - camera implementation
- * - Three.js rendering
+ * Full telemetry inspector:
  *
- * Parent page remains responsible for application state.
+ *   OBJECT INSPECTOR
+ *   ├── Object Header
+ *   ├── Overview
+ *   ├── Orbit
+ *   ├── Position
+ *   ├── Details
+ *   └── Focus Object
  *
- * IMPORTANT:
- * The parent Visualization.jsx controls the panel position.
- * This component intentionally does NOT use `fixed` positioning.
+ * MOBILE
+ * ----------------------------------------------------------------------------
+ *
+ * Compact bottom-sheet presentation:
+ *
+ *   ┌──────────────────────────────┐
+ *   │ drag handle                  │
+ *   │ icon OBJECT NAME        X    │
+ *   │      NORAD ID                │
+ *   │                              │
+ *   │ altitude / velocity / inc.  │
+ *   │                              │
+ *   │ latitude             value   │
+ *   │ longitude            value   │
+ *   │ object type          value   │
+ *   │ frame                value   │
+ *   │ last updated          value   │
+ *   │                              │
+ *   │ ITRF CARTESIAN               │
+ *   │ X                    value   │
+ *   │ Y                    value   │
+ *   │ Z                    value   │
+ *   │                              │
+ *   │        FOCUS                │
+ *   └──────────────────────────────┘
+ *
+ * IMPORTANT
+ * ----------------------------------------------------------------------------
+ *
+ * This component does NOT:
+ *
+ * - call APIs
+ * - calculate orbital propagation
+ * - calculate risk
+ * - calculate coordinates
+ * - control Three.js
+ * - generate orbital trajectories
+ *
+ * Parent page remains responsible for application state and visualization
+ * actions.
  *
  * ============================================================================
  */
-
-/* ============================================================================
- * CONSTANTS
- * ========================================================================== */
 
 const TABS = Object.freeze([
   {
@@ -98,11 +114,7 @@ const DEFAULT_TAB = "overview";
  * ========================================================================== */
 
 const displayValue = (value, fallback = "—") => {
-  if (
-    value === null ||
-    value === undefined ||
-    value === ""
-  ) {
+  if (value === null || value === undefined || value === "") {
     return fallback;
   }
 
@@ -122,21 +134,52 @@ const formatNumber = (value, decimals = 2) => {
   });
 };
 
-const formatCoordinate = (value) =>
-  formatNumber(value, 2);
+const formatCoordinate = (value) => formatNumber(value, 2);
 
-const formatAltitude = (value) =>
-  formatNumber(value, 2);
+const formatAltitude = (value) => formatNumber(value, 2);
 
-const formatAngle = (value) =>
-  formatNumber(value, 2);
+const formatAngle = (value) => formatNumber(value, 2);
+
+/* ============================================================================
+ * TIMESTAMP NORMALIZATION
+ * ========================================================================== */
+
+const normalizeTimestampForUtc = (value) => {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+
+  const stringValue = String(value).trim();
+
+  if (!stringValue) {
+    return null;
+  }
+
+  if (stringValue.endsWith("Z") || stringValue.endsWith("z")) {
+    return stringValue;
+  }
+
+  if (/[+-]\d{2}:\d{2}$/.test(stringValue)) {
+    return stringValue;
+  }
+
+  if (
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(stringValue)
+  ) {
+    return `${stringValue}Z`;
+  }
+
+  return stringValue;
+};
 
 const formatTimestamp = (value) => {
-  if (!value) {
+  if (value === null || value === undefined || value === "") {
     return "—";
   }
 
-  const date = new Date(value);
+  const normalized = normalizeTimestampForUtc(value);
+
+  const date = new Date(normalized);
 
   if (Number.isNaN(date.getTime())) {
     return String(value);
@@ -156,6 +199,10 @@ const formatTimestamp = (value) => {
     .replace(",", "");
 };
 
+/* ============================================================================
+ * NORMALIZATION HELPERS
+ * ========================================================================== */
+
 const normalizeObjectType = (value) =>
   String(value ?? "")
     .trim()
@@ -171,14 +218,33 @@ const normalizeRisk = (value) =>
     .trim()
     .toUpperCase();
 
+/**
+ * Backend JSON has historically exposed Cartesian coordinates as:
+ *
+ * xkm / ykm / zkm
+ *
+ * visualizationService.js normalizes these to:
+ *
+ * xKm / yKm / zKm
+ *
+ * The inspector remains defensive.
+ */
+
+const getXKm = (object) => object?.xKm ?? object?.xkm ?? null;
+
+const getYKm = (object) => object?.yKm ?? object?.ykm ?? null;
+
+const getZKm = (object) => object?.zKm ?? object?.zkm ?? null;
+
+const getRiskValue = (object) =>
+  object?.riskLevel ?? object?.risk ?? object?.collisionRisk ?? null;
+
 /* ============================================================================
  * OBJECT HELPERS
  * ========================================================================== */
 
 const getObjectTypeLabel = (object) => {
-  const type = normalizeObjectType(
-    object?.objectType,
-  );
+  const type = normalizeObjectType(object?.objectType);
 
   if (type === "SATELLITE") {
     return "SATELLITE";
@@ -192,13 +258,9 @@ const getObjectTypeLabel = (object) => {
 };
 
 const getObjectTheme = (object) => {
-  const type = normalizeObjectType(
-    object?.objectType,
-  );
+  const type = normalizeObjectType(object?.objectType);
 
-  const risk = normalizeRisk(
-    object?.riskLevel,
-  );
+  const risk = normalizeRisk(getRiskValue(object));
 
   if (risk === "HIGH") {
     return {
@@ -230,15 +292,10 @@ const getObjectTheme = (object) => {
 };
 
 /* ============================================================================
- * SMALL UI COMPONENTS
+ * SMALL DESKTOP UI COMPONENTS
  * ========================================================================== */
 
-const DataRow = ({
-  icon: Icon,
-  label,
-  value,
-  valueClassName = "",
-}) => (
+const DataRow = ({ icon: Icon, label, value, valueClassName = "" }) => (
   <div
     className="
       flex
@@ -262,16 +319,9 @@ const DataRow = ({
       "
     >
       {Icon ? (
-        <Icon
-          className="h-3 w-3"
-          strokeWidth={1.4}
-          aria-hidden="true"
-        />
+        <Icon className="h-3 w-3" strokeWidth={1.4} aria-hidden="true" />
       ) : (
-        <FiCircle
-          className="h-1.5 w-1.5"
-          aria-hidden="true"
-        />
+        <FiCircle className="h-1.5 w-1.5" aria-hidden="true" />
       )}
     </span>
 
@@ -307,11 +357,7 @@ const DataRow = ({
   </div>
 );
 
-const SectionHeader = ({
-  icon: Icon,
-  title,
-  trailing,
-}) => (
+const SectionHeader = ({ icon: Icon, title, trailing }) => (
   <div
     className="
       flex
@@ -379,12 +425,7 @@ const SectionHeader = ({
   </div>
 );
 
-const MetricBox = ({
-  label,
-  value,
-  unit,
-  accent = "cyan",
-}) => {
+const MetricBox = ({ label, value, unit, accent = "cyan" }) => {
   const accentClasses =
     accent === "amber"
       ? {
@@ -488,10 +529,7 @@ const EmptyInspector = () => (
         text-cyan-400/50
       "
     >
-      <FiTarget
-        className="h-5 w-5"
-        strokeWidth={1.25}
-      />
+      <FiTarget className="h-5 w-5" strokeWidth={1.25} />
     </div>
 
     <p
@@ -517,34 +555,24 @@ const EmptyInspector = () => (
         text-slate-600
       "
     >
-      Select a satellite or debris
-      object from the orbital scene to
-      inspect its telemetry.
+      Select a satellite or debris object from the orbital scene to inspect its
+      telemetry.
     </p>
   </div>
 );
 
 /* ============================================================================
- * OBJECT HEADER
+ * DESKTOP OBJECT HEADER
  * ========================================================================== */
 
-const ObjectHeader = ({
-  object,
-  theme,
-}) => {
+const ObjectHeader = ({ object, theme }) => {
   const type = getObjectTypeLabel(object);
 
-  const status = normalizeStatus(
-    object?.missionStatus,
-  );
+  const status = normalizeStatus(object?.missionStatus);
 
-  const statusLabel =
-    status || "TRACKED";
+  const statusLabel = status || "TRACKED";
 
-  const imageUrl =
-    object?.imageUrl ??
-    object?.image ??
-    null;
+  const imageUrl = object?.imageUrl ?? object?.image ?? null;
 
   return (
     <div
@@ -652,12 +680,9 @@ const ObjectHeader = ({
               text-slate-100
               sm:text-[11px]
             "
-            title={object?.name}
+            title={String(displayValue(object?.name))}
           >
-            {displayValue(
-              object?.name,
-              "UNKNOWN OBJECT",
-            )}
+            {displayValue(object?.name, "UNKNOWN OBJECT")}
           </h3>
         </div>
 
@@ -722,9 +747,7 @@ const ObjectHeader = ({
               text-slate-400
             "
           >
-            {displayValue(
-              object?.noradId,
-            )}
+            {displayValue(object?.noradId)}
           </span>
 
           <span
@@ -757,37 +780,734 @@ const ObjectHeader = ({
 };
 
 /* ============================================================================
+ * MOBILE METRIC HELPERS
+ * ========================================================================== */
+
+const hasValue = (value) =>
+  value !== null &&
+  value !== undefined &&
+  value !== "" &&
+  Number.isFinite(Number(value));
+
+const getVelocity = (object) =>
+  object?.velocityKmPerSec ??
+  object?.velocityKms ??
+  object?.velocity ??
+  object?.speedKmPerSec ??
+  object?.speed ??
+  null;
+
+const getInclination = (object) =>
+  object?.inclination ?? object?.inclinationDeg ?? null;
+
+/* ============================================================================
+ * MOBILE METRIC
+ * ========================================================================== */
+
+const MobileMetric = ({ icon: Icon, label, value, unit, accent = "cyan" }) => {
+  const accentClass =
+    accent === "red"
+      ? "text-red-300"
+      : accent === "amber"
+        ? "text-amber-300"
+        : "text-cyan-300";
+
+  return (
+    <div
+      className="
+        min-w-0
+        rounded-xl
+        border
+        border-white/[0.07]
+        bg-white/[0.025]
+        px-2.5
+        py-2.5
+      "
+    >
+      <div
+        className="
+          flex
+          items-center
+          gap-1.5
+          text-slate-600
+        "
+      >
+        {Icon && <Icon className="h-3 w-3" strokeWidth={1.4} />}
+
+        <span
+          className="
+            truncate
+            font-['Inter']
+            text-[8px]
+            uppercase
+            tracking-[0.04em]
+          "
+        >
+          {label}
+        </span>
+      </div>
+
+      <div
+        className={`
+          mt-1.5
+          truncate
+          font-['Orbitron']
+          text-[11px]
+          font-medium
+          ${accentClass}
+        `}
+      >
+        {displayValue(value)}
+      </div>
+
+      {unit && (
+        <div
+          className="
+            mt-0.5
+            font-['Inter']
+            text-[7px]
+            text-slate-600
+          "
+        >
+          {unit}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ============================================================================
+ * MOBILE DATA ROW
+ * ========================================================================== */
+
+const MobileDataRow = ({ label, value, valueClassName = "" }) => (
+  <div
+    className="
+      flex
+      min-h-[31px]
+      items-center
+      justify-between
+      gap-4
+      border-b
+      border-white/[0.055]
+      px-1
+      last:border-b-0
+    "
+  >
+    <span
+      className="
+        font-['Inter']
+        text-[9px]
+        text-slate-500
+      "
+    >
+      {label}
+    </span>
+
+    <span
+      className={`
+        max-w-[62%]
+        truncate
+        text-right
+        font-['Inter']
+        text-[9px]
+        font-medium
+        text-slate-300
+        ${valueClassName}
+      `}
+      title={String(displayValue(value))}
+    >
+      {displayValue(value)}
+    </span>
+  </div>
+);
+
+/* ============================================================================
+ * MOBILE OBJECT HEADER
+ * ========================================================================== */
+
+const MobileObjectHeader = ({ object, theme, onClose }) => {
+  const type = getObjectTypeLabel(object);
+
+  const risk = normalizeRisk(getRiskValue(object));
+
+  const isHighRisk = risk === "HIGH";
+
+  return (
+    <div
+      className="
+        flex
+        items-center
+        gap-3
+      "
+    >
+      <div
+        className={`
+          relative
+          flex
+          h-11
+          w-11
+          shrink-0
+          items-center
+          justify-center
+          rounded-xl
+          border
+          bg-black/20
+          ${theme.border}
+        `}
+      >
+        {type === "DEBRIS" ? (
+          <FiAlertTriangle
+            className="
+              h-5
+              w-5
+              text-amber-400/80
+            "
+            strokeWidth={1.3}
+          />
+        ) : (
+          <FiRadio
+            className="
+              h-5
+              w-5
+              text-cyan-400/80
+            "
+            strokeWidth={1.3}
+          />
+        )}
+
+        <span
+          className={`
+            absolute
+            bottom-1
+            left-1
+            h-1.5
+            w-1.5
+            rounded-full
+            ${theme.dot}
+          `}
+        />
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <div
+          className="
+            flex
+            min-w-0
+            items-center
+            gap-2
+          "
+        >
+          <h2
+            className="
+              min-w-0
+              truncate
+              font-['Orbitron']
+              text-[10px]
+              font-semibold
+              uppercase
+              tracking-[0.025em]
+              text-slate-100
+            "
+            title={String(displayValue(object?.name))}
+          >
+            {displayValue(object?.name, "UNKNOWN OBJECT")}
+          </h2>
+
+          <span
+            className={`
+              shrink-0
+              rounded-md
+              border
+              px-1.5
+              py-0.5
+              font-['Orbitron']
+              text-[6px]
+              font-medium
+              uppercase
+              tracking-[0.05em]
+              ${
+                isHighRisk
+                  ? "border-red-400/20 bg-red-400/10 text-red-300"
+                  : type === "DEBRIS"
+                    ? "border-amber-400/20 bg-amber-400/10 text-amber-300"
+                    : "border-cyan-400/20 bg-cyan-400/10 text-cyan-300"
+              }
+            `}
+          >
+            {type}
+          </span>
+        </div>
+
+        <div
+          className="
+            mt-1
+            flex
+            items-center
+            gap-1.5
+          "
+        >
+          <span
+            className="
+              h-1.5
+              w-1.5
+              rounded-full
+              bg-emerald-400
+            "
+          />
+
+          <span
+            className="
+              font-['Inter']
+              text-[8px]
+              text-slate-500
+            "
+          >
+            NORAD ID:
+          </span>
+
+          <span
+            className="
+              font-['Orbitron']
+              text-[7px]
+              text-slate-400
+            "
+          >
+            {displayValue(object?.noradId)}
+          </span>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          onClose?.();
+        }}
+        aria-label="Close object inspector"
+        className="
+          flex
+          h-9
+          w-9
+          shrink-0
+          items-center
+          justify-center
+          rounded-full
+          border
+          border-white/[0.07]
+          bg-white/[0.025]
+          text-slate-500
+          active:scale-95
+          focus-visible:outline-none
+          focus-visible:ring-1
+          focus-visible:ring-cyan-400/60
+        "
+      >
+        <FiX className="h-4 w-4" strokeWidth={1.5} />
+      </button>
+    </div>
+  );
+};
+
+/* ============================================================================
+ * MOBILE INSPECTOR
+ * ========================================================================== */
+
+const MobileObjectInspector = ({
+  selectedObject,
+  theme,
+  onClose,
+  onFocusObject,
+  canFocusObject,
+}) => {
+  const velocity = getVelocity(selectedObject);
+
+  const inclination = getInclination(selectedObject);
+
+  const altitude = selectedObject?.altitudeKm;
+
+  const hasVelocity = hasValue(velocity);
+
+  const hasInclination = hasValue(inclination);
+
+  const metricCount = 1 + (hasVelocity ? 1 : 0) + (hasInclination ? 1 : 0);
+
+  const metricGridClass =
+    metricCount === 1
+      ? "grid-cols-1"
+      : metricCount === 2
+        ? "grid-cols-2"
+        : "grid-cols-3";
+
+  const xKm = getXKm(selectedObject);
+
+  const yKm = getYKm(selectedObject);
+
+  const zKm = getZKm(selectedObject);
+
+  const risk = normalizeRisk(getRiskValue(selectedObject));
+
+  return (
+    <>
+      {/* ---------------------------------------------------------------------
+          MOBILE BOTTOM SHEET
+
+          IMPORTANT:
+          The previous full-screen black backdrop has intentionally been
+          removed. It was the source of the dark layer visible behind the
+          inspector in the mobile screenshot.
+          ------------------------------------------------------------------ */}
+
+      <aside
+        aria-label="Mobile object inspector"
+        className="
+    pointer-events-auto
+    absolute
+    left-0
+    right-0
+    bottom-0
+    z-50
+
+    flex
+    max-h-[45dvh]
+    min-h-0
+    flex-col
+    overflow-hidden
+
+    rounded-t-[22px]
+    rounded-b-none
+
+    border
+    border-cyan-400/15
+    border-b-0
+
+    bg-[#06111c]/[0.985]
+
+    text-slate-100
+
+    shadow-[0_-12px_40px_rgba(0,0,0,0.45)]
+
+    backdrop-blur-xl
+
+    lg:hidden
+  "
+      >
+        {/* Drag handle */}
+
+        <div
+          className="
+            flex
+            shrink-0
+            justify-center
+            px-4
+            pt-2.5
+            pb-1.5
+          "
+        >
+          <span
+            className="
+              h-1
+              w-10
+              rounded-full
+              bg-slate-600/70
+            "
+          />
+        </div>
+
+        {/* Header */}
+
+        <div
+          className="
+            shrink-0
+            px-4
+            pb-3
+            pt-1
+          "
+        >
+          <MobileObjectHeader
+            object={selectedObject}
+            theme={theme}
+            onClose={onClose}
+          />
+        </div>
+
+        {/* Scrollable content */}
+
+        <div
+          className="
+            min-h-0
+            flex-1
+            overflow-y-auto
+            overscroll-contain
+            px-4
+            pb-3
+            scrollbar-thin
+            scrollbar-track-transparent
+            scrollbar-thumb-cyan-400/10
+          "
+        >
+          {/* KEY METRICS */}
+
+          <div
+            className={`
+              grid
+              ${metricGridClass}
+              gap-2
+            `}
+          >
+            <MobileMetric
+              icon={FiArrowUpRight}
+              label="Altitude"
+              value={hasValue(altitude) ? formatAltitude(altitude) : null}
+              unit="km"
+            />
+
+            {hasVelocity && (
+              <MobileMetric
+                icon={FiActivity}
+                label="Velocity"
+                value={formatNumber(velocity, 2)}
+                unit="km/s"
+              />
+            )}
+
+            {hasInclination && (
+              <MobileMetric
+                icon={FiCompass}
+                label="Inclination"
+                value={formatAngle(inclination)}
+                unit="degrees"
+              />
+            )}
+          </div>
+
+          {/* POSITION / TELEMETRY */}
+
+          <div
+            className="
+              mt-3
+              overflow-hidden
+              rounded-xl
+              border
+              border-white/[0.06]
+              bg-black/10
+              px-3
+            "
+          >
+            <MobileDataRow
+              label="Latitude"
+              value={
+                hasValue(selectedObject?.latitude)
+                  ? `${formatAngle(selectedObject.latitude)}°`
+                  : null
+              }
+            />
+
+            <MobileDataRow
+              label="Longitude"
+              value={
+                hasValue(selectedObject?.longitude)
+                  ? `${formatAngle(selectedObject.longitude)}°`
+                  : null
+              }
+            />
+
+            <MobileDataRow
+              label="Object Type"
+              value={getObjectTypeLabel(selectedObject)}
+            />
+
+            <MobileDataRow
+              label="Frame"
+              value={selectedObject?.frame ?? "ITRF"}
+            />
+
+            <MobileDataRow
+              label="Last Updated"
+              value={formatTimestamp(selectedObject?.timestamp)}
+            />
+
+            {risk && (
+              <MobileDataRow
+                label="Risk Level"
+                value={risk}
+                valueClassName={
+                  risk === "HIGH"
+                    ? "text-red-300"
+                    : risk === "MEDIUM"
+                      ? "text-amber-300"
+                      : "text-slate-300"
+                }
+              />
+            )}
+          </div>
+
+          {/* ITRF POSITION */}
+
+          <div
+            className="
+              mt-3
+              overflow-hidden
+              rounded-xl
+              border
+              border-white/[0.06]
+              bg-black/10
+              px-3
+            "
+          >
+            <div
+              className="
+                flex
+                items-center
+                justify-between
+                py-2
+              "
+            >
+              <div
+                className="
+                  flex
+                  items-center
+                  gap-1.5
+                "
+              >
+                <FiGlobe
+                  className="
+                    h-3
+                    w-3
+                    text-cyan-400/70
+                  "
+                  strokeWidth={1.4}
+                />
+
+                <span
+                  className="
+                    font-['Orbitron']
+                    text-[7px]
+                    uppercase
+                    tracking-[0.09em]
+                    text-slate-500
+                  "
+                >
+                  ITRF CARTESIAN
+                </span>
+              </div>
+
+              <span
+                className="
+                  font-['Orbitron']
+                  text-[6px]
+                  text-slate-600
+                "
+              >
+                KM
+              </span>
+            </div>
+
+            <MobileDataRow
+              label="X"
+              value={hasValue(xKm) ? `${formatCoordinate(xKm)} km` : null}
+            />
+
+            <MobileDataRow
+              label="Y"
+              value={hasValue(yKm) ? `${formatCoordinate(yKm)} km` : null}
+            />
+
+            <MobileDataRow
+              label="Z"
+              value={hasValue(zKm) ? `${formatCoordinate(zKm)} km` : null}
+            />
+          </div>
+        </div>
+
+        {/* ACTION BAR */}
+
+        <div
+          className="
+    shrink-0
+    w-full
+    border-t
+    border-cyan-400/[0.08]
+    bg-[#06111c]/[0.99]
+    px-3
+    pt-3
+    pb-3
+  "
+        >
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+
+              if (canFocusObject) {
+                onFocusObject(selectedObject);
+              }
+            }}
+            disabled={!canFocusObject}
+            className="
+              flex
+              min-h-[44px]
+              w-full
+              items-center
+              justify-center
+              gap-2
+              rounded-xl
+              border
+              border-cyan-400/25
+              bg-cyan-400/[0.08]
+              px-3
+              font-['Orbitron']
+              text-[7px]
+              font-medium
+              uppercase
+              tracking-[0.06em]
+              text-cyan-200
+              transition-all
+              duration-200
+              active:scale-[0.98]
+              hover:border-cyan-300/40
+              hover:bg-cyan-400/[0.12]
+              focus-visible:outline-none
+              focus-visible:ring-1
+              focus-visible:ring-cyan-400/60
+              disabled:cursor-not-allowed
+              disabled:opacity-40
+            "
+          >
+            <FiCrosshair
+              className="h-3.5 w-3.5"
+              strokeWidth={1.5}
+              aria-hidden="true"
+            />
+            FOCUS OBJECT
+          </button>
+        </div>
+      </aside>
+    </>
+  );
+};
+
+/* ============================================================================
  * OVERVIEW TAB
  * ========================================================================== */
 
-const OverviewTab = ({
-  object,
-}) => {
-  const status = normalizeStatus(
-    object?.missionStatus,
-  );
+const OverviewTab = ({ object }) => {
+  const status = normalizeStatus(object?.missionStatus);
 
-  const risk = normalizeRisk(
-    object?.riskLevel,
-  );
+  const risk = normalizeRisk(getRiskValue(object));
 
-  const type = normalizeObjectType(
-    object?.objectType,
-  );
+  const type = normalizeObjectType(object?.objectType);
+
+  const xKm = getXKm(object);
+  const yKm = getYKm(object);
+  const zKm = getZKm(object);
 
   return (
     <div>
-      <SectionHeader
-        icon={FiInfo}
-        title="OBJECT TELEMETRY"
-      />
+      <SectionHeader icon={FiInfo} title="OBJECT TELEMETRY" />
 
       <div className="px-3">
-        <DataRow
-          icon={FiRadio}
-          label="Object Name"
-          value={object?.name}
-        />
+        <DataRow icon={FiRadio} label="Object Name" value={object?.name} />
 
         <DataRow
           icon={FiHash}
@@ -795,21 +1515,13 @@ const OverviewTab = ({
           value={object?.noradId}
         />
 
-        <DataRow
-          icon={FiLayers}
-          label="Object Type"
-          value={type || null}
-        />
+        <DataRow icon={FiLayers} label="Object Type" value={type || null} />
 
         <DataRow
           icon={FiActivity}
           label="Mission Status"
           value={status || null}
-          valueClassName={
-            status === "ACTIVE"
-              ? "text-emerald-300"
-              : ""
-          }
+          valueClassName={status === "ACTIVE" ? "text-emerald-300" : ""}
         />
 
         <DataRow
@@ -828,34 +1540,23 @@ const OverviewTab = ({
         <DataRow
           icon={FiGlobe}
           label="Country / Operator"
-          value={
-            object?.country ??
-            object?.operator
-          }
+          value={object?.country || object?.operator}
         />
 
         <DataRow
           icon={FiRotateCw}
           label="Data Epoch"
-          value={formatTimestamp(
-            object?.timestamp,
-          )}
+          value={formatTimestamp(object?.timestamp)}
         />
 
         <DataRow
           icon={FiNavigation}
           label="Reference Frame"
-          value={
-            object?.frame ?? "ITRF"
-          }
+          value={object?.frame ?? "ITRF"}
         />
       </div>
 
-      <SectionHeader
-        icon={FiMapPin}
-        title="CURRENT POSITION"
-        trailing="ITRF"
-      />
+      <SectionHeader icon={FiMapPin} title="CURRENT POSITION" trailing="ITRF" />
 
       <div
         className="
@@ -868,43 +1569,19 @@ const OverviewTab = ({
       >
         <MetricBox
           label="X"
-          value={
-            Number.isFinite(
-              Number(object?.xKm),
-            )
-              ? formatCoordinate(
-                  object.xKm,
-                )
-              : null
-          }
+          value={Number.isFinite(Number(xKm)) ? formatCoordinate(xKm) : null}
           unit="km"
         />
 
         <MetricBox
           label="Y"
-          value={
-            Number.isFinite(
-              Number(object?.yKm),
-            )
-              ? formatCoordinate(
-                  object.yKm,
-                )
-              : null
-          }
+          value={Number.isFinite(Number(yKm)) ? formatCoordinate(yKm) : null}
           unit="km"
         />
 
         <MetricBox
           label="Z"
-          value={
-            Number.isFinite(
-              Number(object?.zKm),
-            )
-              ? formatCoordinate(
-                  object.zKm,
-                )
-              : null
-          }
+          value={Number.isFinite(Number(zKm)) ? formatCoordinate(zKm) : null}
           unit="km"
         />
       </div>
@@ -916,31 +1593,19 @@ const OverviewTab = ({
  * ORBIT TAB
  * ========================================================================== */
 
-const OrbitTab = ({
-  object,
-}) => (
+const OrbitTab = ({ object }) => (
   <div>
-    <SectionHeader
-      icon={FiActivity}
-      title="ORBITAL PARAMETERS"
-    />
+    <SectionHeader icon={FiActivity} title="ORBITAL PARAMETERS" />
 
     <div className="px-3">
-      <DataRow
-        icon={FiCompass}
-        label="Orbit Type"
-        value={object?.orbitType}
-      />
+      <DataRow icon={FiCompass} label="Orbit Type" value={object?.orbitType} />
 
       <DataRow
         icon={FiArrowUpRight}
         label="Inclination"
         value={
-          object?.inclination !==
-          undefined
-            ? `${formatAngle(
-                object.inclination,
-              )}°`
+          object?.inclination !== undefined
+            ? `${formatAngle(object.inclination)}°`
             : null
         }
       />
@@ -949,12 +1614,8 @@ const OrbitTab = ({
         icon={FiNavigation}
         label="Mean Motion"
         value={
-          object?.meanMotion !==
-          undefined
-            ? `${formatNumber(
-                object.meanMotion,
-                2,
-              )} rev/day`
+          object?.meanMotion !== undefined
+            ? `${formatNumber(object.meanMotion, 2)} rev/day`
             : null
         }
       />
@@ -963,11 +1624,8 @@ const OrbitTab = ({
         icon={FiGlobe}
         label="Altitude"
         value={
-          object?.altitudeKm !==
-          undefined
-            ? `${formatAltitude(
-                object.altitudeKm,
-              )} km`
+          object?.altitudeKm !== undefined
+            ? `${formatAltitude(object.altitudeKm)} km`
             : null
         }
       />
@@ -975,33 +1633,23 @@ const OrbitTab = ({
       <DataRow
         icon={FiRotateCw}
         label="Epoch"
-        value={formatTimestamp(
-          object?.timestamp,
-        )}
+        value={formatTimestamp(object?.timestamp)}
       />
     </div>
 
-    <SectionHeader
-      icon={FiLayers}
-      title="PROPAGATION"
-    />
+    <SectionHeader icon={FiLayers} title="PROPAGATION" />
 
     <div className="px-3">
       <DataRow
         icon={FiActivity}
         label="Propagation"
-        value={
-          object?.propagationMethod ??
-          "SGP4 / OREKIT"
-        }
+        value={object?.propagationMethod ?? "SGP4 / OREKIT"}
       />
 
       <DataRow
         icon={FiGlobe}
         label="Reference Frame"
-        value={
-          object?.frame ?? "ITRF"
-        }
+        value={object?.frame ?? "ITRF"}
       />
     </div>
   </div>
@@ -1011,236 +1659,172 @@ const OrbitTab = ({
  * POSITION TAB
  * ========================================================================== */
 
-const PositionTab = ({
-  object,
-}) => (
-  <div>
-    <SectionHeader
-      icon={FiGlobe}
-      title="ITRF CARTESIAN"
-      trailing="KM"
-    />
+const PositionTab = ({ object }) => {
+  const xKm = getXKm(object);
+  const yKm = getYKm(object);
+  const zKm = getZKm(object);
 
-    <div className="px-3">
-      <DataRow
-        icon={FiArrowUpRight}
-        label="X"
-        value={
-          object?.xKm !== undefined
-            ? `${formatCoordinate(
-                object.xKm,
-              )} km`
-            : null
-        }
+  return (
+    <div>
+      <SectionHeader icon={FiGlobe} title="ITRF CARTESIAN" trailing="KM" />
+
+      <div className="px-3">
+        <DataRow
+          icon={FiArrowUpRight}
+          label="X"
+          value={
+            xKm !== undefined && xKm !== null
+              ? `${formatCoordinate(xKm)} km`
+              : null
+          }
+        />
+
+        <DataRow
+          icon={FiArrowUpRight}
+          label="Y"
+          value={
+            yKm !== undefined && yKm !== null
+              ? `${formatCoordinate(yKm)} km`
+              : null
+          }
+        />
+
+        <DataRow
+          icon={FiArrowUpRight}
+          label="Z"
+          value={
+            zKm !== undefined && zKm !== null
+              ? `${formatCoordinate(zKm)} km`
+              : null
+          }
+        />
+
+        <DataRow
+          icon={FiRotateCw}
+          label="Timestamp"
+          value={formatTimestamp(object?.timestamp)}
+        />
+
+        <DataRow
+          icon={FiLayers}
+          label="Frame"
+          value={object?.frame ?? "ITRF"}
+        />
+      </div>
+
+      <SectionHeader
+        icon={FiMapPin}
+        title="GEODETIC POSITION"
+        trailing="WGS84"
       />
 
-      <DataRow
-        icon={FiArrowUpRight}
-        label="Y"
-        value={
-          object?.yKm !== undefined
-            ? `${formatCoordinate(
-                object.yKm,
-              )} km`
-            : null
-        }
-      />
+      <div className="px-3">
+        <DataRow
+          icon={FiNavigation}
+          label="Latitude"
+          value={
+            object?.latitude !== undefined
+              ? `${formatAngle(object.latitude)}°`
+              : null
+          }
+        />
 
-      <DataRow
-        icon={FiArrowUpRight}
-        label="Z"
-        value={
-          object?.zKm !== undefined
-            ? `${formatCoordinate(
-                object.zKm,
-              )} km`
-            : null
-        }
-      />
+        <DataRow
+          icon={FiNavigation}
+          label="Longitude"
+          value={
+            object?.longitude !== undefined
+              ? `${formatAngle(object.longitude)}°`
+              : null
+          }
+        />
 
-      <DataRow
-        icon={FiRotateCw}
-        label="Timestamp"
-        value={formatTimestamp(
-          object?.timestamp,
-        )}
-      />
-
-      <DataRow
-        icon={FiLayers}
-        label="Frame"
-        value={
-          object?.frame ?? "ITRF"
-        }
-      />
+        <DataRow
+          icon={FiArrowUpRight}
+          label="Altitude"
+          value={
+            object?.altitudeKm !== undefined
+              ? `${formatAltitude(object.altitudeKm)} km`
+              : null
+          }
+        />
+      </div>
     </div>
-
-    <SectionHeader
-      icon={FiMapPin}
-      title="GEODETIC POSITION"
-      trailing="WGS84"
-    />
-
-    <div className="px-3">
-      <DataRow
-        icon={FiNavigation}
-        label="Latitude"
-        value={
-          object?.latitude !==
-          undefined
-            ? `${formatAngle(
-                object.latitude,
-              )}°`
-            : null
-        }
-      />
-
-      <DataRow
-        icon={FiNavigation}
-        label="Longitude"
-        value={
-          object?.longitude !==
-          undefined
-            ? `${formatAngle(
-                object.longitude,
-              )}°`
-            : null
-        }
-      />
-
-      <DataRow
-        icon={FiArrowUpRight}
-        label="Altitude"
-        value={
-          object?.altitudeKm !==
-          undefined
-            ? `${formatAltitude(
-                object.altitudeKm,
-              )} km`
-            : null
-        }
-      />
-    </div>
-  </div>
-);
+  );
+};
 
 /* ============================================================================
  * DETAILS TAB
  * ========================================================================== */
 
-const DetailsTab = ({
-  object,
-}) => (
-  <div>
-    <SectionHeader
-      icon={FiInfo}
-      title="OBJECT DETAILS"
-    />
+const DetailsTab = ({ object }) => {
+  const risk = getRiskValue(object);
 
-    <div className="px-3">
-      <DataRow
-        icon={FiRadio}
-        label="Name"
-        value={object?.name}
-      />
+  return (
+    <div>
+      <SectionHeader icon={FiInfo} title="OBJECT DETAILS" />
 
-      <DataRow
-        icon={FiHash}
-        label="NORAD ID"
-        value={object?.noradId}
-      />
+      <div className="px-3">
+        <DataRow icon={FiRadio} label="Name" value={object?.name} />
 
-      <DataRow
-        icon={FiLayers}
-        label="Object Type"
-        value={getObjectTypeLabel(
-          object,
-        )}
-      />
+        <DataRow icon={FiHash} label="NORAD ID" value={object?.noradId} />
 
-      <DataRow
-        icon={FiGlobe}
-        label="Country"
-        value={object?.country}
-      />
+        <DataRow
+          icon={FiLayers}
+          label="Object Type"
+          value={getObjectTypeLabel(object)}
+        />
 
-      <DataRow
-        icon={FiRadio}
-        label="Operator"
-        value={object?.operator}
-      />
+        <DataRow icon={FiGlobe} label="Country" value={object?.country} />
 
-      <DataRow
-        icon={FiCheckCircle}
-        label="Mission Status"
-        value={object?.missionStatus}
-      />
+        <DataRow icon={FiRadio} label="Operator" value={object?.operator} />
 
-      <DataRow
-        icon={FiActivity}
-        label="Risk Level"
-        value={object?.riskLevel}
-      />
+        <DataRow
+          icon={FiCheckCircle}
+          label="Mission Status"
+          value={object?.missionStatus}
+        />
+
+        <DataRow icon={FiActivity} label="Risk Level" value={risk} />
+      </div>
+
+      <SectionHeader icon={FiLayers} title="VISUALIZATION" />
+
+      <div className="px-3">
+        <DataRow
+          icon={FiGlobe}
+          label="Reference Frame"
+          value={object?.frame ?? "ITRF"}
+        />
+
+        <DataRow
+          icon={FiRotateCw}
+          label="Data Epoch"
+          value={formatTimestamp(object?.timestamp)}
+        />
+      </div>
     </div>
-
-    <SectionHeader
-      icon={FiLayers}
-      title="VISUALIZATION"
-    />
-
-    <div className="px-3">
-      <DataRow
-        icon={FiGlobe}
-        label="Reference Frame"
-        value={
-          object?.frame ?? "ITRF"
-        }
-      />
-
-      <DataRow
-        icon={FiRotateCw}
-        label="Data Epoch"
-        value={formatTimestamp(
-          object?.timestamp,
-        )}
-      />
-    </div>
-  </div>
-);
+  );
+};
 
 /* ============================================================================
  * TAB CONTENT
  * ========================================================================== */
 
-const InspectorTabContent = ({
-  activeTab,
-  object,
-}) => {
+const InspectorTabContent = ({ activeTab, object }) => {
   switch (activeTab) {
     case "orbit":
       return <OrbitTab object={object} />;
 
     case "position":
-      return (
-        <PositionTab
-          object={object}
-        />
-      );
+      return <PositionTab object={object} />;
 
     case "details":
-      return (
-        <DetailsTab
-          object={object}
-        />
-      );
+      return <DetailsTab object={object} />;
 
     case "overview":
     default:
-      return (
-        <OverviewTab
-          object={object}
-        />
-      );
+      return <OverviewTab object={object} />;
   }
 };
 
@@ -1252,121 +1836,70 @@ const ObjectInspector = ({
   selectedObject = null,
   onClose,
   onFocusObject,
-  onShowOrbit,
   open = true,
   initialTab = DEFAULT_TAB,
   className = "",
 }) => {
   const resolveInitialTab = useCallback(
-    (value) =>
-      TABS.some(
-        (tab) => tab.id === value,
-      )
-        ? value
-        : DEFAULT_TAB,
+    (value) => (TABS.some((tab) => tab.id === value) ? value : DEFAULT_TAB),
     [],
   );
 
-  const [
-    activeTab,
-    setActiveTab,
-  ] = useState(() =>
-    resolveInitialTab(
-      initialTab,
-    ),
+  const [activeTab, setActiveTab] = useState(() =>
+    resolveInitialTab(initialTab),
   );
 
-  /* --------------------------------------------------------------------------
-   * Keep active tab valid when parent changes initialTab.
-   * ------------------------------------------------------------------------ */
+  const canFocusObject = Boolean(
+    selectedObject && typeof onFocusObject === "function",
+  );
 
   useEffect(() => {
-    setActiveTab(
-      resolveInitialTab(
-        initialTab,
-      ),
-    );
-  }, [
-    initialTab,
-    resolveInitialTab,
-  ]);
-
-  /* --------------------------------------------------------------------------
-   * Reset to overview when the selected object changes.
-   *
-   * This prevents a newly selected object from opening on a stale tab.
-   * ------------------------------------------------------------------------ */
+    setActiveTab(resolveInitialTab(initialTab));
+  }, [initialTab, resolveInitialTab]);
 
   useEffect(() => {
     setActiveTab(DEFAULT_TAB);
-  }, [
-    selectedObject?.id,
-    selectedObject?.noradId,
-  ]);
+  }, [selectedObject?.id, selectedObject?.noradId]);
 
-  const theme = useMemo(
-    () =>
-      getObjectTheme(
-        selectedObject,
-      ),
-    [selectedObject],
-  );
+  const theme = useMemo(() => getObjectTheme(selectedObject), [selectedObject]);
 
-  /* ==========================================================================
-   * TAB CHANGE
-   * ======================================================================== */
+  const handleTabChange = useCallback((tabId) => {
+    if (TABS.some((tab) => tab.id === tabId)) {
+      setActiveTab(tabId);
+    }
+  }, []);
 
-  const handleTabChange =
-    useCallback((tabId) => {
-      if (
-        TABS.some(
-          (tab) =>
-            tab.id === tabId,
-        )
-      ) {
-        setActiveTab(tabId);
-      }
-    }, []);
-
-  /* ==========================================================================
+  /**
+   * ==========================================================================
    * FOCUS OBJECT
-   * ======================================================================== */
+   * ==========================================================================
+   *
+   * This component intentionally does not perform camera calculations.
+   *
+   * The selected object is passed back to Visualization.jsx, where the
+   * existing camera bridge owns the actual Three.js camera operation.
+   */
 
-  const handleFocusObject =
-    useCallback(() => {
-      if (!selectedObject) {
+  const handleFocusObject = useCallback(
+    (eventOrObject) => {
+      const isEvent =
+        eventOrObject &&
+        typeof eventOrObject === "object" &&
+        ("stopPropagation" in eventOrObject ||
+          "preventDefault" in eventOrObject);
+
+      if (isEvent) {
+        eventOrObject?.stopPropagation?.();
+      }
+
+      if (!selectedObject || typeof onFocusObject !== "function") {
         return;
       }
 
-      onFocusObject?.(
-        selectedObject,
-      );
-    }, [
-      onFocusObject,
-      selectedObject,
-    ]);
-
-  /* ==========================================================================
-   * SHOW ORBIT
-   * ======================================================================== */
-
-  const handleShowOrbit =
-    useCallback(() => {
-      if (!selectedObject) {
-        return;
-      }
-
-      onShowOrbit?.(
-        selectedObject,
-      );
-    }, [
-      onShowOrbit,
-      selectedObject,
-    ]);
-
-  /* ==========================================================================
-   * CLOSED
-   * ======================================================================== */
+      onFocusObject(selectedObject);
+    },
+    [onFocusObject, selectedObject],
+  );
 
   if (!open) {
     return null;
@@ -1374,476 +1907,363 @@ const ObjectInspector = ({
 
   return (
     <>
-      {/* ======================================================================
-          MOBILE BACKDROP
-
-          IMPORTANT:
-          This is absolute rather than fixed so the inspector remains inside
-          the Visualization workspace.
+      {/* =====================================================================
+          MOBILE VERSION
           ================================================================== */}
 
-      <button
-        type="button"
-        aria-label="Close object inspector"
-        onClick={onClose}
+      {selectedObject && (
+        <MobileObjectInspector
+          selectedObject={selectedObject}
+          theme={theme}
+          onClose={onClose}
+          onFocusObject={handleFocusObject}
+          canFocusObject={canFocusObject}
+        />
+      )}
+
+      {/* =====================================================================
+          DESKTOP VERSION
+          ================================================================== */}
+
+      <div
         className="
-          pointer-events-auto
-          absolute
-          inset-0
-          z-40
-          bg-black/55
-          backdrop-blur-[2px]
-          lg:hidden
+          pointer-events-none
+          hidden
+          lg:block
         "
-      />
-
-      {/* ======================================================================
-          INSPECTOR PANEL
-
-          IMPORTANT:
-          Do NOT use `fixed` here.
-
-          Visualization.jsx already owns the panel's absolute positioning.
-          This component only controls its own dimensions and presentation.
-          ================================================================== */}
-
-      <aside
-        aria-label="Object inspector"
-        className={`
-          pointer-events-auto
-          absolute
-          z-50
-          flex
-          flex-col
-          overflow-hidden
-          border
-          border-cyan-400/15
-          bg-[#03101b]/95
-          text-slate-100
-          shadow-[0_20px_70px_rgba(0,0,0,0.5)]
-          backdrop-blur-xl
-
-          /* ---------------------------------------------------------------
-             MOBILE
-             --------------------------------------------------------------- */
-
-          inset-x-3
-          bottom-3
-          max-h-[calc(100%-1.5rem)]
-          rounded-2xl
-
-          /* ---------------------------------------------------------------
-             TABLET
-             --------------------------------------------------------------- */
-
-          sm:left-auto
-          sm:right-3
-          sm:top-3
-          sm:bottom-3
-          sm:w-[330px]
-          sm:max-h-none
-          sm:rounded-xl
-
-          /* ---------------------------------------------------------------
-             DESKTOP
-             --------------------------------------------------------------- */
-
-          lg:right-3
-          lg:top-3
-          lg:bottom-3
-          lg:w-[330px]
-          lg:rounded-xl
-
-          xl:right-4
-          xl:w-[340px]
-
-          ${className}
-        `}
       >
-        {/* ==================================================================
-            HEADER
-            ================================================================== */}
+        <aside
+          aria-label="Object inspector"
+          className={`
+            pointer-events-auto
+            absolute
 
-        <div
-          className="
+            right-3
+            top-3
+            bottom-10
+
+            z-50
+
             flex
-            shrink-0
-            items-center
-            justify-between
-            gap-3
-            border-b
-            border-cyan-400/[0.08]
-            px-4
-            py-3.5
-          "
+            w-[330px]
+            flex-col
+            overflow-hidden
+
+            rounded-xl
+            border
+            border-cyan-400/15
+
+            bg-[#03101b]/95
+
+            text-slate-100
+
+            shadow-[0_12px_36px_rgba(0,0,0,0.38)]
+
+            backdrop-blur-xl
+
+            xl:right-2
+            xl:w-[340px]
+
+            ${className}
+          `}
         >
+          {/* ===============================================================
+              DESKTOP HEADER
+              ============================================================ */}
+
           <div
             className="
               flex
-              min-w-0
+              shrink-0
               items-center
-              gap-2.5
+              justify-between
+              gap-3
+              border-b
+              border-cyan-400/[0.08]
+              px-4
+              py-3.5
             "
           >
             <div
               className="
                 flex
-                h-7
-                w-7
+                min-w-0
+                items-center
+                gap-2.5
+              "
+            >
+              <div
+                className="
+                  flex
+                  h-7
+                  w-7
+                  shrink-0
+                  items-center
+                  justify-center
+                  rounded-lg
+                  border
+                  border-cyan-400/15
+                  bg-cyan-400/[0.05]
+                  text-cyan-300
+                "
+              >
+                <FiTarget className="h-3.5 w-3.5" strokeWidth={1.5} />
+              </div>
+
+              <div className="min-w-0">
+                <h2
+                  className="
+                    truncate
+                    font-['Orbitron']
+                    text-[10px]
+                    font-semibold
+                    uppercase
+                    tracking-[0.11em]
+                    text-slate-100
+                  "
+                >
+                  OBJECT INSPECTOR
+                </h2>
+
+                {selectedObject && (
+                  <div
+                    className="
+                      mt-1
+                      flex
+                      items-center
+                      gap-1.5
+                    "
+                  >
+                    <span
+                      className={`
+                        h-1.5
+                        w-1.5
+                        rounded-full
+                        ${theme.dot}
+                      `}
+                    />
+
+                    <span
+                      className="
+                        font-['Orbitron']
+                        text-[6px]
+                        uppercase
+                        tracking-[0.08em]
+                        text-slate-600
+                      "
+                    >
+                      {getObjectTypeLabel(selectedObject)}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onClose?.();
+              }}
+              aria-label="Close object inspector"
+              className="
+                flex
+                h-8
+                w-8
                 shrink-0
                 items-center
                 justify-center
                 rounded-lg
                 border
-                border-cyan-400/15
-                bg-cyan-400/[0.05]
-                text-cyan-300
+                border-transparent
+                text-slate-500
+                transition-colors
+                hover:border-cyan-400/10
+                hover:bg-white/[0.03]
+                hover:text-slate-200
+                focus-visible:outline-none
+                focus-visible:ring-1
+                focus-visible:ring-cyan-400/60
               "
             >
-              <FiTarget
-                className="h-3.5 w-3.5"
-                strokeWidth={1.5}
-                aria-hidden="true"
-              />
-            </div>
-
-            <div className="min-w-0">
-              <h2
-                className="
-                  truncate
-                  font-['Orbitron']
-                  text-[9px]
-                  font-semibold
-                  uppercase
-                  tracking-[0.11em]
-                  text-slate-100
-                  sm:text-[10px]
-                "
-              >
-                OBJECT INSPECTOR
-              </h2>
-
-              {selectedObject && (
-                <div
-                  className="
-                    mt-1
-                    flex
-                    items-center
-                    gap-1.5
-                  "
-                >
-                  <span
-                    className={`
-                      h-1.5
-                      w-1.5
-                      rounded-full
-                      ${theme.dot}
-                    `}
-                  />
-
-                  <span
-                    className="
-                      font-['Orbitron']
-                      text-[6px]
-                      uppercase
-                      tracking-[0.08em]
-                      text-slate-600
-                    "
-                  >
-                    {getObjectTypeLabel(
-                      selectedObject,
-                    )}
-                  </span>
-                </div>
-              )}
-            </div>
+              <FiX className="h-4 w-4" strokeWidth={1.5} />
+            </button>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close object inspector"
-            className="
-              flex
-              h-8
-              w-8
-              shrink-0
-              items-center
-              justify-center
-              rounded-lg
-              border
-              border-transparent
-              text-slate-500
-              transition-colors
-              hover:border-cyan-400/10
-              hover:bg-white/[0.03]
-              hover:text-slate-200
-              focus-visible:outline-none
-              focus-visible:ring-1
-              focus-visible:ring-cyan-400/60
-            "
-          >
-            <FiX
-              className="h-4 w-4"
-              strokeWidth={1.5}
-            />
-          </button>
-        </div>
+          {/* ===============================================================
+              EMPTY STATE
+              ============================================================ */}
 
-        {/* ==================================================================
-            EMPTY STATE
-            ================================================================== */}
+          {!selectedObject ? (
+            <EmptyInspector />
+          ) : (
+            <>
+              {/* =============================================================
+                  OBJECT HEADER
+                  ========================================================== */}
 
-        {!selectedObject ? (
-          <EmptyInspector />
-        ) : (
-          <>
-            {/* ==============================================================
-                SELECTED OBJECT HEADER
-                ============================================================== */}
+              <div className="shrink-0">
+                <ObjectHeader object={selectedObject} theme={theme} />
+              </div>
 
-            <div className="shrink-0">
-              <ObjectHeader
-                object={
-                  selectedObject
-                }
-                theme={theme}
-              />
-            </div>
+              {/* =============================================================
+                  TABS
+                  ========================================================== */}
 
-            {/* ==============================================================
-                TABS
-                ============================================================== */}
-
-            <div
-              className="
-                shrink-0
-                border-b
-                border-cyan-400/[0.08]
-                px-2
-              "
-              role="tablist"
-              aria-label="Object telemetry sections"
-            >
               <div
                 className="
-                  grid
-                  grid-cols-4
+                  shrink-0
+                  border-b
+                  border-cyan-400/[0.08]
+                  px-2
                 "
+                role="tablist"
+                aria-label="Object telemetry sections"
               >
-                {TABS.map((tab) => {
-                  const active =
-                    activeTab ===
-                    tab.id;
+                <div
+                  className="
+                    grid
+                    grid-cols-4
+                  "
+                >
+                  {TABS.map((tab) => {
+                    const active = activeTab === tab.id;
 
-                  return (
-                    <button
-                      key={tab.id}
-                      id={`object-tab-${tab.id}`}
-                      type="button"
-                      role="tab"
-                      aria-selected={
-                        active
-                      }
-                      aria-controls={`object-panel-${tab.id}`}
-                      onClick={() =>
-                        handleTabChange(
-                          tab.id,
-                        )
-                      }
-                      className={`
-                        relative
-                        min-h-[38px]
-                        px-1
-                        font-['Orbitron']
-                        text-[6px]
-                        font-medium
-                        uppercase
-                        tracking-[0.05em]
-                        transition-colors
-                        duration-200
-                        focus-visible:outline-none
-                        focus-visible:ring-1
-                        focus-visible:ring-inset
-                        focus-visible:ring-cyan-400/60
-                        sm:text-[7px]
+                    return (
+                      <button
+                        key={tab.id}
+                        id={`object-tab-${tab.id}`}
+                        type="button"
+                        role="tab"
+                        aria-selected={active}
+                        aria-controls={`object-panel-${tab.id}`}
+                        onClick={() => handleTabChange(tab.id)}
+                        className={`
+                            relative
+                            min-h-[38px]
+                            px-1
+                            font-['Orbitron']
+                            text-[7px]
+                            font-medium
+                            uppercase
+                            tracking-[0.05em]
+                            transition-colors
+                            duration-200
+                            focus-visible:outline-none
+                            focus-visible:ring-1
+                            focus-visible:ring-inset
+                            focus-visible:ring-cyan-400/60
 
-                        ${
-                          active
-                            ? "text-cyan-300"
-                            : "text-slate-600 hover:text-slate-300"
-                        }
-                      `}
-                    >
-                      {tab.label}
+                            ${
+                              active
+                                ? "text-cyan-300"
+                                : "text-slate-600 hover:text-slate-300"
+                            }
+                          `}
+                      >
+                        {tab.label}
 
-                      {active && (
-                        <span
-                          className="
-                            absolute
-                            inset-x-2
-                            bottom-0
-                            h-px
-                            bg-cyan-400
-                            shadow-[0_0_8px_rgba(34,211,238,0.65)]
-                          "
-                        />
-                      )}
-                    </button>
-                  );
-                })}
+                        {active && (
+                          <span
+                            className="
+                                absolute
+                                inset-x-2
+                                bottom-0
+                                h-px
+                                bg-cyan-400
+                                shadow-[0_0_8px_rgba(34,211,238,0.65)]
+                              "
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
 
-            {/* ==============================================================
-                TAB CONTENT
+              {/* =============================================================
+                  TAB CONTENT
+                  ========================================================== */}
 
-                This is the ONLY scrolling area of the inspector.
-                Header, tabs and action bar remain fixed inside the panel.
-                ============================================================== */}
+              <div
+                id={`object-panel-${activeTab}`}
+                role="tabpanel"
+                aria-labelledby={`object-tab-${activeTab}`}
+                className="
+                  min-h-0
+                  flex-1
+                  overflow-y-auto
+                  overscroll-contain
+                  scrollbar-thin
+                  scrollbar-track-transparent
+                  scrollbar-thumb-cyan-400/10
+                "
+              >
+                <InspectorTabContent
+                  activeTab={activeTab}
+                  object={selectedObject}
+                />
+              </div>
 
-            <div
-              id={`object-panel-${activeTab}`}
-              role="tabpanel"
-              aria-labelledby={`object-tab-${activeTab}`}
-              className="
-                min-h-0
-                flex-1
-                overflow-y-auto
-                overscroll-contain
-                scrollbar-thin
-                scrollbar-track-transparent
-                scrollbar-thumb-cyan-400/10
-              "
-            >
-              <InspectorTabContent
-                activeTab={
-                  activeTab
-                }
-                object={
-                  selectedObject
-                }
-              />
-            </div>
+              {/* =============================================================
+                  DESKTOP ACTION BAR
+                  ========================================================== */}
 
-            {/* ==============================================================
-                ACTION BAR
-                ============================================================== */}
-
-            <div
-              className="
-                grid
-                shrink-0
-                grid-cols-2
-                gap-2
-                border-t
-                border-cyan-400/[0.08]
-                bg-[#03101b]/90
-                p-3
-              "
-            >
-              {/* ------------------------------------------------------------
+              <div
+                className="
+                  shrink-0
+                  border-t
+                  border-cyan-400/[0.08]
+                  bg-[#03101b]/90
+                  p-3
+                "
+              >
+                <button
+                  type="button"
+                  onClick={handleFocusObject}
+                  disabled={!canFocusObject}
+                  aria-label="Focus selected object"
+                  className="
+                    flex
+                    min-h-[40px]
+                    w-full
+                    items-center
+                    justify-center
+                    gap-2
+                    rounded-lg
+                    border
+                    border-cyan-400/25
+                    bg-cyan-400/[0.06]
+                    px-3
+                    font-['Orbitron']
+                    text-[7px]
+                    font-medium
+                    uppercase
+                    tracking-[0.06em]
+                    text-cyan-200
+                    transition-all
+                    duration-200
+                    hover:border-cyan-300/40
+                    hover:bg-cyan-400/[0.1]
+                    focus-visible:outline-none
+                    focus-visible:ring-1
+                    focus-visible:ring-cyan-400/60
+                    disabled:cursor-not-allowed
+                    disabled:opacity-40
+                  "
+                >
+                  <FiCrosshair
+                    className="h-3.5 w-3.5"
+                    strokeWidth={1.5}
+                    aria-hidden="true"
+                  />
                   FOCUS OBJECT
-                  ------------------------------------------------------------ */}
-
-              <button
-                type="button"
-                onClick={
-                  handleFocusObject
-                }
-                disabled={
-                  !selectedObject
-                }
-                className="
-                  flex
-                  min-h-[40px]
-                  items-center
-                  justify-center
-                  gap-2
-                  rounded-lg
-                  border
-                  border-cyan-400/25
-                  bg-cyan-400/[0.06]
-                  px-3
-                  font-['Orbitron']
-                  text-[7px]
-                  font-medium
-                  uppercase
-                  tracking-[0.06em]
-                  text-cyan-200
-                  transition-all
-                  duration-200
-                  hover:border-cyan-300/40
-                  hover:bg-cyan-400/[0.1]
-                  focus-visible:outline-none
-                  focus-visible:ring-1
-                  focus-visible:ring-cyan-400/60
-                  disabled:cursor-not-allowed
-                  disabled:opacity-40
-                "
-              >
-                <FiCrosshair
-                  className="h-3.5 w-3.5"
-                  strokeWidth={1.5}
-                  aria-hidden="true"
-                />
-
-                FOCUS OBJECT
-              </button>
-
-              {/* ------------------------------------------------------------
-                  SHOW ORBIT
-                  ------------------------------------------------------------ */}
-
-              <button
-                type="button"
-                onClick={
-                  handleShowOrbit
-                }
-                disabled={
-                  !selectedObject
-                }
-                className="
-                  flex
-                  min-h-[40px]
-                  items-center
-                  justify-center
-                  gap-2
-                  rounded-lg
-                  border
-                  border-slate-700/80
-                  bg-white/[0.015]
-                  px-3
-                  font-['Orbitron']
-                  text-[7px]
-                  font-medium
-                  uppercase
-                  tracking-[0.06em]
-                  text-slate-400
-                  transition-all
-                  duration-200
-                  hover:border-cyan-400/20
-                  hover:bg-cyan-400/[0.04]
-                  hover:text-cyan-200
-                  focus-visible:outline-none
-                  focus-visible:ring-1
-                  focus-visible:ring-cyan-400/60
-                  disabled:cursor-not-allowed
-                  disabled:opacity-40
-                "
-              >
-                <FiActivity
-                  className="h-3.5 w-3.5"
-                  strokeWidth={1.5}
-                  aria-hidden="true"
-                />
-
-                SHOW ORBIT
-              </button>
-            </div>
-          </>
-        )}
-      </aside>
+                </button>
+              </div>
+            </>
+          )}
+        </aside>
+      </div>
     </>
   );
 };

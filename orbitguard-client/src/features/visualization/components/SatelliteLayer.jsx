@@ -15,16 +15,15 @@ import * as THREE from "three";
  * RESPONSIBILITY
  * ----------------------------------------------------------------------------
  *
- * Renders satellite markers inside the 3D orbital visualization.
+ * Renders backend-provided satellite positions as GPU-efficient THREE.Points.
  *
  * This component owns:
  *
  * - satellite point geometry
- * - satellite marker colors
+ * - satellite marker color
  * - satellite marker size
- * - satellite marker brightness
+ * - satellite brightness
  * - pointer selection
- * - pointer hover state
  * - GPU-efficient point rendering
  *
  * This component does NOT own:
@@ -47,141 +46,112 @@ import * as THREE from "three";
  * PRODUCTION DATA CONTRACT
  * ============================================================================
  *
- * Expected object:
+ * Expected backend object:
  *
  * {
  *   noradId: 25544,
  *   name: "ISS (ZARYA)",
  *   objectType: "SATELLITE",
+ *
  *   xKm: 1234.5,
  *   yKm: -4567.8,
  *   zKm: 2345.6,
+ *
  *   latitude: 12.34,
  *   longitude: 78.90,
  *   altitudeKm: 420.5,
+ *
  *   timestamp: "...",
  *   frame: "ITRF"
  * }
  *
- * The 3D marker uses only:
- *
- * - noradId / identifier
- * - name
- * - xKm
- * - yKm
- * - zKm
- *
- * All other telemetry remains attached to the object and is passed to the
- * parent when the satellite is selected.
+ * Backend remains the source of truth.
  *
  * ============================================================================
  * COORDINATE SYSTEM
  * ============================================================================
  *
- * Earth.jsx uses:
+ * Earth scene radius:
  *
- *     radius = 1
+ *   1 Three.js unit
  *
- * Backend:
+ * Backend Cartesian coordinates:
  *
- *     xKm
- *     yKm
- *     zKm
+ *   kilometres
  *
  * Therefore:
  *
- *     scenePosition = CartesianKm / 6371
- *
- * This component performs ONLY this unit conversion.
- *
- * It does NOT:
- *
- * - calculate latitude
- * - calculate longitude
- * - calculate altitude
- * - convert TEME
- * - propagate an orbit
+ *   scenePosition = CartesianKm / 6371
  *
  * ============================================================================
  * PERFORMANCE
  * ============================================================================
  *
- * Satellite markers are rendered using:
+ * VisualizationScene owns the rendering budget.
  *
- *     THREE.Points
- *     BufferGeometry
- *     Float32Array
- *     ShaderMaterial
+ * This component does not arbitrarily slice the input.
  *
- * One THREE.Points object can therefore represent thousands of satellites.
+ * Important performance rule:
+ *
+ * SatelliteLayer does NOT attach pointer-hover handlers.
+ *
+ * Hovering across thousands of THREE.Points can cause continuous raycasting
+ * during pointer movement and compete with OrbitControls.
+ *
+ * Selection is therefore click/tap based only.
  *
  * ============================================================================
  */
 
-/* ============================================================================
- * CONSTANTS
- * ========================================================================== */
-
 const EARTH_RADIUS_KM = 6371;
 
-/**
- * Primary OrbitGuard satellite color.
- */
 const SATELLITE_COLOR = "#22d3ee";
 
-/**
- * Selected satellite color.
- */
 const SELECTED_COLOR = "#e6fbff";
 
-/**
- * Maximum device pixel ratio used by the point shader.
- *
- * Prevents unnecessary GPU cost on high-DPI displays.
- */
 const MAX_PIXEL_RATIO = 2;
 
-/**
- * Normal satellite marker size.
- */
 const NORMAL_MARKER_SIZE = 4.6;
 
-/**
- * Selected satellite marker size.
- */
 const SELECTED_MARKER_SIZE = 8.5;
 
-/**
- * Normal satellite brightness.
- */
 const NORMAL_BRIGHTNESS = 0.72;
 
-/**
- * Selected satellite brightness.
- */
 const SELECTED_BRIGHTNESS = 1.0;
 
-/* ============================================================================
- * PREVIEW DATA
- * ========================================================================== */
+/**
+ * ============================================================================
+ * POINT RAYCAST THRESHOLD
+ * ============================================================================
+ *
+ * Unit:
+ *
+ *   Three.js world units.
+ *
+ * Conversion:
+ *
+ *   1 scene unit = 6371 km
+ *
+ * Therefore:
+ *
+ *   0.012 scene units ≈ 76.45 km
+ *
+ * This is intentionally tight enough to avoid excessive neighbouring
+ * satellite matches while still allowing practical point selection.
+ */
+
+const POINT_RAYCAST_THRESHOLD = 0.012;
 
 /**
- * UI DEVELOPMENT DATA ONLY.
+ * ============================================================================
+ * OPTIONAL DEVELOPMENT PREVIEW DATA
+ * ============================================================================
  *
- * This is intentionally small and synthetic.
+ * Kept for compatibility with any existing import.
  *
- * It must not be treated as real orbital data.
- *
- * Production flow:
- *
- *     Backend
- *       ↓
- *     visualization service
- *       ↓
- *     VisualizationScene
- *       ↓
- *     SatelliteLayer
+ * Production rendering does NOT use this data.
  */
+
 export const SATELLITE_PREVIEW_OBJECTS =
   Object.freeze([
     {
@@ -197,7 +167,8 @@ export const SATELLITE_PREVIEW_OBJECTS =
       longitude: 73.8,
       altitudeKm: 408.5,
 
-      timestamp: "2026-10-06T14:00:00Z",
+      timestamp:
+        "2026-10-06T14:00:00Z",
 
       frame: "ITRF",
     },
@@ -215,7 +186,8 @@ export const SATELLITE_PREVIEW_OBJECTS =
       longitude: 143.2,
       altitudeKm: 786.0,
 
-      timestamp: "2026-10-06T14:00:00Z",
+      timestamp:
+        "2026-10-06T14:00:00Z",
 
       frame: "ITRF",
     },
@@ -233,7 +205,8 @@ export const SATELLITE_PREVIEW_OBJECTS =
       longitude: 18.4,
       altitudeKm: 705.2,
 
-      timestamp: "2026-10-06T14:00:00Z",
+      timestamp:
+        "2026-10-06T14:00:00Z",
 
       frame: "ITRF",
     },
@@ -251,7 +224,8 @@ export const SATELLITE_PREVIEW_OBJECTS =
       longitude: -112.5,
       altitudeKm: 550.0,
 
-      timestamp: "2026-10-06T14:00:00Z",
+      timestamp:
+        "2026-10-06T14:00:00Z",
 
       frame: "ITRF",
     },
@@ -261,9 +235,6 @@ export const SATELLITE_PREVIEW_OBJECTS =
  * IDENTIFIER
  * ========================================================================== */
 
-/**
- * Supports all identifier shapes currently used by the visualization layer.
- */
 const getObjectId = (object) =>
   object?.noradId ??
   object?.noradCatalogId ??
@@ -279,81 +250,134 @@ const isSatelliteObject = (object) => {
     object?.objectType ??
       object?.type ??
       "",
-  ).toUpperCase();
+  )
+    .trim()
+    .toUpperCase();
 
   return type === "SATELLITE";
 };
 
 /* ============================================================================
- * VALIDATION
+ * NUMERIC VALIDATION
  * ========================================================================== */
 
-/**
- * Requires complete Cartesian coordinates.
- *
- * We intentionally do NOT derive x/y/z from latitude/longitude.
- *
- * Backend remains the source of truth.
- */
-const hasCartesianPosition = (object) =>
-  Number.isFinite(
-    Number(object?.xKm),
-  ) &&
-  Number.isFinite(
-    Number(object?.yKm),
-  ) &&
-  Number.isFinite(
-    Number(object?.zKm),
+const toFiniteNumber = (value) => {
+  const number = Number(value);
+
+  return Number.isFinite(number)
+    ? number
+    : null;
+};
+
+const hasCartesianPosition = (object) => {
+  return (
+    toFiniteNumber(
+      object?.xKm ??
+        object?.xkm,
+    ) !== null &&
+    toFiniteNumber(
+      object?.yKm ??
+        object?.ykm,
+    ) !== null &&
+    toFiniteNumber(
+      object?.zKm ??
+        object?.zkm,
+    ) !== null
   );
+};
 
 /* ============================================================================
  * POSITION CONVERSION
  * ========================================================================== */
 
-/**
- * Converts backend Cartesian kilometres into the normalized Earth scene.
- *
- * Earth radius:
- *
- *     6371 km = 1 Three.js scene unit
- */
-const toScenePosition = (object) => [
-  Number(object.xKm) / EARTH_RADIUS_KM,
-  Number(object.yKm) / EARTH_RADIUS_KM,
-  Number(object.zKm) / EARTH_RADIUS_KM,
-];
+const toScenePosition = (object) => {
+  /**
+   * Backend responses have already been normalized by visualizationService,
+   * but the lowercase fallback is retained defensively.
+   */
+  const xKm = toFiniteNumber(
+    object?.xKm ??
+      object?.xkm,
+  );
+
+  const yKm = toFiniteNumber(
+    object?.yKm ??
+      object?.ykm,
+  );
+
+  const zKm = toFiniteNumber(
+    object?.zKm ??
+      object?.zkm,
+  );
+
+  if (
+    xKm === null ||
+    yKm === null ||
+    zKm === null
+  ) {
+    return null;
+  }
+
+  return [
+    xKm / EARTH_RADIUS_KM,
+    yKm / EARTH_RADIUS_KM,
+    zKm / EARTH_RADIUS_KM,
+  ];
+};
 
 /* ============================================================================
  * GEOMETRY
  * ========================================================================== */
 
 /**
- * Builds one GPU-friendly BufferGeometry.
+ * Creates the complete satellite GPU geometry in one pass.
  *
- * Every satellite remains one point.
+ * Important optimization:
  *
- * Attributes:
+ * The previous implementation validated every object and then calculated
+ * toScenePosition() again during the second loop.
  *
- *     position
- *     color
- *     aSize
- *     aBrightness
+ * This implementation calculates the scene position once per valid object.
  */
 const createSatelliteGeometry = (
   objects,
-  selectedNoradId,
+  selectedObjectId,
 ) => {
   const sourceObjects =
     Array.isArray(objects)
       ? objects
       : [];
 
-  const validObjects =
-    sourceObjects.filter(
-      (object) =>
-        isSatelliteObject(object) &&
-        hasCartesianPosition(object),
-    );
+  const validObjects = [];
+
+  const scenePositions = [];
+
+  for (const object of sourceObjects) {
+    if (!isSatelliteObject(object)) {
+      continue;
+    }
+
+    const position =
+      toScenePosition(object);
+
+    if (!position) {
+      continue;
+    }
+
+    const [x, y, z] =
+      position;
+
+    if (
+      !Number.isFinite(x) ||
+      !Number.isFinite(y) ||
+      !Number.isFinite(z)
+    ) {
+      continue;
+    }
+
+    validObjects.push(object);
+    scenePositions.push(position);
+  }
 
   const count =
     validObjects.length;
@@ -374,73 +398,69 @@ const createSatelliteGeometry = (
   const brightness =
     new Float32Array(count);
 
-  validObjects.forEach(
-    (object, index) => {
-      const [
-        x,
-        y,
-        z,
-      ] = toScenePosition(
-        object,
-      );
+  const selectedId =
+    String(
+      selectedObjectId ?? "",
+    );
 
-      const positionOffset =
-        index * 3;
+  const color =
+    new THREE.Color();
 
-      positions[
-        positionOffset
-      ] = x;
+  for (
+    let index = 0;
+    index < count;
+    index += 1
+  ) {
+    const object =
+      validObjects[index];
 
-      positions[
-        positionOffset + 1
-      ] = y;
+    const position =
+      scenePositions[index];
 
-      positions[
-        positionOffset + 2
-      ] = z;
+    const [x, y, z] =
+      position;
 
-      const objectId = String(
+    const offset =
+      index * 3;
+
+    positions[offset] = x;
+    positions[offset + 1] = y;
+    positions[offset + 2] = z;
+
+    const objectId =
+      String(
         getObjectId(object) ?? "",
       );
 
-      const selectedId = String(
-        selectedNoradId ?? "",
-      );
+    const isSelected =
+      objectId !== "" &&
+      objectId === selectedId;
 
-      const isSelected =
-        objectId !== "" &&
-        objectId === selectedId;
+    color.set(
+      isSelected
+        ? SELECTED_COLOR
+        : SATELLITE_COLOR,
+    );
 
-      const color =
-        new THREE.Color(
-          isSelected
-            ? SELECTED_COLOR
-            : SATELLITE_COLOR,
-        );
+    colors[offset] =
+      color.r;
 
-      colors[
-        positionOffset
-      ] = color.r;
+    colors[offset + 1] =
+      color.g;
 
-      colors[
-        positionOffset + 1
-      ] = color.g;
+    colors[offset + 2] =
+      color.b;
 
-      colors[
-        positionOffset + 2
-      ] = color.b;
+    sizes[index] =
+      isSelected
+        ? SELECTED_MARKER_SIZE
+        : NORMAL_MARKER_SIZE;
 
-      sizes[index] =
-        isSelected
-          ? SELECTED_MARKER_SIZE
-          : NORMAL_MARKER_SIZE;
-
-      brightness[index] =
-        isSelected
-          ? SELECTED_BRIGHTNESS
-          : NORMAL_BRIGHTNESS;
-    },
-  );
+    brightness[index] =
+      isSelected
+        ? SELECTED_BRIGHTNESS
+        : NORMAL_BRIGHTNESS;
+  }
 
   const geometry =
     new THREE.BufferGeometry();
@@ -477,6 +497,11 @@ const createSatelliteGeometry = (
     ),
   );
 
+  /**
+   * Keep normal frustum culling available.
+   *
+   * The geometry has a valid bounding sphere.
+   */
   geometry.computeBoundingSphere();
 
   return {
@@ -512,20 +537,14 @@ const SATELLITE_VERTEX_SHADER = `
         0.1
       );
 
-    /*
-     * Perspective-aware marker size.
-     *
-     * The marker remains visible while zooming but is clamped so that
-     * satellites never become oversized UI elements.
-     */
-    gl_PointSize =
+    float pointSize =
       aSize *
       uPixelRatio *
       (55.0 / depth);
 
     gl_PointSize =
       clamp(
-        gl_PointSize,
+        pointSize,
         2.0,
         12.0
       );
@@ -548,18 +567,12 @@ const SATELLITE_FRAGMENT_SHADER = `
     float distanceFromCenter =
       length(centered);
 
-    /*
-     * Keep the marker circular.
-     */
     if (
       distanceFromCenter > 0.5
     ) {
       discard;
     }
 
-    /*
-     * Soft outer edge.
-     */
     float edge =
       1.0 -
       smoothstep(
@@ -568,9 +581,6 @@ const SATELLITE_FRAGMENT_SHADER = `
         distanceFromCenter
       );
 
-    /*
-     * Bright central core.
-     */
     float core =
       1.0 -
       smoothstep(
@@ -579,9 +589,6 @@ const SATELLITE_FRAGMENT_SHADER = `
         distanceFromCenter
       );
 
-    /*
-     * Combine soft edge and bright core.
-     */
     float intensity =
       mix(
         0.72,
@@ -612,14 +619,8 @@ const SATELLITE_FRAGMENT_SHADER = `
  * MATERIAL
  * ========================================================================== */
 
-/**
- * Creates the satellite point material.
- *
- * No browser globals are accessed here so material creation remains safe
- * during module evaluation / non-browser environments.
- */
-const createSatelliteMaterial = () =>
-  new THREE.ShaderMaterial({
+const createSatelliteMaterial = () => {
+  return new THREE.ShaderMaterial({
     uniforms: {
       uPixelRatio: {
         value: 1,
@@ -644,7 +645,11 @@ const createSatelliteMaterial = () =>
       THREE.AdditiveBlending,
 
     toneMapped: false,
+
+    depthFunc:
+      THREE.LessEqualDepth,
   });
+};
 
 /* ============================================================================
  * SATELLITE LAYER
@@ -653,15 +658,25 @@ const createSatelliteMaterial = () =>
 const SatelliteLayer = ({
   objects = [],
   visible = true,
-  selectedNoradId = null,
-  onSelect,
+  selectedObjectId = null,
+  onObjectSelect,
 }) => {
   const pointsRef =
     useRef(null);
 
-  /* --------------------------------------------------------------------------
+  /**
+   * VisualizationScene owns the rendering array.
+   *
+   * Do not copy or slice it here.
+   */
+  const sourceObjects =
+    Array.isArray(objects)
+      ? objects
+      : [];
+
+  /* ==========================================================================
    * GEOMETRY
-   * ------------------------------------------------------------------------ */
+   * ======================================================================== */
 
   const {
     geometry,
@@ -669,28 +684,29 @@ const SatelliteLayer = ({
   } = useMemo(
     () =>
       createSatelliteGeometry(
-        objects,
-        selectedNoradId,
+        sourceObjects,
+        selectedObjectId,
       ),
     [
-      objects,
-      selectedNoradId,
+      sourceObjects,
+      selectedObjectId,
     ],
   );
 
-  /* --------------------------------------------------------------------------
+  /* ==========================================================================
    * MATERIAL
-   * ------------------------------------------------------------------------ */
+   * ======================================================================== */
 
-  const material = useMemo(
-    () =>
-      createSatelliteMaterial(),
-    [],
-  );
+  const material =
+    useMemo(
+      () =>
+        createSatelliteMaterial(),
+      [],
+    );
 
-  /* --------------------------------------------------------------------------
+  /* ==========================================================================
    * PIXEL RATIO
-   * ------------------------------------------------------------------------ */
+   * ======================================================================== */
 
   useEffect(() => {
     const updatePixelRatio =
@@ -702,12 +718,28 @@ const SatelliteLayer = ({
           return;
         }
 
-        material.uniforms.uPixelRatio.value =
+        /**
+         * The Canvas itself controls the renderer DPR.
+         *
+         * This value is only used by the shader to scale point size.
+         *
+         * Keep it capped so high-DPI phones do not create excessively
+         * large satellite sprites.
+         */
+        const pixelRatio =
           Math.min(
             window.devicePixelRatio ||
               1,
             MAX_PIXEL_RATIO,
           );
+
+        if (
+          material.uniforms
+            ?.uPixelRatio
+        ) {
+          material.uniforms.uPixelRatio.value =
+            pixelRatio;
+        }
       };
 
     updatePixelRatio();
@@ -722,6 +754,9 @@ const SatelliteLayer = ({
     window.addEventListener(
       "resize",
       updatePixelRatio,
+      {
+        passive: true,
+      },
     );
 
     return () => {
@@ -732,9 +767,9 @@ const SatelliteLayer = ({
     };
   }, [material]);
 
-  /* --------------------------------------------------------------------------
+  /* ==========================================================================
    * GEOMETRY CLEANUP
-   * ------------------------------------------------------------------------ */
+   * ======================================================================== */
 
   useEffect(() => {
     return () => {
@@ -742,11 +777,9 @@ const SatelliteLayer = ({
     };
   }, [geometry]);
 
-  /* --------------------------------------------------------------------------
+  /* ==========================================================================
    * MATERIAL CLEANUP
-   *
-   * Material is memoized for the lifetime of this component.
-   * ------------------------------------------------------------------------ */
+   * ======================================================================== */
 
   useEffect(() => {
     return () => {
@@ -754,20 +787,112 @@ const SatelliteLayer = ({
     };
   }, [material]);
 
-  /* --------------------------------------------------------------------------
-   * POINTER SELECTION
-   * ------------------------------------------------------------------------ */
+  /* ==========================================================================
+   * ACTUAL THREE.JS POINTS RAYCAST
+   * ======================================================================== */
 
-  const handlePointerDown =
+  const handleRaycast =
+    useCallback(
+      (raycaster, intersects) => {
+        const points =
+          pointsRef.current;
+
+        if (!points) {
+          return;
+        }
+
+        /**
+         * Ensure the Points parameter object exists.
+         */
+        if (
+          !raycaster.params.Points
+        ) {
+          raycaster.params.Points = {};
+        }
+
+        /**
+         * Preserve the shared R3F raycaster state.
+         */
+        const previousThreshold =
+          raycaster.params.Points
+            .threshold;
+
+        raycaster.params.Points.threshold =
+          POINT_RAYCAST_THRESHOLD;
+
+        try {
+          THREE.Points.prototype.raycast.call(
+            points,
+            raycaster,
+            intersects,
+          );
+        } finally {
+          /**
+           * Always restore the previous shared raycaster configuration.
+           */
+          if (
+            previousThreshold ===
+            undefined
+          ) {
+            delete raycaster.params
+              .Points.threshold;
+          } else {
+            raycaster.params.Points.threshold =
+              previousThreshold;
+          }
+        }
+      },
+      [],
+    );
+
+  /* ==========================================================================
+   * POINTER SELECTION
+   * ======================================================================== */
+
+  const handleClick =
     useCallback(
       (event) => {
+        /**
+         * Prevent the click from propagating to Earth/other scene objects.
+         */
         event.stopPropagation();
 
+        /**
+         * R3F normally provides the point index directly.
+         */
+        const directIndex =
+          Number.isInteger(
+            event?.index,
+          )
+            ? event.index
+            : null;
+
+        /**
+         * Defensive fallback for the current Points object.
+         */
+        const layerIntersection =
+          event?.intersections?.find(
+            (intersection) =>
+              intersection?.object ===
+              pointsRef.current,
+          ) ?? null;
+
+        const intersectionIndex =
+          Number.isInteger(
+            layerIntersection?.index,
+          )
+            ? layerIntersection.index
+            : null;
+
         const index =
-          event.index;
+          directIndex ??
+          intersectionIndex;
 
         if (
-          !Number.isInteger(index)
+          !Number.isInteger(index) ||
+          index < 0 ||
+          index >=
+            validObjects.length
         ) {
           return;
         }
@@ -779,59 +904,33 @@ const SatelliteLayer = ({
           return;
         }
 
-        onSelect?.(
+        if (
+          typeof onObjectSelect !==
+          "function"
+        ) {
+          return;
+        }
+
+        /**
+         * Send the complete backend object upward.
+         *
+         * No cloned object.
+         * No transformed object.
+         * No dummy data.
+         */
+        onObjectSelect(
           selectedObject,
         );
       },
       [
         validObjects,
-        onSelect,
+        onObjectSelect,
       ],
     );
 
-  /* --------------------------------------------------------------------------
-   * POINTER OVER
-   * ------------------------------------------------------------------------ */
-
-  const handlePointerOver =
-    useCallback(
-      (event) => {
-        event.stopPropagation();
-
-        if (
-          typeof document !==
-          "undefined"
-        ) {
-          document.body.style.cursor =
-            "pointer";
-        }
-      },
-      [],
-    );
-
-  /* --------------------------------------------------------------------------
-   * POINTER OUT
-   * ------------------------------------------------------------------------ */
-
-  const handlePointerOut =
-    useCallback(
-      (event) => {
-        event.stopPropagation();
-
-        if (
-          typeof document !==
-          "undefined"
-        ) {
-          document.body.style.cursor =
-            "";
-        }
-      },
-      [],
-    );
-
-  /* --------------------------------------------------------------------------
+  /* ==========================================================================
    * VISIBILITY
-   * ------------------------------------------------------------------------ */
+   * ======================================================================== */
 
   if (
     !visible ||
@@ -840,9 +939,9 @@ const SatelliteLayer = ({
     return null;
   }
 
-  /* --------------------------------------------------------------------------
+  /* ==========================================================================
    * RENDER
-   * ------------------------------------------------------------------------ */
+   * ======================================================================== */
 
   return (
     <points
@@ -850,17 +949,38 @@ const SatelliteLayer = ({
       name="OrbitGuard-SatelliteLayer"
       geometry={geometry}
       material={material}
-      frustumCulled={false}
+
+      /**
+       * IMPORTANT:
+       *
+       * Allow Three.js to use the geometry bounding sphere for frustum
+       * culling.
+       *
+       * The previous `false` forced this entire Points object to remain
+       * considered for rendering even when outside the camera frustum.
+       */
+      frustumCulled
+
       renderOrder={10}
-      onPointerDown={
-        handlePointerDown
-      }
-      onPointerOver={
-        handlePointerOver
-      }
-      onPointerOut={
-        handlePointerOut
-      }
+
+      raycast={handleRaycast}
+
+      /**
+       * Selection is click/tap based.
+       *
+       * There are intentionally NO:
+       *
+       * - onPointerOver
+       * - onPointerMove
+       * - onPointerOut
+       *
+       * handlers here.
+       *
+       * This is important for OrbitControls performance because hover
+       * raycasting across thousands of points can compete with touch/mouse
+       * camera interaction.
+       */
+      onClick={handleClick}
     />
   );
 };

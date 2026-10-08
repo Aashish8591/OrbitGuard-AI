@@ -18,9 +18,37 @@ import api from "./api";
  * - Uses the shared Axios instance.
  * - JWT authentication is handled by api.js.
  * - Does not perform orbital calculations.
- * - Does not transform coordinates.
+ * - Does not modify orbital coordinates.
  * - Does not create dummy visualization data.
  * - Backend remains the source of truth.
+ *
+ * FRONTEND CONTRACT NORMALIZATION:
+ * ----------------------------------------------------------------
+ *
+ * The current backend JSON response exposes Cartesian coordinate
+ * properties as:
+ *
+ *     xkm
+ *     ykm
+ *     zkm
+ *
+ * The frontend visualization contract uses:
+ *
+ *     xKm
+ *     yKm
+ *     zKm
+ *
+ * This service normalizes ONLY the property names at the API
+ * boundary. The numerical coordinate values are not changed.
+ *
+ * Therefore:
+ *
+ *     backend xkm -> frontend xKm
+ *     backend ykm -> frontend yKm
+ *     backend zkm -> frontend zKm
+ *
+ * No coordinate calculation or transformation occurs here.
+ *
  * ================================================================
  */
 
@@ -30,7 +58,8 @@ import api from "./api";
  * This must match VisualizationApiConstants.BASE_PATH
  * in the Spring Boot backend.
  */
-const VISUALIZATION_BASE_PATH = "/api/visualization";
+const VISUALIZATION_BASE_PATH =
+  "/api/visualization";
 
 /**
  * ================================================================
@@ -43,22 +72,29 @@ const VISUALIZATION_BASE_PATH = "/api/visualization";
  * LocalDateTime format expected by Spring Boot.
  *
  * Backend:
+ *
  *     java.time.LocalDateTime
  *
  * Expected:
+ *
  *     YYYY-MM-DDTHH:mm:ss
  *
  * Example:
+ *
  *     2026-10-07T00:00:00
  *
  * We intentionally do NOT send:
+ *
  *     2026-10-07T00:00:00Z
  *
  * because the backend parameter is LocalDateTime and does not
  * contain timezone information.
  */
 const formatTargetTime = (targetTime) => {
-  if (targetTime === null || targetTime === undefined) {
+  if (
+    targetTime === null ||
+    targetTime === undefined
+  ) {
     return undefined;
   }
 
@@ -66,7 +102,8 @@ const formatTargetTime = (targetTime) => {
    * If caller already provides a string, normalize it.
    */
   if (typeof targetTime === "string") {
-    const trimmed = targetTime.trim();
+    const trimmed =
+      targetTime.trim();
 
     if (!trimmed) {
       return undefined;
@@ -87,7 +124,10 @@ const formatTargetTime = (targetTime) => {
      */
     return trimmed
       .replace(/Z$/i, "")
-      .replace(/[+-]\d{2}:\d{2}$/, "")
+      .replace(
+        /[+-]\d{2}:\d{2}$/,
+        ""
+      )
       .slice(0, 19);
   }
 
@@ -95,11 +135,19 @@ const formatTargetTime = (targetTime) => {
    * JavaScript Date support.
    */
   if (targetTime instanceof Date) {
-    if (Number.isNaN(targetTime.getTime())) {
-      throw new Error("Invalid visualization target time.");
+    if (
+      Number.isNaN(
+        targetTime.getTime()
+      )
+    ) {
+      throw new Error(
+        "Invalid visualization target time."
+      );
     }
 
-    const year = targetTime.getUTCFullYear();
+    const year =
+      targetTime.getUTCFullYear();
+
     const month = String(
       targetTime.getUTCMonth() + 1
     ).padStart(2, "0");
@@ -131,18 +179,29 @@ const formatTargetTime = (targetTime) => {
 /**
  * Validate a NORAD ID before making the request.
  */
-const validateNoradId = (noradId, fieldName = "NORAD ID") => {
+const validateNoradId = (
+  noradId,
+  fieldName = "NORAD ID"
+) => {
   if (
     noradId === null ||
     noradId === undefined ||
     noradId === ""
   ) {
-    throw new Error(`${fieldName} is required.`);
+    throw new Error(
+      `${fieldName} is required.`
+    );
   }
 
-  const numericId = Number(noradId);
+  const numericId =
+    Number(noradId);
 
-  if (!Number.isInteger(numericId) || numericId <= 0) {
+  if (
+    !Number.isInteger(
+      numericId
+    ) ||
+    numericId <= 0
+  ) {
     throw new Error(
       `${fieldName} must be a positive integer.`
     );
@@ -150,6 +209,146 @@ const validateNoradId = (noradId, fieldName = "NORAD ID") => {
 
   return numericId;
 };
+
+/**
+ * ================================================================
+ * VISUALIZATION OBJECT NORMALIZATION
+ * ================================================================
+ */
+
+/**
+ * Normalize one backend visualization object into the frontend
+ * visualization contract.
+ *
+ * ACTUAL BACKEND RESPONSE:
+ *
+ * {
+ *   xkm: 6280.739,
+ *   ykm: -2751.993,
+ *   zkm: -2190.101
+ * }
+ *
+ * FRONTEND CONTRACT:
+ *
+ * {
+ *   xKm: 6280.739,
+ *   yKm: -2751.993,
+ *   zKm: -2190.101
+ * }
+ *
+ * IMPORTANT:
+ * - Numerical values are NOT changed.
+ * - No coordinate conversion occurs.
+ * - No latitude/longitude calculation occurs.
+ * - No altitude calculation occurs.
+ * - Unknown backend fields are preserved.
+ *
+ * The canonical camel-case field is preferred if it already exists.
+ * This makes the normalizer safe if the backend contract is later
+ * corrected to return xKm/yKm/zKm directly.
+ */
+const normalizeVisualizationObject = (
+  object
+) => {
+  if (
+    !object ||
+    typeof object !== "object" ||
+    Array.isArray(object)
+  ) {
+    return object;
+  }
+
+  return {
+    ...object,
+
+    xKm:
+      object.xKm ??
+      object.xkm ??
+      null,
+
+    yKm:
+      object.yKm ??
+      object.ykm ??
+      null,
+
+    zKm:
+      object.zKm ??
+      object.zkm ??
+      null,
+  };
+};
+
+/**
+ * ================================================================
+ * VISUALIZATION DATA NORMALIZATION
+ * ================================================================
+ */
+
+/**
+ * Normalize the extracted visualization payload.
+ *
+ * Supports both:
+ *
+ *     data.objects
+ *
+ * and:
+ *
+ *     data.object
+ *
+ * because the backend uses the same response contract for bulk
+ * and single-object visualization endpoints.
+ *
+ * Unknown properties are preserved.
+ */
+const normalizeVisualizationData = (
+  data
+) => {
+  if (
+    !data ||
+    typeof data !== "object" ||
+    Array.isArray(data)
+  ) {
+    return data;
+  }
+
+  const normalized = {
+    ...data,
+  };
+
+  /**
+   * Bulk visualization response.
+   */
+  if (
+    Array.isArray(data.objects)
+  ) {
+    normalized.objects =
+      data.objects.map(
+        normalizeVisualizationObject
+      );
+  }
+
+  /**
+   * Single-object visualization response.
+   */
+  if (
+    data.object &&
+    typeof data.object === "object" &&
+    !Array.isArray(data.object)
+  ) {
+    normalized.object =
+      normalizeVisualizationObject(
+        data.object
+      );
+  }
+
+  return normalized;
+};
+
+/**
+ * ================================================================
+ * RESPONSE EXTRACTION
+ * ================================================================
+ */
 
 /**
  * Resolve the actual visualization payload from the common
@@ -165,12 +364,15 @@ const validateNoradId = (noradId, fieldName = "NORAD ID") => {
  *   }
  * }
  *
- * This helper also tolerates a direct response object so that
- * the service remains safe if the response wrapper changes
- * slightly without modifying the visualization mapping logic.
+ * This helper also tolerates a direct response object so that the
+ * service remains safe if the response wrapper changes slightly
+ * without modifying the visualization mapping logic.
  */
-const extractVisualizationData = (response) => {
-  const responseData = response?.data;
+const extractVisualizationData = (
+  response
+) => {
+  const responseData =
+    response?.data;
 
   if (!responseData) {
     throw new Error(
@@ -187,7 +389,9 @@ const extractVisualizationData = (response) => {
     responseData.data !== null &&
     responseData.data !== undefined
   ) {
-    return responseData.data;
+    return normalizeVisualizationData(
+      responseData.data
+    );
   }
 
   /**
@@ -198,25 +402,34 @@ const extractVisualizationData = (response) => {
     responseData.result !== null &&
     responseData.result !== undefined
   ) {
-    return responseData.result;
+    return normalizeVisualizationData(
+      responseData.result
+    );
   }
 
   if (
     responseData.content !== null &&
     responseData.content !== undefined
   ) {
-    return responseData.content;
+    return normalizeVisualizationData(
+      responseData.content
+    );
   }
 
   /**
    * If the backend directly returned the visualization object.
    */
   if (
-    responseData.objects !== undefined ||
-    responseData.object !== undefined ||
-    responseData.propagatedAt !== undefined
+    responseData.objects !==
+      undefined ||
+    responseData.object !==
+      undefined ||
+    responseData.propagatedAt !==
+      undefined
   ) {
-    return responseData;
+    return normalizeVisualizationData(
+      responseData
+    );
   }
 
   throw new Error(
@@ -225,24 +438,146 @@ const extractVisualizationData = (response) => {
 };
 
 /**
+ * ================================================================
+ * DEVELOPMENT LOGGING
+ * ================================================================
+ */
+
+/**
  * Log useful development information without dumping the
  * complete 11 MB bulk response into the browser console.
  */
-const logBulkResponseSummary = (data, targetTime) => {
+const logBulkResponseSummary = (
+  data,
+  targetTime
+) => {
   if (!import.meta.env.DEV) {
     return;
   }
 
-  const objects = Array.isArray(data?.objects)
-    ? data.objects
-    : [];
+  const objects =
+    Array.isArray(data?.objects)
+      ? data.objects
+      : [];
+
+  const firstObject =
+    objects[0] ?? null;
 
   console.info(
     "[OrbitGuard Visualization] Bulk response received.",
     {
       targetTime,
-      propagatedAt: data?.propagatedAt ?? null,
-      objectCount: objects.length,
+      propagatedAt:
+        data?.propagatedAt ??
+        null,
+      objectCount:
+        objects.length,
+    }
+  );
+
+  /**
+   * Log only the first normalized object's coordinate contract.
+   *
+   * This gives us visibility into the API boundary without
+   * flooding the browser console with thousands of objects.
+   */
+  if (firstObject) {
+    console.info(
+      "[OrbitGuard Visualization] First normalized visualization object.",
+      {
+        noradId:
+          firstObject.noradId ??
+          null,
+
+        name:
+          firstObject.name ??
+          null,
+
+        objectType:
+          firstObject.objectType ??
+          null,
+
+        xKm:
+          firstObject.xKm ??
+          null,
+
+        yKm:
+          firstObject.yKm ??
+          null,
+
+        zKm:
+          firstObject.zKm ??
+          null,
+
+        frame:
+          firstObject.frame ??
+          null,
+
+        timestamp:
+          firstObject.timestamp ??
+          null,
+      }
+    );
+  }
+};
+
+/**
+ * Log a single normalized visualization object during development.
+ */
+const logSingleVisualizationObject = (
+  object,
+  objectType,
+  objectId
+) => {
+  if (!import.meta.env.DEV) {
+    return;
+  }
+
+  if (!object) {
+    console.warn(
+      "[OrbitGuard Visualization] Single visualization response did not contain an object.",
+      {
+        objectType,
+        objectId,
+      }
+    );
+
+    return;
+  }
+
+  console.info(
+    "[OrbitGuard Visualization] Normalized single visualization object.",
+    {
+      objectType,
+      objectId,
+
+      noradId:
+        object.noradId ??
+        null,
+
+      name:
+        object.name ??
+        null,
+
+      xKm:
+        object.xKm ??
+        null,
+
+      yKm:
+        object.yKm ??
+        null,
+
+      zKm:
+        object.zKm ??
+        null,
+
+      frame:
+        object.frame ??
+        null,
+
+      timestamp:
+        object.timestamp ??
+        null,
     }
   );
 };
@@ -256,74 +591,93 @@ const logBulkResponseSummary = (data, targetTime) => {
  * requested propagation time.
  *
  * Backend:
+ *
  * GET /api/visualization/objects
  *
  * Example:
+ *
  * GET /api/visualization/objects?targetTime=2026-10-07T00:00:00
  */
-export const getAllVisualizationObjects = async (
-  targetTime = undefined
-) => {
-  const formattedTargetTime =
-    formatTargetTime(targetTime);
+export const getAllVisualizationObjects =
+  async (
+    targetTime = undefined
+  ) => {
+    const formattedTargetTime =
+      formatTargetTime(
+        targetTime
+      );
 
-  const params = {};
+    const params = {};
 
-  /**
-   * If targetTime is not supplied, backend controller will use:
-   *
-   * LocalDateTime.now(ZoneOffset.UTC)
-   *
-   * We therefore intentionally do not send an undefined query
-   * parameter.
-   */
-  if (formattedTargetTime) {
-    params.targetTime = formattedTargetTime;
-  }
+    /**
+     * If targetTime is not supplied, backend controller will use:
+     *
+     * LocalDateTime.now(ZoneOffset.UTC)
+     *
+     * We therefore intentionally do not send an undefined query
+     * parameter.
+     */
+    if (formattedTargetTime) {
+      params.targetTime =
+        formattedTargetTime;
+    }
 
-  if (import.meta.env.DEV) {
-    console.info(
-      "[OrbitGuard Visualization] Requesting bulk visualization data.",
-      {
-        targetTime:
-          formattedTargetTime ?? "backend UTC now",
-      }
-    );
-  }
-
-  try {
-    const response = await api.get(
-      `${VISUALIZATION_BASE_PATH}/objects`,
-      {
-        params,
-      }
-    );
-
-    const data =
-      extractVisualizationData(response);
-
-    logBulkResponseSummary(
-      data,
-      formattedTargetTime ?? null
-    );
-
-    return data;
-  } catch (error) {
     if (import.meta.env.DEV) {
-      console.error(
-        "[OrbitGuard Visualization] Bulk request failed.",
+      console.info(
+        "[OrbitGuard Visualization] Requesting bulk visualization data.",
         {
           targetTime:
-            formattedTargetTime ?? "backend UTC now",
-          status: error?.response?.status ?? null,
-          message: error?.message ?? null,
+            formattedTargetTime ??
+            "backend UTC now",
         }
       );
     }
 
-    throw error;
-  }
-};
+    try {
+      const response =
+        await api.get(
+          `${VISUALIZATION_BASE_PATH}/objects`,
+          {
+            params,
+          }
+        );
+
+      const data =
+        extractVisualizationData(
+          response
+        );
+
+      logBulkResponseSummary(
+        data,
+        formattedTargetTime ??
+          null
+      );
+
+      return data;
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.error(
+          "[OrbitGuard Visualization] Bulk request failed.",
+          {
+            targetTime:
+              formattedTargetTime ??
+              "backend UTC now",
+
+            status:
+              error?.response
+                ?.status ??
+              null,
+
+            message:
+              error?.message ??
+              null,
+          }
+        );
+      }
+
+      throw error;
+    }
+  };
 
 /**
  * ================================================================
@@ -331,79 +685,94 @@ export const getAllVisualizationObjects = async (
  * ================================================================
  *
  * Backend:
+ *
  * GET /api/visualization/satellite/{noradCatalogId}
  */
-export const getSatelliteVisualization = async (
-  noradCatalogId,
-  targetTime = undefined
-) => {
-  const validNoradId = validateNoradId(
+export const getSatelliteVisualization =
+  async (
     noradCatalogId,
-    "Satellite NORAD catalog ID"
-  );
+    targetTime = undefined
+  ) => {
+    const validNoradId =
+      validateNoradId(
+        noradCatalogId,
+        "Satellite NORAD catalog ID"
+      );
 
-  const formattedTargetTime =
-    formatTargetTime(targetTime);
+    const formattedTargetTime =
+      formatTargetTime(
+        targetTime
+      );
 
-  const params = {};
+    const params = {};
 
-  if (formattedTargetTime) {
-    params.targetTime = formattedTargetTime;
-  }
-
-  if (import.meta.env.DEV) {
-    console.info(
-      "[OrbitGuard Visualization] Requesting satellite visualization.",
-      {
-        noradCatalogId: validNoradId,
-        targetTime:
-          formattedTargetTime ?? "backend UTC now",
-      }
-    );
-  }
-
-  try {
-    const response = await api.get(
-      `${VISUALIZATION_BASE_PATH}/satellite/${validNoradId}`,
-      {
-        params,
-      }
-    );
-
-    const data =
-      extractVisualizationData(response);
+    if (formattedTargetTime) {
+      params.targetTime =
+        formattedTargetTime;
+    }
 
     if (import.meta.env.DEV) {
       console.info(
-        "[OrbitGuard Visualization] Satellite visualization received.",
+        "[OrbitGuard Visualization] Requesting satellite visualization.",
         {
-          noradCatalogId: validNoradId,
-          propagatedAt:
-            data?.propagatedAt ?? null,
-          object:
-            data?.object ?? null,
-        }
-      );
-    }
+          noradCatalogId:
+            validNoradId,
 
-    return data;
-  } catch (error) {
-    if (import.meta.env.DEV) {
-      console.error(
-        "[OrbitGuard Visualization] Satellite request failed.",
-        {
-          noradCatalogId: validNoradId,
           targetTime:
-            formattedTargetTime ?? "backend UTC now",
-          status: error?.response?.status ?? null,
-          message: error?.message ?? null,
+            formattedTargetTime ??
+            "backend UTC now",
         }
       );
     }
 
-    throw error;
-  }
-};
+    try {
+      const response =
+        await api.get(
+          `${VISUALIZATION_BASE_PATH}/satellite/${validNoradId}`,
+          {
+            params,
+          }
+        );
+
+      const data =
+        extractVisualizationData(
+          response
+        );
+
+      logSingleVisualizationObject(
+        data?.object,
+        "SATELLITE",
+        validNoradId
+      );
+
+      return data;
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.error(
+          "[OrbitGuard Visualization] Satellite request failed.",
+          {
+            noradCatalogId:
+              validNoradId,
+
+            targetTime:
+              formattedTargetTime ??
+              "backend UTC now",
+
+            status:
+              error?.response
+                ?.status ??
+              null,
+
+            message:
+              error?.message ??
+              null,
+          }
+        );
+      }
+
+      throw error;
+    }
+  };
 
 /**
  * ================================================================
@@ -411,79 +780,94 @@ export const getSatelliteVisualization = async (
  * ================================================================
  *
  * Backend:
+ *
  * GET /api/visualization/debris/{noradId}
  */
-export const getDebrisVisualization = async (
-  noradId,
-  targetTime = undefined
-) => {
-  const validNoradId = validateNoradId(
+export const getDebrisVisualization =
+  async (
     noradId,
-    "Debris NORAD ID"
-  );
+    targetTime = undefined
+  ) => {
+    const validNoradId =
+      validateNoradId(
+        noradId,
+        "Debris NORAD ID"
+      );
 
-  const formattedTargetTime =
-    formatTargetTime(targetTime);
+    const formattedTargetTime =
+      formatTargetTime(
+        targetTime
+      );
 
-  const params = {};
+    const params = {};
 
-  if (formattedTargetTime) {
-    params.targetTime = formattedTargetTime;
-  }
-
-  if (import.meta.env.DEV) {
-    console.info(
-      "[OrbitGuard Visualization] Requesting debris visualization.",
-      {
-        noradId: validNoradId,
-        targetTime:
-          formattedTargetTime ?? "backend UTC now",
-      }
-    );
-  }
-
-  try {
-    const response = await api.get(
-      `${VISUALIZATION_BASE_PATH}/debris/${validNoradId}`,
-      {
-        params,
-      }
-    );
-
-    const data =
-      extractVisualizationData(response);
+    if (formattedTargetTime) {
+      params.targetTime =
+        formattedTargetTime;
+    }
 
     if (import.meta.env.DEV) {
       console.info(
-        "[OrbitGuard Visualization] Debris visualization received.",
+        "[OrbitGuard Visualization] Requesting debris visualization.",
         {
-          noradId: validNoradId,
-          propagatedAt:
-            data?.propagatedAt ?? null,
-          object:
-            data?.object ?? null,
-        }
-      );
-    }
+          noradId:
+            validNoradId,
 
-    return data;
-  } catch (error) {
-    if (import.meta.env.DEV) {
-      console.error(
-        "[OrbitGuard Visualization] Debris request failed.",
-        {
-          noradId: validNoradId,
           targetTime:
-            formattedTargetTime ?? "backend UTC now",
-          status: error?.response?.status ?? null,
-          message: error?.message ?? null,
+            formattedTargetTime ??
+            "backend UTC now",
         }
       );
     }
 
-    throw error;
-  }
-};
+    try {
+      const response =
+        await api.get(
+          `${VISUALIZATION_BASE_PATH}/debris/${validNoradId}`,
+          {
+            params,
+          }
+        );
+
+      const data =
+        extractVisualizationData(
+          response
+        );
+
+      logSingleVisualizationObject(
+        data?.object,
+        "DEBRIS",
+        validNoradId
+      );
+
+      return data;
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.error(
+          "[OrbitGuard Visualization] Debris request failed.",
+          {
+            noradId:
+              validNoradId,
+
+            targetTime:
+              formattedTargetTime ??
+              "backend UTC now",
+
+            status:
+              error?.response
+                ?.status ??
+              null,
+
+            message:
+              error?.message ??
+              null,
+          }
+        );
+      }
+
+      throw error;
+    }
+  };
 
 /**
  * ================================================================
@@ -498,7 +882,8 @@ export const getDebrisVisualization = async (
  *
  * and:
  *
- * import visualizationService from "./visualizationService";
+ * import visualizationService
+ *   from "./visualizationService";
  */
 const visualizationService = {
   getAllVisualizationObjects,

@@ -13,18 +13,65 @@ import * as THREE from "three";
  * RESPONSIBILITY
  * ----------------------------------------------------------------------------
  *
- * Renders orbital paths supplied by the backend.
+ * Pure Three.js / React Three Fiber renderer for orbital trail data supplied
+ * by the parent.
+ *
+ * This component:
+ *
+ * - DOES render orbital trail geometry
+ * - DOES normalize supported trail-point field names
+ * - DOES highlight the selected object's trail
+ * - DOES enforce a frontend rendering budget
+ * - DOES manage Three.js geometry/material lifecycle
  *
  * This component does NOT:
  *
- * - propagate orbits
+ * - call APIs
+ * - propagate an orbit
  * - run SGP4
  * - run Orekit
+ * - calculate orbital mechanics
+ * - invent orbital paths
  * - calculate risk
- * - calculate coordinates
- * - communicate with backend APIs
  *
- * Backend orbital points remain the source of truth.
+ * Backend/generated orbital trajectory data remains the source of truth.
+ *
+ * ============================================================================
+ * IMPORTANT DATA CONTRACT
+ * ============================================================================
+ *
+ * A trail must contain at least two Cartesian points.
+ *
+ * Supported trail containers:
+ *
+ *     points
+ *     orbitPoints
+ *     trajectory
+ *     positions
+ *
+ * Supported Cartesian field names:
+ *
+ *     xKm / yKm / zKm
+ *     xkm / ykm / zkm
+ *
+ * Example:
+ *
+ * {
+ *   noradId: 25544,
+ *   objectType: "SATELLITE",
+ *   points: [
+ *     {
+ *       xKm: 6800,
+ *       yKm: 100,
+ *       zKm: 200
+ *     },
+ *     {
+ *       xKm: 6750,
+ *       yKm: 500,
+ *       zKm: 400
+ *     }
+ *   ]
+ * }
  *
  * ============================================================================
  * COORDINATE CONTRACT
@@ -36,11 +83,11 @@ import * as THREE from "three";
  *
  * Earth:
  *
- *     radius = 1 normalized Three.js unit
+ *     radius = 1 Three.js unit
  *
  * Conversion:
  *
- *     scene = kilometers / 6371
+ *     scene coordinate = km / 6371
  *
  * ============================================================================
  */
@@ -54,10 +101,21 @@ const EARTH_RADIUS_KM = 6371;
 /**
  * Very small visual offset.
  *
- * This does NOT modify backend orbital coordinates.
+ * This is purely a rendering offset.
+ * It does NOT modify backend coordinates.
  */
 const TRAIL_SURFACE_OFFSET = 0.002;
 
+/**
+ * Frontend rendering budget for non-selected trails.
+ *
+ * This is NOT a backend data limit.
+ */
+const MAX_NORMAL_TRAILS = 100;
+
+/**
+ * Trail colors.
+ */
 const SATELLITE_TRAIL_COLOR =
   "#22d3ee";
 
@@ -70,145 +128,12 @@ const HIGH_RISK_TRAIL_COLOR =
 const SELECTED_TRAIL_COLOR =
   "#dffaff";
 
-const NORMAL_TRAIL_OPACITY =
-  0.22;
-
-const SELECTED_TRAIL_OPACITY =
-  0.92;
-
-/* ============================================================================
- * PREVIEW DATA
- * ========================================================================== */
-
 /**
- * UI-only preview orbit generator.
- *
- * This is NOT orbital propagation.
+ * Material opacity.
  */
-const createPreviewOrbit = ({
-  noradId,
-  name,
-  objectType,
-  inclination,
-  radiusKm,
-  phase,
-  riskLevel = null,
-}) => {
-  const points = [];
+const NORMAL_TRAIL_OPACITY = 0.22;
 
-  const pointCount = 160;
-
-  const inclinationRadians =
-    THREE.MathUtils.degToRad(
-      inclination,
-    );
-
-  for (
-    let index = 0;
-    index <= pointCount;
-    index += 1
-  ) {
-    const progress =
-      index / pointCount;
-
-    const angle =
-      phase +
-      progress *
-        Math.PI *
-        2;
-
-    const x =
-      radiusKm *
-      Math.cos(angle);
-
-    const baseY =
-      radiusKm *
-      Math.sin(angle);
-
-    const y =
-      baseY *
-      Math.cos(
-        inclinationRadians,
-      );
-
-    const z =
-      baseY *
-      Math.sin(
-        inclinationRadians,
-      );
-
-    points.push({
-      xKm: x,
-      yKm: y,
-      zKm: z,
-    });
-  }
-
-  return {
-    noradId,
-    name,
-    objectType,
-    riskLevel,
-    points,
-    frame: "ITRF",
-  };
-};
-
-/**
- * UI-development preview data.
- *
- * Remove the fallback once backend orbital trail data
- * is fully available.
- */
-export const ORBITAL_TRAIL_PREVIEW_DATA =
-  Object.freeze([
-    createPreviewOrbit({
-      noradId: 25544,
-      name: "ISS (ZARYA)",
-      objectType: "SATELLITE",
-      inclination: 51.64,
-      radiusKm: 6780,
-      phase: 0.4,
-    }),
-
-    createPreviewOrbit({
-      noradId: 43013,
-      name: "SENTINEL-2A",
-      objectType: "SATELLITE",
-      inclination: 98.6,
-      radiusKm: 7160,
-      phase: 1.8,
-    }),
-
-    createPreviewOrbit({
-      noradId: 39444,
-      name: "LANDSAT 8",
-      objectType: "SATELLITE",
-      inclination: 98.2,
-      radiusKm: 7075,
-      phase: 3.0,
-    }),
-
-    createPreviewOrbit({
-      noradId: 21247,
-      name: "DEBRIS-21247",
-      objectType: "DEBRIS",
-      inclination: 63.4,
-      radiusKm: 6880,
-      phase: 2.1,
-      riskLevel: "HIGH",
-    }),
-
-    createPreviewOrbit({
-      noradId: 23014,
-      name: "DEBRIS-23014",
-      objectType: "DEBRIS",
-      inclination: 72.5,
-      radiusKm: 7040,
-      phase: 4.2,
-      riskLevel: "MEDIUM",
-    }),
-  ]);
+const SELECTED_TRAIL_OPACITY = 0.96;
 
 /* ============================================================================
  * IDENTIFICATION
@@ -218,14 +143,17 @@ const getTrailId = (trail) =>
   trail?.noradId ??
   trail?.noradID ??
   trail?.noradCatalogId ??
+  trail?.noradCatalogID ??
   trail?.id ??
   null;
 
 /* ============================================================================
- * TYPE
+ * OBJECT TYPE
  * ========================================================================== */
 
-const getObjectType = (trail) =>
+const getObjectType = (
+  trail,
+) =>
   String(
     trail?.objectType ??
       trail?.type ??
@@ -234,31 +162,6 @@ const getObjectType = (trail) =>
   )
     .trim()
     .toUpperCase();
-
-/* ============================================================================
- * VALIDATION
- * ========================================================================== */
-
-const hasValidTrailPoints = (
-  trail,
-) =>
-  Array.isArray(
-    trail?.points,
-  ) &&
-  trail.points.length >= 2;
-
-const hasValidCartesianPoint = (
-  point,
-) =>
-  Number.isFinite(
-    Number(point?.xKm),
-  ) &&
-  Number.isFinite(
-    Number(point?.yKm),
-  ) &&
-  Number.isFinite(
-    Number(point?.zKm),
-  );
 
 /* ============================================================================
  * RISK
@@ -283,6 +186,124 @@ const isHighRisk = (
 ) =>
   getRiskLevel(trail) ===
   "HIGH";
+
+/* ============================================================================
+ * TRAIL POINT EXTRACTION
+ * ========================================================================== */
+
+/**
+ * Supports several possible backend/application contracts without creating
+ * artificial data.
+ *
+ * Priority:
+ *
+ * 1. points
+ * 2. orbitPoints
+ * 3. trajectory
+ * 4. positions
+ */
+const getTrailPoints = (
+  trail,
+) => {
+  if (
+    Array.isArray(
+      trail?.points,
+    )
+  ) {
+    return trail.points;
+  }
+
+  if (
+    Array.isArray(
+      trail?.orbitPoints,
+    )
+  ) {
+    return trail.orbitPoints;
+  }
+
+  if (
+    Array.isArray(
+      trail?.trajectory,
+    )
+  ) {
+    return trail.trajectory;
+  }
+
+  if (
+    Array.isArray(
+      trail?.positions,
+    )
+  ) {
+    return trail.positions;
+  }
+
+  return [];
+};
+
+/* ============================================================================
+ * CARTESIAN POINT HELPERS
+ * ========================================================================== */
+
+const getXKm = (
+  point,
+) =>
+  point?.xKm ??
+  point?.xkm ??
+  null;
+
+const getYKm = (
+  point,
+) =>
+  point?.yKm ??
+  point?.ykm ??
+  null;
+
+const getZKm = (
+  point,
+) =>
+  point?.zKm ??
+  point?.zkm ??
+  null;
+
+const hasValidCartesianPoint = (
+  point,
+) => {
+  const x = Number(
+    getXKm(point),
+  );
+
+  const y = Number(
+    getYKm(point),
+  );
+
+  const z = Number(
+    getZKm(point),
+  );
+
+  return (
+    Number.isFinite(x) &&
+    Number.isFinite(y) &&
+    Number.isFinite(z)
+  );
+};
+
+/**
+ * Returns only valid Cartesian points.
+ *
+ * We do not manufacture missing coordinates.
+ */
+const getValidTrailPoints = (
+  trail,
+) =>
+  getTrailPoints(trail).filter(
+    hasValidCartesianPoint,
+  );
+
+const hasValidTrailPoints = (
+  trail,
+) =>
+  getValidTrailPoints(trail)
+    .length >= 2;
 
 /* ============================================================================
  * COLOR
@@ -321,19 +342,27 @@ const toScenePosition = (
     1 / EARTH_RADIUS_KM;
 
   return [
-    Number(point.xKm) *
-      scale,
+    Number(
+      getXKm(point),
+    ) * scale,
 
-    Number(point.yKm) *
-      scale,
+    Number(
+      getYKm(point),
+    ) * scale,
 
-    Number(point.zKm) *
-      scale,
+    Number(
+      getZKm(point),
+    ) * scale,
   ];
 };
 
 /**
- * Applies a tiny visual offset from the Earth surface.
+ * Applies a tiny visual offset away from the Earth surface.
+ *
+ * Important:
+ *
+ * This only changes the rendered Three.js position.
+ * It does not change backend telemetry.
  */
 const applyVisualSurfaceOffset = (
   position,
@@ -348,9 +377,7 @@ const applyVisualSurfaceOffset = (
   const length =
     vector.length();
 
-  if (
-    length <= 0
-  ) {
+  if (length <= 0) {
     return position;
   }
 
@@ -368,22 +395,11 @@ const applyVisualSurfaceOffset = (
 };
 
 /* ============================================================================
- * GEOMETRY
+ * EMPTY GEOMETRY
  * ========================================================================== */
 
-const createTrailGeometry = (
-  trails,
-  selectedNoradId,
-  {
-    selectedOnly = false,
-  } = {},
-) => {
-  const positions = [];
-  const colors = [];
-
-  if (
-    !Array.isArray(trails)
-  ) {
+const createEmptyTrailGeometry =
+  () => {
     const geometry =
       new THREE.BufferGeometry();
 
@@ -403,111 +419,192 @@ const createTrailGeometry = (
       ),
     );
 
+    geometry.computeBoundingSphere();
+
     return geometry;
+  };
+
+/* ============================================================================
+ * TRAIL GEOMETRY
+ * ========================================================================== */
+
+/**
+ * Creates one combined line-segment geometry.
+ *
+ * We intentionally use one geometry for many trails to avoid creating
+ * hundreds of Three.js line objects.
+ */
+const createTrailGeometry = (
+  trails,
+  selectedNoradId,
+  {
+    selectedOnly = false,
+    maxTrails =
+      MAX_NORMAL_TRAILS,
+  } = {},
+) => {
+  if (
+    !Array.isArray(trails) ||
+    trails.length === 0
+  ) {
+    return createEmptyTrailGeometry();
   }
 
   const selectedId =
     String(
-      selectedNoradId ??
-        "",
+      selectedNoradId ?? "",
     );
 
-  trails
-    .filter(
-      hasValidTrailPoints,
-    )
-    .forEach((trail) => {
-      const trailId =
-        String(
-          getTrailId(
-            trail,
-          ) ?? "",
-        );
+  const positions = [];
+  const colors = [];
 
-      const isSelected =
-        trailId !== "" &&
-        trailId ===
-          selectedId;
+  let renderedTrailCount = 0;
+
+  const color =
+    new THREE.Color();
+
+  for (
+    let trailIndex = 0;
+    trailIndex < trails.length;
+    trailIndex += 1
+  ) {
+    const trail =
+      trails[trailIndex];
+
+    const trailPoints =
+      getValidTrailPoints(
+        trail,
+      );
+
+    if (
+      trailPoints.length < 2
+    ) {
+      continue;
+    }
+
+    const trailId =
+      String(
+        getTrailId(trail) ?? "",
+      );
+
+    const isSelected =
+      trailId !== "" &&
+      trailId === selectedId;
+
+    /**
+     * Selected geometry:
+     *
+     * Only render selected object.
+     */
+    if (
+      selectedOnly &&
+      !isSelected
+    ) {
+      continue;
+    }
+
+    /**
+     * Normal geometry:
+     *
+     * Selected object is rendered separately so it can receive the
+     * stronger selected style.
+     */
+    if (
+      !selectedOnly &&
+      isSelected
+    ) {
+      continue;
+    }
+
+    /**
+     * Apply rendering budget only to normal trails.
+     */
+    if (
+      !selectedOnly &&
+      renderedTrailCount >=
+        maxTrails
+    ) {
+      break;
+    }
+
+    color.set(
+      isSelected
+        ? SELECTED_TRAIL_COLOR
+        : getTrailColor(trail),
+    );
+
+    let segmentCount = 0;
+
+    for (
+      let index = 0;
+      index <
+      trailPoints.length - 1;
+      index += 1
+    ) {
+      const startPoint =
+        trailPoints[index];
+
+      const endPoint =
+        trailPoints[index + 1];
 
       if (
-        selectedOnly !==
-        isSelected
+        !hasValidCartesianPoint(
+          startPoint,
+        ) ||
+        !hasValidCartesianPoint(
+          endPoint,
+        )
       ) {
-        return;
+        continue;
       }
 
-      const color =
-        new THREE.Color(
-          isSelected
-            ? SELECTED_TRAIL_COLOR
-            : getTrailColor(
-                trail,
-              ),
-        );
-
-      for (
-        let index = 0;
-        index <
-        trail.points.length -
-          1;
-        index += 1
-      ) {
-        const startPoint =
-          trail.points[
-            index
-          ];
-
-        const endPoint =
-          trail.points[
-            index + 1
-          ];
-
-        if (
-          !hasValidCartesianPoint(
+      const start =
+        applyVisualSurfaceOffset(
+          toScenePosition(
             startPoint,
-          ) ||
-          !hasValidCartesianPoint(
+          ),
+        );
+
+      const end =
+        applyVisualSurfaceOffset(
+          toScenePosition(
             endPoint,
-          )
-        ) {
-          continue;
-        }
-
-        const start =
-          applyVisualSurfaceOffset(
-            toScenePosition(
-              startPoint,
-            ),
-          );
-
-        const end =
-          applyVisualSurfaceOffset(
-            toScenePosition(
-              endPoint,
-            ),
-          );
-
-        positions.push(
-          start[0],
-          start[1],
-          start[2],
-
-          end[0],
-          end[1],
-          end[2],
+          ),
         );
 
-        colors.push(
-          color.r,
-          color.g,
-          color.b,
+      positions.push(
+        start[0],
+        start[1],
+        start[2],
 
-          color.r,
-          color.g,
-          color.b,
-        );
-      }
-    });
+        end[0],
+        end[1],
+        end[2],
+      );
+
+      colors.push(
+        color.r,
+        color.g,
+        color.b,
+
+        color.r,
+        color.g,
+        color.b,
+      );
+
+      segmentCount += 1;
+    }
+
+    if (segmentCount > 0) {
+      renderedTrailCount += 1;
+    }
+  }
+
+  if (
+    positions.length === 0
+  ) {
+    return createEmptyTrailGeometry();
+  }
 
   const geometry =
     new THREE.BufferGeometry();
@@ -541,7 +638,6 @@ const TRAIL_VERTEX_SHADER = `
   varying vec3 vColor;
 
   void main() {
-
     vColor = color;
 
     vec4 modelPosition =
@@ -560,7 +656,6 @@ const TRAIL_FRAGMENT_SHADER = `
   uniform float uOpacity;
 
   void main() {
-
     gl_FragColor =
       vec4(
         vColor,
@@ -608,17 +703,113 @@ const createTrailMaterial = (
  * ========================================================================== */
 
 const OrbitalTrail = ({
-  trails =
-    ORBITAL_TRAIL_PREVIEW_DATA,
+  /**
+   * Real trail data supplied by the parent.
+   *
+   * Empty by default.
+   *
+   * IMPORTANT:
+   * We do not create fake orbital points here.
+   */
+  trails = [],
 
   visible = true,
 
+  /**
+   * NORAD identifier of the selected object.
+   */
   selectedNoradId = null,
 
+  /**
+   * Reserved for future reduced-motion behavior.
+   */
   reduceMotion = false,
 
+  /**
+   * When true, only the selected trail is rendered.
+   *
+   * Normally VisualizationScene should leave this false.
+   */
   selectedOnly = false,
 }) => {
+  /* ==========================================================================
+   * NORMALIZE TRAIL INPUT
+   * ======================================================================== */
+
+  const validTrails =
+    useMemo(() => {
+      if (
+        !Array.isArray(trails)
+      ) {
+        return [];
+      }
+
+      return trails.filter(
+        hasValidTrailPoints,
+      );
+    }, [trails]);
+
+  /* ==========================================================================
+   * DIAGNOSTICS
+   * ======================================================================== */
+
+  useEffect(() => {
+    if (
+      !import.meta.env.DEV
+    ) {
+      return;
+    }
+
+    const total =
+      Array.isArray(trails)
+        ? trails.length
+        : 0;
+
+    const valid =
+      validTrails.length;
+
+    const selected =
+      selectedNoradId;
+
+    console.debug(
+      "[OrbitGuard OrbitalTrail] Trail diagnostics",
+      {
+        totalTrailObjects:
+          total,
+
+        validTrailObjects:
+          valid,
+
+        selectedNoradId:
+          selected,
+
+        selectedTrailAvailable:
+          selected !== null &&
+          selected !== undefined
+            ? validTrails.some(
+                (trail) =>
+                  String(
+                    getTrailId(
+                      trail,
+                    ) ?? "",
+                  ) ===
+                  String(selected),
+              )
+            : false,
+
+        selectedOnly,
+
+        visible,
+      },
+    );
+  }, [
+    trails,
+    validTrails,
+    selectedNoradId,
+    selectedOnly,
+    visible,
+  ]);
+
   /* ==========================================================================
    * NORMAL GEOMETRY
    * ======================================================================== */
@@ -627,14 +818,16 @@ const OrbitalTrail = ({
     useMemo(
       () =>
         createTrailGeometry(
-          trails,
+          validTrails,
           selectedNoradId,
           {
             selectedOnly: false,
+            maxTrails:
+              MAX_NORMAL_TRAILS,
           },
         ),
       [
-        trails,
+        validTrails,
         selectedNoradId,
       ],
     );
@@ -647,14 +840,15 @@ const OrbitalTrail = ({
     useMemo(
       () =>
         createTrailGeometry(
-          trails,
+          validTrails,
           selectedNoradId,
           {
             selectedOnly: true,
+            maxTrails: 1,
           },
         ),
       [
-        trails,
+        validTrails,
         selectedNoradId,
       ],
     );
@@ -681,37 +875,38 @@ const OrbitalTrail = ({
       [],
     );
 
+  /**
+   * Reserved for future motion behavior.
+   */
   void reduceMotion;
 
   /* ==========================================================================
-   * CLEANUP
+   * RESOURCE CLEANUP
    * ======================================================================== */
 
   useEffect(() => {
     return () => {
       normalGeometry.dispose();
     };
-  }, [
-    normalGeometry,
-  ]);
+  }, [normalGeometry]);
 
   useEffect(() => {
     return () => {
       selectedGeometry.dispose();
     };
-  }, [
-    selectedGeometry,
-  ]);
+  }, [selectedGeometry]);
 
   useEffect(() => {
     return () => {
       normalMaterial.dispose();
+    };
+  }, [normalMaterial]);
+
+  useEffect(() => {
+    return () => {
       selectedMaterial.dispose();
     };
-  }, [
-    normalMaterial,
-    selectedMaterial,
-  ]);
+  }, [selectedMaterial]);
 
   /* ==========================================================================
    * VISIBILITY
@@ -722,6 +917,23 @@ const OrbitalTrail = ({
   }
 
   /* ==========================================================================
+   * DETERMINE WHETHER SELECTED TRAIL EXISTS
+   * ======================================================================== */
+
+  const hasSelectedTrail =
+    selectedNoradId !== null &&
+    selectedNoradId !== undefined &&
+    validTrails.some(
+      (trail) =>
+        String(
+          getTrailId(trail) ?? "",
+        ) ===
+        String(
+          selectedNoradId,
+        ),
+    );
+
+  /* ==========================================================================
    * RENDER
    * ======================================================================== */
 
@@ -729,41 +941,55 @@ const OrbitalTrail = ({
     <group
       name="OrbitGuard-OrbitalTrails"
       userData={{
-        type: "orbital-trails",
+        type:
+          "orbital-trails",
+
         coordinateFrame:
           "ITRF",
+
+        selectedNoradId:
+          selectedNoradId ?? null,
+
+        validTrailCount:
+          validTrails.length,
       }}
     >
-      {!selectedOnly && (
-        <lineSegments
-          name="OrbitGuard-NormalTrails"
-          geometry={
-            normalGeometry
-          }
-          material={
-            normalMaterial
-          }
-          frustumCulled={false}
-          renderOrder={5}
-        />
-      )}
+      {/* ================================================================
+          NORMAL TRAILS
+          ================================================================ */}
 
-      {selectedNoradId !==
-        null &&
-        selectedNoradId !==
-          undefined && (
+      {!selectedOnly &&
+        validTrails.length > 0 && (
           <lineSegments
-            name="OrbitGuard-SelectedTrail"
+            name="OrbitGuard-NormalTrails"
             geometry={
-              selectedGeometry
+              normalGeometry
             }
             material={
-              selectedMaterial
+              normalMaterial
             }
             frustumCulled={false}
-            renderOrder={6}
+            renderOrder={5}
           />
         )}
+
+      {/* ================================================================
+          SELECTED TRAIL
+          ================================================================ */}
+
+      {hasSelectedTrail && (
+        <lineSegments
+          name="OrbitGuard-SelectedTrail"
+          geometry={
+            selectedGeometry
+          }
+          material={
+            selectedMaterial
+          }
+          frustumCulled={false}
+          renderOrder={6}
+        />
+      )}
     </group>
   );
 };

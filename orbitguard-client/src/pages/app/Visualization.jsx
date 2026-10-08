@@ -6,10 +6,7 @@ import {
   useState,
 } from "react";
 
-import {
-  motion,
-  useReducedMotion,
-} from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 
 import VisualizationScene from "../../features/visualization/components/VisualizationScene";
 import VisualizationTopStatus from "../../features/visualization/components/VisualizationTopStatus";
@@ -17,30 +14,8 @@ import SpaceObjectsPanel from "../../features/visualization/components/SpaceObje
 import ObjectInspector from "../../features/visualization/components/ObjectInspector";
 import VisualizationLegend from "../../features/visualization/components/VisualizationLegend";
 import CameraControls from "../../features/visualization/components/CameraControls";
-import OrbitalTimeline from "../../features/visualization/components/OrbitalTimeline";
 
-/**
- * ================================================================
- * BACKEND VISUALIZATION SERVICE
- * ================================================================
- *
- * Backend source of truth:
- *
- * GET /api/visualization/objects
- *
- * The shared visualization service is responsible for:
- *
- * - Axios communication
- * - JWT authentication through api.js
- * - backend response extraction
- * - targetTime formatting
- * - API error propagation
- *
- * This page only consumes the returned visualization data.
- */
-import {
-  getAllVisualizationObjects,
-} from "../../services/visualizationService";
+import { getAllVisualizationObjects } from "../../services/visualizationService";
 
 /**
  * ============================================================================
@@ -69,12 +44,99 @@ import {
  * - SGP4
  * - Orekit
  * - collision calculations
- * - Three.js object calculations
+ * - Three.js orbital calculations
  *
  * Backend remains the source of truth.
  *
  * ============================================================================
+ *
+ * PERFORMANCE ARCHITECTURE
+ * ----------------------------------------------------------------------------
+ *
+ * Backend dataset:
+ *
+ *     16,619 satellites
+ *     11,752 debris
+ *     ----------------
+ *     28,371 objects
+ *
+ * The complete dataset remains available in React state.
+ *
+ * VisualizationScene owns the 3D rendering budget.
+ *
+ * SpaceObjectsPanel owns the DOM rendering budget.
+ *
+ * ============================================================================
+ *
+ * MOBILE LAYOUT ARCHITECTURE
+ * ----------------------------------------------------------------------------
+ *
+ * Mobile visualization:
+ *
+ *     1. VisualizationTopStatus
+ *     2. 3D workspace
+ *     3. Mobile interaction panels
+ *
+ * Object inspector:
+ *
+ *     - starts below the top status area
+ *     - extends completely to the bottom of the viewport
+ *     - uses full mobile width
+ *
+ * Space objects panel:
+ *
+ *     - starts below the top status area
+ *     - keeps the bottom interaction-safe area
+ *
+ * ============================================================================
  */
+
+/* ============================================================================
+ * IN-FLIGHT BULK REQUEST CONTROL
+ * ========================================================================== */
+
+let inFlightVisualizationRequest = null;
+
+/**
+ * Start or reuse the currently running bulk visualization request.
+ *
+ * If a request is already running, callers share the same Promise.
+ */
+const requestVisualizationData = () => {
+  if (inFlightVisualizationRequest) {
+    if (import.meta.env.DEV) {
+      console.info(
+        "[OrbitGuard Visualization] Reusing existing in-flight bulk visualization request.",
+      );
+    }
+
+    return inFlightVisualizationRequest;
+  }
+
+  if (import.meta.env.DEV) {
+    console.info(
+      "[OrbitGuard Visualization] Starting new bulk visualization request.",
+    );
+  }
+
+  let request;
+
+  try {
+    request = getAllVisualizationObjects();
+  } catch (error) {
+    return Promise.reject(error);
+  }
+
+  inFlightVisualizationRequest = Promise.resolve(request).finally(() => {
+    inFlightVisualizationRequest = null;
+  });
+
+  return inFlightVisualizationRequest;
+};
+
+/* ============================================================================
+ * PAGE ANIMATION
+ * ========================================================================== */
 
 const VISUALIZATION_PAGE_VARIANTS = {
   hidden: {
@@ -89,6 +151,10 @@ const VISUALIZATION_PAGE_VARIANTS = {
     },
   },
 };
+
+/* ============================================================================
+ * DEFAULTS
+ * ========================================================================== */
 
 const DEFAULT_DISPLAY_OPTIONS = Object.freeze({
   satellites: true,
@@ -111,25 +177,61 @@ const MOBILE_PANELS = Object.freeze({
 const DEFAULT_TIMELINE_OFFSET = 0;
 const DEFAULT_PLAYBACK_SPEED = 1;
 
+/**
+ * ============================================================================
+ * MOBILE LAYOUT CONSTANTS
+ * ============================================================================
+ *
+ * VisualizationTopStatus is rendered at top-3.
+ *
+ * The status component is visually taller than 68px on mobile.
+ *
+ * Therefore mobile controls/panels start below that region.
+ *
+ * IMPORTANT:
+ *
+ * The mobile objects panel and mobile inspector intentionally use different
+ * bottom boundaries.
+ *
+ * OBJECTS:
+ *     bottom-[72px]
+ *
+ * INSPECTOR:
+ *     bottom-0
+ *
+ * This allows the inspector to reach the actual bottom of the visualization
+ * viewport while the objects panel continues to preserve the lower interaction
+ * area.
+ */
+
+const MOBILE_CONTENT_TOP_CLASS = "top-[96px]";
+
+const MOBILE_OBJECTS_BOTTOM_CLASS = "bottom-[72px]";
+
+const MOBILE_INSPECTOR_BOTTOM_CLASS = "bottom-0";
+
 /* ============================================================================
  * HELPERS
  * ========================================================================== */
 
+/**
+ * Resolve the backend object type defensively.
+ */
 const getObjectType = (object) => {
   if (!object) {
     return "";
   }
 
   return String(
-    object.objectType ??
-      object.type ??
-      object.object_type ??
-      "",
+    object.objectType ?? object.type ?? object.object_type ?? "",
   )
     .trim()
     .toUpperCase();
 };
 
+/**
+ * Resolve the backend NORAD identifier defensively.
+ */
 const getObjectId = (object) => {
   if (!object) {
     return null;
@@ -146,18 +248,6 @@ const getObjectId = (object) => {
 
 /**
  * Normalize the visualization payload returned by the service.
- *
- * The visualization service already unwraps the backend ApiResponse.
- *
- * Expected service result:
- *
- * {
- *   objects: [...],
- *   propagatedAt: "..."
- * }
- *
- * The helper remains defensive because the visualization page
- * should never assume an invalid response is usable data.
  */
 const normalizeVisualizationResponse = (response) => {
   if (Array.isArray(response)) {
@@ -180,10 +270,30 @@ const normalizeVisualizationResponse = (response) => {
 
   return {
     objects,
-    propagatedAt:
-      response.propagatedAt ??
-      response.timestamp ??
-      null,
+    propagatedAt: response.propagatedAt ?? response.timestamp ?? null,
+  };
+};
+
+/**
+ * Calculate authoritative dataset counts.
+ */
+const calculateObjectCounts = (objects) => {
+  let satellites = 0;
+  let debris = 0;
+
+  for (const object of objects) {
+    const type = getObjectType(object);
+
+    if (type === "SATELLITE") {
+      satellites += 1;
+    } else if (type === "DEBRIS") {
+      debris += 1;
+    }
+  }
+
+  return {
+    satellites,
+    debris,
   };
 };
 
@@ -199,46 +309,14 @@ const Visualization = () => {
    * ======================================================================== */
 
   const [objects, setObjects] = useState([]);
-
   const [dataEpoch, setDataEpoch] = useState(null);
-
   const [isLoading, setIsLoading] = useState(true);
-
   const [loadError, setLoadError] = useState(null);
 
-  /**
-   * ========================================================================
+  /* ==========================================================================
    * LOAD REAL BACKEND VISUALIZATION DATA
-   * ========================================================================
-   *
-   * IMPORTANT:
-   *
-   * This is now connected to the actual Spring Boot backend.
-   *
-   * Request flow:
-   *
-   * Visualization.jsx
-   *        ↓
-   * getAllVisualizationObjects()
-   *        ↓
-   * visualizationService.js
-   *        ↓
-   * api.js
-   *        ↓
-   * JWT Authorization
-   *        ↓
-   * GET /api/visualization/objects
-   *        ↓
-   * Spring Boot VisualizationController
-   *
-   * We intentionally do not pass targetTime here yet.
-   *
-   * When targetTime is omitted, the backend controller uses:
-   *
-   * LocalDateTime.now(ZoneOffset.UTC)
-   *
-   * This gives us the cleanest first end-to-end integration test.
-   */
+   * ======================================================================== */
+
   useEffect(() => {
     let active = true;
 
@@ -253,37 +331,27 @@ const Visualization = () => {
           );
         }
 
-        /**
-         * Backend will use current UTC time because no targetTime
-         * is supplied.
-         */
-        const response =
-          await getAllVisualizationObjects();
+        const response = await requestVisualizationData();
 
         if (!active) {
           return;
         }
 
-        const normalized =
-          normalizeVisualizationResponse(response);
+        const normalized = normalizeVisualizationResponse(response);
 
-        /**
-         * Store only the real backend objects.
-         *
-         * No dummy/fallback visualization objects are created.
-         */
         setObjects(normalized.objects);
-
         setDataEpoch(normalized.propagatedAt);
 
         if (import.meta.env.DEV) {
+          const counts = calculateObjectCounts(normalized.objects);
+
           console.info(
             "[OrbitGuard Visualization] Backend visualization data loaded successfully.",
             {
-              objectCount:
-                normalized.objects.length,
-              propagatedAt:
-                normalized.propagatedAt,
+              objectCount: normalized.objects.length,
+              satellites: counts.satellites,
+              debris: counts.debris,
+              propagatedAt: normalized.propagatedAt,
             },
           );
         }
@@ -320,59 +388,53 @@ const Visualization = () => {
   }, []);
 
   /* ==========================================================================
+   * DATASET COUNTS
+   * ======================================================================== */
+
+  const objectCounts = useMemo(
+    () => calculateObjectCounts(objects),
+    [objects],
+  );
+
+  /* ==========================================================================
    * SELECTION
    * ======================================================================== */
 
-  const [
-    selectedObjectId,
-    setSelectedObjectId,
-  ] = useState(null);
-
-  const [
-    selectedObject,
-    setSelectedObject,
-  ] = useState(null);
+  const [selectedObjectId, setSelectedObjectId] = useState(null);
+  const [selectedObject, setSelectedObject] = useState(null);
 
   /**
-   * Automatically select ISS only when the backend actually provides it.
+   * Keep the selected object synchronized with
+   * the current backend dataset.
    */
   useEffect(() => {
-    if (
-      selectedObjectId !== null ||
-      objects.length === 0
-    ) {
+    if (selectedObjectId === null || selectedObjectId === undefined) {
+      if (selectedObject !== null) {
+        setSelectedObject(null);
+      }
+
       return;
     }
 
-    const iss = objects.find(
+    const currentObject = objects.find(
       (object) =>
-        String(
-          getObjectId(object) ?? "",
-        ) === "25544",
+        String(getObjectId(object) ?? "") === String(selectedObjectId),
     );
 
-    if (!iss) {
+    if (!currentObject) {
+      setSelectedObjectId(null);
+      setSelectedObject(null);
       return;
     }
 
-    setSelectedObjectId(
-      getObjectId(iss),
-    );
-
-    setSelectedObject(iss);
-  }, [
-    objects,
-    selectedObjectId,
-  ]);
+    setSelectedObject(currentObject);
+  }, [objects, selectedObjectId, selectedObject]);
 
   /* ==========================================================================
    * FILTER
    * ======================================================================== */
 
-  const [
-    objectFilter,
-    setObjectFilter,
-  ] = useState(
+  const [objectFilter, setObjectFilter] = useState(
     VISUALIZATION_FILTERS.ALL,
   );
 
@@ -380,392 +442,304 @@ const Visualization = () => {
    * DISPLAY OPTIONS
    * ======================================================================== */
 
-  const [
-    displayOptions,
-    setDisplayOptions,
-  ] = useState(
+  const [displayOptions, setDisplayOptions] = useState(
     DEFAULT_DISPLAY_OPTIONS,
   );
 
-  const updateDisplayOption =
-    useCallback(
-      (option, enabled) => {
-        if (
-          !Object.prototype.hasOwnProperty.call(
-            DEFAULT_DISPLAY_OPTIONS,
-            option,
-          )
-        ) {
-          return;
-        }
+  const updateDisplayOption = useCallback((option, enabled) => {
+    if (
+      !Object.prototype.hasOwnProperty.call(
+        DEFAULT_DISPLAY_OPTIONS,
+        option,
+      )
+    ) {
+      return;
+    }
 
-        setDisplayOptions(
-          (currentOptions) => ({
-            ...currentOptions,
-            [option]:
-              Boolean(enabled),
-          }),
-        );
-      },
-      [],
-    );
-
-  /* ==========================================================================
-   * INSPECTOR
-   * ======================================================================== */
-
-  const [
-    inspectorTab,
-    setInspectorTab,
-  ] = useState("OVERVIEW");
+    setDisplayOptions((currentOptions) => ({
+      ...currentOptions,
+      [option]: Boolean(enabled),
+    }));
+  }, []);
 
   /* ==========================================================================
    * MOBILE PANELS
    * ======================================================================== */
 
-  const [
-    mobilePanel,
-    setMobilePanel,
-  ] = useState(null);
+  const [mobilePanel, setMobilePanel] = useState(null);
 
   /* ==========================================================================
    * TIMELINE
    * ======================================================================== */
 
-  const [
-    timelineOffsetMinutes,
-    setTimelineOffsetMinutes,
-  ] = useState(
+  const [timelineOffsetMinutes, setTimelineOffsetMinutes] = useState(
     DEFAULT_TIMELINE_OFFSET,
   );
 
-  const [
-    timelinePlaying,
-    setTimelinePlaying,
-  ] = useState(false);
+  const [timelinePlaying, setTimelinePlaying] = useState(false);
 
-  const [
-    playbackSpeed,
-    setPlaybackSpeed,
-  ] = useState(
+  const [playbackSpeed, setPlaybackSpeed] = useState(
     DEFAULT_PLAYBACK_SPEED,
   );
 
-  const isLive =
-    timelineOffsetMinutes === 0;
+  const isLive = timelineOffsetMinutes === 0;
 
   /* ==========================================================================
    * CAMERA BRIDGES
    * ======================================================================== */
 
-  const cameraActionsRef =
-    useRef(null);
-
-  const sceneActionsRef =
-    useRef(null);
+  const cameraActionsRef = useRef(null);
+  const sceneActionsRef = useRef(null);
 
   /* ==========================================================================
    * OBJECT SELECTION
    * ======================================================================== */
 
-  const handleObjectSelect =
-    useCallback(
-      (object) => {
-        if (!object) {
-          setSelectedObjectId(null);
-          setSelectedObject(null);
-          setMobilePanel(null);
-          return;
-        }
-
-        const objectId =
-          getObjectId(object);
-
-        setSelectedObjectId(
-          objectId,
-        );
-
-        setSelectedObject(object);
-
-        /**
-         * On mobile, selecting an object should open
-         * the inspector automatically.
-         */
-        setMobilePanel(
-          MOBILE_PANELS.INSPECTOR,
-        );
-
-        setInspectorTab(
-          "OVERVIEW",
-        );
-      },
-      [],
-    );
-
-  const handleClearSelection =
-    useCallback(() => {
+  const handleObjectSelect = useCallback((object) => {
+    if (!object) {
       setSelectedObjectId(null);
       setSelectedObject(null);
-    }, []);
+      setMobilePanel(null);
+      return;
+    }
 
-  const handlePanelObjectSelect =
-    useCallback(
-      (object) => {
-        handleObjectSelect(object);
-      },
-      [handleObjectSelect],
-    );
+    const objectId = getObjectId(object);
+
+    if (objectId === null || objectId === undefined) {
+      if (import.meta.env.DEV) {
+        console.warn(
+          "[OrbitGuard Visualization] Selection ignored because the selected object has no NORAD/object identifier.",
+          object,
+        );
+      }
+
+      return;
+    }
+
+    if (import.meta.env.DEV) {
+      console.debug(
+        "[OrbitGuard Visualization] Object selected.",
+        {
+          objectId,
+          name: object?.name,
+          objectType: getObjectType(object),
+        },
+      );
+    }
+
+    setSelectedObjectId(objectId);
+    setSelectedObject(object);
+
+    setMobilePanel(MOBILE_PANELS.INSPECTOR);
+  }, []);
+
+  /**
+   * Central selection-clear operation.
+   */
+  const handleClearSelection = useCallback(() => {
+    if (import.meta.env.DEV) {
+      console.debug(
+        "[OrbitGuard Visualization] Clearing selected object and inspector.",
+      );
+    }
+
+    setSelectedObjectId(null);
+    setSelectedObject(null);
+    setMobilePanel(null);
+  }, []);
 
   /* ==========================================================================
    * FILTER
    * ======================================================================== */
 
-  const handleObjectFilterChange =
-    useCallback(
-      (filter) => {
-        const normalizedFilter =
-          String(filter ?? "")
-            .trim()
-            .toUpperCase();
+  const handleObjectFilterChange = useCallback(
+    (filter) => {
+      const normalizedFilter = String(filter ?? "")
+        .trim()
+        .toUpperCase();
 
-        if (
-          !Object.values(
-            VISUALIZATION_FILTERS,
-          ).includes(
-            normalizedFilter,
-          )
-        ) {
-          return;
-        }
-
-        setObjectFilter(
+      if (
+        !Object.values(VISUALIZATION_FILTERS).includes(
           normalizedFilter,
-        );
+        )
+      ) {
+        return;
+      }
 
-        /**
-         * Clear selection if the selected object
-         * no longer belongs to the active filter.
-         */
-        if (
-          normalizedFilter !== "ALL" &&
-          selectedObject &&
-          getObjectType(
-            selectedObject,
-          ) !== normalizedFilter
-        ) {
-          handleClearSelection();
-        }
-      },
-      [
-        selectedObject,
-        handleClearSelection,
-      ],
-    );
+      setObjectFilter(normalizedFilter);
+
+      if (
+        normalizedFilter !== VISUALIZATION_FILTERS.ALL &&
+        selectedObject &&
+        getObjectType(selectedObject) !== normalizedFilter
+      ) {
+        handleClearSelection();
+      }
+    },
+    [selectedObject, handleClearSelection],
+  );
 
   /* ==========================================================================
    * CAMERA ACTIONS
    * ======================================================================== */
 
-  const handleZoomIn =
-    useCallback(() => {
-      cameraActionsRef.current?.zoomIn?.();
-    }, []);
+  const handleZoomIn = useCallback(() => {
+    cameraActionsRef.current?.zoomIn?.();
+  }, []);
 
-  const handleZoomOut =
-    useCallback(() => {
-      cameraActionsRef.current?.zoomOut?.();
-    }, []);
+  const handleZoomOut = useCallback(() => {
+    cameraActionsRef.current?.zoomOut?.();
+  }, []);
 
-  const handleResetCamera =
-    useCallback(() => {
-      cameraActionsRef.current?.reset?.();
-    }, []);
+  const handleResetCamera = useCallback(() => {
+    cameraActionsRef.current?.reset?.();
 
-  const handleFocusSelected =
-    useCallback(() => {
-      if (!selectedObject) {
-        return;
-      }
+    handleClearSelection();
+  }, [handleClearSelection]);
 
-      cameraActionsRef.current?.focusObject?.(
-        selectedObject,
-      );
-    }, [selectedObject]);
+  const handleFocusSelected = useCallback(() => {
+    if (!selectedObject) {
+      return;
+    }
+
+    cameraActionsRef.current?.focusObject?.(selectedObject);
+  }, [selectedObject]);
 
   /* ==========================================================================
    * SELECTED OBJECT ORBIT
    * ======================================================================== */
 
-  const handleShowSelectedOrbit =
-    useCallback(() => {
-      if (!selectedObject) {
-        return;
-      }
+  const handleShowSelectedOrbit = useCallback(() => {
+    if (!selectedObject) {
+      return;
+    }
 
-      setDisplayOptions(
-        (currentOptions) => ({
-          ...currentOptions,
-          orbitalTrails: true,
-        }),
-      );
+    setDisplayOptions((currentOptions) => ({
+      ...currentOptions,
+      orbitalTrails: true,
+    }));
 
-      sceneActionsRef.current?.showObjectOrbit?.(
-        selectedObject,
-      );
-    }, [selectedObject]);
+    sceneActionsRef.current?.showObjectOrbit?.(selectedObject);
+  }, [selectedObject]);
 
   /* ==========================================================================
    * TIMELINE
    * ======================================================================== */
 
-  const handleTimelineChange =
-    useCallback((value) => {
-      const numericValue =
-        Number(value);
+  const handleTimelineChange = useCallback((value) => {
+    const numericValue = Number(value);
 
-      if (
-        !Number.isFinite(
-          numericValue,
-        )
-      ) {
-        return;
-      }
+    if (!Number.isFinite(numericValue)) {
+      return;
+    }
 
-      setTimelineOffsetMinutes(
-        numericValue,
-      );
+    setTimelineOffsetMinutes(numericValue);
+    setTimelinePlaying(false);
+  }, []);
 
+  const handleTimelinePlayPause = useCallback((nextPlaying) => {
+    if (typeof nextPlaying === "boolean") {
+      setTimelinePlaying(nextPlaying);
+      return;
+    }
+
+    setTimelinePlaying((currentPlaying) => !currentPlaying);
+  }, []);
+
+  const handlePlaybackSpeedChange = useCallback((speed) => {
+    const numericSpeed = Number(speed);
+
+    if (!Number.isFinite(numericSpeed)) {
+      return;
+    }
+
+    setPlaybackSpeed(numericSpeed);
+  }, []);
+
+  const handleLiveChange = useCallback((live) => {
+    if (live) {
+      setTimelineOffsetMinutes(0);
       setTimelinePlaying(false);
-    }, []);
-
-  const handleTimelinePlayPause =
-    useCallback(
-      (nextPlaying) => {
-        if (
-          typeof nextPlaying ===
-          "boolean"
-        ) {
-          setTimelinePlaying(
-            nextPlaying,
-          );
-          return;
-        }
-
-        setTimelinePlaying(
-          (currentPlaying) =>
-            !currentPlaying,
-        );
-      },
-      [],
-    );
-
-  const handlePlaybackSpeedChange =
-    useCallback((speed) => {
-      const numericSpeed =
-        Number(speed);
-
-      if (
-        !Number.isFinite(
-          numericSpeed,
-        )
-      ) {
-        return;
-      }
-
-      setPlaybackSpeed(
-        numericSpeed,
-      );
-    }, []);
-
-  const handleLiveChange =
-    useCallback((live) => {
-      if (live) {
-        setTimelineOffsetMinutes(0);
-        setTimelinePlaying(false);
-      }
-    }, []);
+    }
+  }, []);
 
   /* ==========================================================================
    * MOBILE PANEL ACTIONS
    * ======================================================================== */
 
-  const handleOpenObjectsPanel =
-    useCallback(() => {
-      setMobilePanel(
-        (currentPanel) =>
-          currentPanel ===
-          MOBILE_PANELS.OBJECTS
-            ? null
-            : MOBILE_PANELS.OBJECTS,
-      );
-    }, []);
+  const handleOpenObjectsPanel = useCallback(() => {
+    setMobilePanel((currentPanel) =>
+      currentPanel === MOBILE_PANELS.OBJECTS
+        ? null
+        : MOBILE_PANELS.OBJECTS,
+    );
+  }, []);
 
-  const handleOpenInspector =
-    useCallback(() => {
-      setMobilePanel(
-        (currentPanel) =>
-          currentPanel ===
-          MOBILE_PANELS.INSPECTOR
-            ? null
-            : MOBILE_PANELS.INSPECTOR,
-      );
-    }, []);
+  const handleOpenInspector = useCallback(() => {
+    if (!selectedObject) {
+      if (import.meta.env.DEV) {
+        console.debug(
+          "[OrbitGuard Visualization] Inspector open ignored because no object is selected.",
+        );
+      }
 
-  const handleCloseMobilePanel =
-    useCallback(() => {
-      setMobilePanel(null);
-    }, []);
+      return;
+    }
+
+    setMobilePanel((currentPanel) =>
+      currentPanel === MOBILE_PANELS.INSPECTOR
+        ? null
+        : MOBILE_PANELS.INSPECTOR,
+    );
+  }, [selectedObject]);
+
+  const handleCloseMobilePanel = useCallback(() => {
+    setMobilePanel(null);
+  }, []);
 
   /* ==========================================================================
    * SCENE CONFIGURATION
    * ======================================================================== */
 
-  const sceneConfiguration =
-    useMemo(
-      () => ({
-        filter: objectFilter,
+  const sceneConfiguration = useMemo(
+    () => ({
+      filter: objectFilter,
+      showSatellites: displayOptions.satellites,
+      showDebris: displayOptions.debris,
+      showOrbitalTrails: displayOptions.orbitalTrails,
+      showAtmosphere: displayOptions.atmosphere,
+      selectedObjectId,
+      timelineOffsetMinutes,
+    }),
+    [
+      objectFilter,
+      displayOptions,
+      selectedObjectId,
+      timelineOffsetMinutes,
+    ],
+  );
 
-        showSatellites:
-          displayOptions.satellites,
+  /* ==========================================================================
+   * STABLE CAMERA READY HANDLER
+   * ======================================================================== */
 
-        showDebris:
-          displayOptions.debris,
-
-        showOrbitalTrails:
-          displayOptions.orbitalTrails,
-
-        showAtmosphere:
-          displayOptions.atmosphere,
-
-        selectedObjectId,
-
-        timelineOffsetMinutes,
-      }),
-      [
-        objectFilter,
-        displayOptions,
-        selectedObjectId,
-        timelineOffsetMinutes,
-      ],
-    );
+  const handleCameraActionsReady = useCallback((actions) => {
+    cameraActionsRef.current = actions;
+  }, []);
 
   /* ==========================================================================
    * MODE
    * ======================================================================== */
 
-  const visualizationMode =
-    isLive
-      ? "live"
-      : "preview";
+  const visualizationMode = isLive ? "live" : "preview";
 
   /* ==========================================================================
    * PAGE ANIMATION
    * ======================================================================== */
 
-  const pageVariants =
-    shouldReduceMotion
-      ? undefined
-      : VISUALIZATION_PAGE_VARIANTS;
+  const pageVariants = shouldReduceMotion
+    ? undefined
+    : VISUALIZATION_PAGE_VARIANTS;
 
   /* ==========================================================================
    * RENDER
@@ -785,11 +759,7 @@ const Visualization = () => {
       "
     >
       <motion.div
-        initial={
-          shouldReduceMotion
-            ? false
-            : "hidden"
-        }
+        initial={shouldReduceMotion ? false : "hidden"}
         animate="visible"
         variants={pageVariants}
         className="
@@ -814,25 +784,12 @@ const Visualization = () => {
         >
           <VisualizationScene
             ref={sceneActionsRef}
-            configuration={
-              sceneConfiguration
-            }
+            configuration={sceneConfiguration}
             objects={objects}
-            selectedObjectId={
-              selectedObjectId
-            }
-            onObjectSelect={
-              handleObjectSelect
-            }
-            onCameraActionsReady={(
-              actions,
-            ) => {
-              cameraActionsRef.current =
-                actions;
-            }}
-            reduceMotion={Boolean(
-              shouldReduceMotion,
-            )}
+            selectedObjectId={selectedObjectId}
+            onObjectSelect={handleObjectSelect}
+            onCameraActionsReady={handleCameraActionsReady}
+            reduceMotion={Boolean(shouldReduceMotion)}
           />
         </div>
 
@@ -856,9 +813,7 @@ const Visualization = () => {
           "
         >
           <VisualizationTopStatus
-            mode={
-              visualizationMode
-            }
+            mode={visualizationMode}
             dataEpoch={dataEpoch}
             propagation="SGP4 / OREKIT"
             referenceFrame="ITRF (EARTH FIXED)"
@@ -889,14 +844,14 @@ const Visualization = () => {
               pointer-events-none
               absolute
               left-3
-              top-[84px]
-              bottom-[88px]
+              top-[70px]
+              bottom-[15px]
               z-30
 
               hidden
               lg:flex
 
-              w-[330px]
+              w-[340px]
 
               flex-col
               gap-3
@@ -916,26 +871,15 @@ const Visualization = () => {
             >
               <SpaceObjectsPanel
                 objects={objects}
+                counts={objectCounts}
                 filter={objectFilter}
-                onFilterChange={
-                  handleObjectFilterChange
-                }
-                displayOptions={
-                  displayOptions
-                }
-                onDisplayOptionChange={
-                  updateDisplayOption
-                }
-                selectedObjectId={
-                  selectedObjectId
-                }
-                onObjectSelect={
-                  handlePanelObjectSelect
-                }
+                onFilterChange={handleObjectFilterChange}
+                displayOptions={displayOptions}
+                onDisplayOptionChange={updateDisplayOption}
+                selectedObjectId={selectedObjectId}
+                onObjectSelect={handleObjectSelect}
                 open
-                onClose={
-                  handleCloseMobilePanel
-                }
+                onClose={handleCloseMobilePanel}
                 preview={false}
                 className="
                   h-full
@@ -968,47 +912,41 @@ const Visualization = () => {
               RIGHT INSPECTOR
               ================================================================ */}
 
-          <div
-            className="
-              pointer-events-none
-              absolute
-              right-3
-              top-[84px]
-              bottom-[88px]
-              z-30
-
-              hidden
-              lg:block
-
-              w-[330px]
-              xl:w-[350px]
-            "
-          >
+          {selectedObject && (
             <div
               className="
-                pointer-events-auto
-                h-full
-                overflow-hidden
+                pointer-events-none
+                absolute
+                right-3
+                top-[65px]
+                bottom-[95px]
+                z-30
+
+                hidden
+                lg:block
+
+                w-[330px]
+                xl:w-[350px]
               "
             >
-              <ObjectInspector
-                object={selectedObject}
-                activeTab={inspectorTab}
-                onTabChange={
-                  setInspectorTab
-                }
-                onFocusObject={
-                  handleFocusSelected
-                }
-                onShowOrbit={
-                  handleShowSelectedOrbit
-                }
-                onClose={
-                  handleClearSelection
-                }
-              />
+              <div
+                className="
+                  pointer-events-auto
+                  h-full
+                  overflow-hidden
+                "
+              >
+                <ObjectInspector
+                  selectedObject={selectedObject}
+                  initialTab="overview"
+                  onFocusObject={handleFocusSelected}
+                  onShowOrbit={handleShowSelectedOrbit}
+                  onClose={handleClearSelection}
+                  open={Boolean(selectedObject)}
+                />
+              </div>
             </div>
-          </div>
+          )}
 
           {/* ================================================================
               CAMERA CONTROLS
@@ -1027,211 +965,145 @@ const Visualization = () => {
           >
             <div className="pointer-events-auto">
               <CameraControls
-                onZoomIn={
-                  handleZoomIn
-                }
-                onZoomOut={
-                  handleZoomOut
-                }
-                onFocusSelected={
-                  handleFocusSelected
-                }
-                onReset={
-                  handleResetCamera
-                }
-                hasSelectedObject={
-                  Boolean(
-                    selectedObject,
-                  )
-                }
+                onZoomIn={handleZoomIn}
+                onZoomOut={handleZoomOut}
+                onFocusSelected={handleFocusSelected}
+                onReset={handleResetCamera}
+                hasSelectedObject={Boolean(selectedObject)}
               />
             </div>
-          </div>
-
-          {/* ================================================================
-              TIMELINE
-              ================================================================ */}
-
-          <div
-            className="
-              pointer-events-auto
-              absolute
-              bottom-3
-              left-[360px]
-              right-[360px]
-              z-40
-
-              lg:block
-
-              xl:left-[380px]
-              xl:right-[380px]
-            "
-          >
-            <OrbitalTimeline
-              value={
-                timelineOffsetMinutes
-              }
-              isPlaying={
-                timelinePlaying
-              }
-              playbackSpeed={
-                playbackSpeed
-              }
-              isLive={isLive}
-              onChange={
-                handleTimelineChange
-              }
-              onTogglePlay={
-                handleTimelinePlayPause
-              }
-              onPlaybackSpeedChange={
-                handlePlaybackSpeedChange
-              }
-              onLiveChange={
-                handleLiveChange
-              }
-            />
           </div>
 
           {/* ================================================================
               MOBILE PANEL SWITCHER
               ================================================================ */}
 
-          <div
-            className="
-              pointer-events-auto
-              absolute
-              left-1/2
-              top-3
-              z-50
-              flex
-              -translate-x-1/2
-              items-center
-              gap-1
-              rounded-lg
-              border
-              border-white/[0.07]
-              bg-[#03101d]/90
-              p-1
-              shadow-[0_10px_35px_rgba(0,0,0,0.35)]
-              backdrop-blur-xl
-
-              lg:hidden
-            "
-          >
-            <button
-              type="button"
-              onClick={
-                handleOpenObjectsPanel
-              }
-              aria-label="Open space objects panel"
-              aria-expanded={
-                mobilePanel ===
-                MOBILE_PANELS.OBJECTS
-              }
+          {mobilePanel === null && (
+            <div
               className={`
-                rounded-md
-                px-3
-                py-2
-                font-['Orbitron']
-                text-[7px]
-                tracking-[0.08em]
-                transition
+                pointer-events-auto
+                absolute
+                left-1/2
+                ${MOBILE_CONTENT_TOP_CLASS}
+                z-50
+                flex
+                -translate-x-1/2
+                items-center
+                gap-1
+                rounded-lg
+                border
+                border-white/[0.07]
+                bg-[#03101d]/90
+                p-1
+                shadow-[0_10px_35px_rgba(0,0,0,0.35)]
+                backdrop-blur-xl
 
-                focus-visible:outline-none
-                focus-visible:ring-1
-                focus-visible:ring-cyan-400/70
-
-                ${
-                  mobilePanel ===
-                  MOBILE_PANELS.OBJECTS
-                    ? "bg-cyan-400/12 text-cyan-200"
-                    : "text-slate-500 hover:text-slate-300"
-                }
+                lg:hidden
               `}
             >
-              OBJECTS
-            </button>
-
-            <button
-              type="button"
-              onClick={
-                handleOpenInspector
-              }
-              aria-label="Open object inspector"
-              aria-expanded={
-                mobilePanel ===
-                MOBILE_PANELS.INSPECTOR
-              }
-              className={`
-                rounded-md
-                px-3
-                py-2
-                font-['Orbitron']
-                text-[7px]
-                tracking-[0.08em]
-                transition
-
-                focus-visible:outline-none
-                focus-visible:ring-1
-                focus-visible:ring-cyan-400/70
-
-                ${
-                  mobilePanel ===
-                  MOBILE_PANELS.INSPECTOR
-                    ? "bg-cyan-400/12 text-cyan-200"
-                    : "text-slate-500 hover:text-slate-300"
+              <button
+                type="button"
+                onClick={handleOpenObjectsPanel}
+                aria-label="Open space objects panel"
+                aria-expanded={
+                  mobilePanel === MOBILE_PANELS.OBJECTS
                 }
-              `}
-            >
-              INSPECTOR
-            </button>
-          </div>
+                className={`
+                  min-h-[36px]
+                  rounded-md
+                  px-3
+                  py-2
+                  font-['Orbitron']
+                  text-[7px]
+                  tracking-[0.08em]
+                  transition
+
+                  focus-visible:outline-none
+                  focus-visible:ring-1
+                  focus-visible:ring-cyan-400/70
+
+                  ${
+                    mobilePanel === MOBILE_PANELS.OBJECTS
+                      ? "bg-cyan-400/12 text-cyan-200"
+                      : "text-slate-500 hover:text-slate-300"
+                  }
+                `}
+              >
+                OBJECTS
+              </button>
+
+              <button
+                type="button"
+                onClick={handleOpenInspector}
+                disabled={!selectedObject}
+                aria-label="Open object inspector"
+                aria-expanded={
+                  Boolean(selectedObject) &&
+                  mobilePanel === MOBILE_PANELS.INSPECTOR
+                }
+                className={`
+                  min-h-[36px]
+                  rounded-md
+                  px-3
+                  py-2
+                  font-['Orbitron']
+                  text-[7px]
+                  tracking-[0.08em]
+                  transition
+
+                  focus-visible:outline-none
+                  focus-visible:ring-1
+                  focus-visible:ring-cyan-400/70
+
+                  ${
+                    mobilePanel === MOBILE_PANELS.INSPECTOR &&
+                    selectedObject
+                      ? "bg-cyan-400/12 text-cyan-200"
+                      : "text-slate-500 hover:text-slate-300"
+                  }
+
+                  disabled:cursor-not-allowed
+                  disabled:opacity-40
+                `}
+              >
+                INSPECTOR
+              </button>
+            </div>
+          )}
 
           {/* ================================================================
               MOBILE SPACE OBJECTS
               ================================================================ */}
 
-          {mobilePanel ===
-            MOBILE_PANELS.OBJECTS && (
+          {mobilePanel === MOBILE_PANELS.OBJECTS && (
             <div
-              className="
+              className={`
                 pointer-events-auto
                 absolute
                 inset-x-3
-                top-[68px]
-                bottom-[72px]
-                z-50
+                ${MOBILE_CONTENT_TOP_CLASS}
+                ${MOBILE_OBJECTS_BOTTOM_CLASS}
+                z-[55]
                 overflow-hidden
                 lg:hidden
-              "
+              `}
             >
               <SpaceObjectsPanel
                 objects={objects}
+                counts={objectCounts}
                 filter={objectFilter}
-                onFilterChange={
-                  handleObjectFilterChange
-                }
-                displayOptions={
-                  displayOptions
-                }
-                onDisplayOptionChange={
-                  updateDisplayOption
-                }
-                selectedObjectId={
-                  selectedObjectId
-                }
-                onObjectSelect={
-                  handlePanelObjectSelect
-                }
+                onFilterChange={handleObjectFilterChange}
+                displayOptions={displayOptions}
+                onDisplayOptionChange={updateDisplayOption}
+                selectedObjectId={selectedObjectId}
+                onObjectSelect={handleObjectSelect}
                 open
-                onClose={
-                  handleCloseMobilePanel
-                }
+                onClose={handleCloseMobilePanel}
                 preview={false}
                 className="
                   h-full
                   max-h-none
+                  w-full
                   sm:w-full
                 "
               />
@@ -1239,41 +1111,42 @@ const Visualization = () => {
           )}
 
           {/* ================================================================
-              MOBILE INSPECTOR
+              MOBILE OBJECT INSPECTOR
+
+              IMPORTANT:
+              This panel intentionally reaches the bottom of the viewport.
+
+              Unlike the Objects panel, it does NOT preserve the 72px bottom
+              interaction area.
+
+              It also uses inset-x-0 so the ObjectInspector bottom sheet can
+              occupy the complete mobile width.
               ================================================================ */}
 
-          {mobilePanel ===
-            MOBILE_PANELS.INSPECTOR && (
-            <div
-              className="
-                pointer-events-auto
-                absolute
-                inset-x-3
-                top-[68px]
-                bottom-[72px]
-                z-50
-                overflow-hidden
-                lg:hidden
-              "
-            >
-              <ObjectInspector
-                object={selectedObject}
-                activeTab={inspectorTab}
-                onTabChange={
-                  setInspectorTab
-                }
-                onFocusObject={
-                  handleFocusSelected
-                }
-                onShowOrbit={
-                  handleShowSelectedOrbit
-                }
-                onClose={
-                  handleCloseMobilePanel
-                }
-              />
-            </div>
-          )}
+          {mobilePanel === MOBILE_PANELS.INSPECTOR &&
+            selectedObject && (
+              <div
+                className={`
+                  pointer-events-auto
+                  absolute
+                  inset-x-0
+                  ${MOBILE_CONTENT_TOP_CLASS}
+                  ${MOBILE_INSPECTOR_BOTTOM_CLASS}
+                  z-[55]
+                  overflow-hidden
+                  lg:hidden
+                `}
+              >
+                <ObjectInspector
+                  selectedObject={selectedObject}
+                  initialTab="overview"
+                  onFocusObject={handleFocusSelected}
+                  onShowOrbit={handleShowSelectedOrbit}
+                  onClose={handleClearSelection}
+                  open={Boolean(selectedObject)}
+                />
+              </div>
+            )}
 
           {/* ================================================================
               MOBILE TIMELINE
@@ -1281,7 +1154,7 @@ const Visualization = () => {
 
           <div
             className="
-              pointer-events-auto
+              pointer-events-none
               absolute
               bottom-3
               left-3
@@ -1289,32 +1162,7 @@ const Visualization = () => {
               z-40
               lg:hidden
             "
-          >
-            <OrbitalTimeline
-              value={
-                timelineOffsetMinutes
-              }
-              isPlaying={
-                timelinePlaying
-              }
-              playbackSpeed={
-                playbackSpeed
-              }
-              isLive={isLive}
-              onChange={
-                handleTimelineChange
-              }
-              onTogglePlay={
-                handleTimelinePlayPause
-              }
-              onPlaybackSpeedChange={
-                handlePlaybackSpeedChange
-              }
-              onLiveChange={
-                handleLiveChange
-              }
-            />
-          </div>
+          />
         </section>
 
         {/* ==================================================================

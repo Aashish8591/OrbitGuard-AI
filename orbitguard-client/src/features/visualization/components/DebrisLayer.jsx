@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -14,18 +15,19 @@ import * as THREE from "three";
  * RESPONSIBILITY
  * ----------------------------------------------------------------------------
  *
- * DebrisLayer renders orbital debris inside the 3D visualization.
+ * Renders backend-provided orbital debris positions as GPU-efficient
+ * THREE.Points.
  *
- * It owns:
+ * This component owns:
  *
  * - debris GPU geometry
  * - debris marker colors
  * - debris marker size
  * - debris selection
- * - high-risk visual distinction
+ * - high-risk visual distinction when risk data exists
  * - efficient point rendering
  *
- * It does NOT own:
+ * This component does NOT own:
  *
  * - Earth
  * - atmosphere
@@ -59,13 +61,18 @@ import * as THREE from "three";
  *   longitude: 78.90,
  *   altitudeKm: 420.5,
  *
- *   timestamp: "2026-10-06T14:00:00Z",
- *   frame: "ITRF",
- *
- *   riskLevel: "HIGH"
+ *   timestamp: "...",
+ *   frame: "ITRF"
  * }
  *
- * The frontend does NOT reconstruct missing Cartesian coordinates.
+ * Optional risk fields are supported when supplied by the backend:
+ *
+ *   riskLevel
+ *   risk
+ *   collisionRisk
+ *
+ * The current VisualizationObjectResponse contract does not require
+ * riskLevel, therefore this layer does not invent or calculate risk.
  *
  * ============================================================================
  * COORDINATE CONTRACT
@@ -73,74 +80,63 @@ import * as THREE from "three";
  *
  * Backend:
  *
- *     ITRF kilometres
+ *   ITRF kilometres
  *
  * Frontend:
  *
- *     Earth radius = 1 scene unit
+ *   Earth radius = 1 scene unit
  *
  * Conversion:
  *
- *     sceneX = xKm / 6371
- *     sceneY = yKm / 6371
- *     sceneZ = zKm / 6371
+ *   sceneX = xKm / 6371
+ *   sceneY = yKm / 6371
+ *   sceneZ = zKm / 6371
  *
- * This is only a unit conversion.
- *
- * The backend remains the source of orbital truth.
+ * Backend remains the source of orbital truth.
  *
  * ============================================================================
  * PERFORMANCE CONTRACT
  * ============================================================================
  *
- * Debris may eventually contain 11K+ objects.
+ * VisualizationScene controls the active debris rendering budget.
  *
- * Therefore we use:
+ * Target:
  *
- *     objects
- *        ↓
- *     Float32Array
- *        ↓
- *     BufferGeometry
- *        ↓
- *     THREE.Points
- *        ↓
- *     GPU
+ *   <= 1,000 debris objects
  *
- * We deliberately do NOT render:
+ * This component does not arbitrarily slice/truncate the supplied objects.
  *
- *     objects.map(() => <mesh />)
+ * ============================================================================
+ * POINTER / RAYCAST CONTRACT
+ * ============================================================================
+ *
+ * The R3F Canvas controls the global raycaster configuration.
+ *
+ * This component does not mutate:
+ *
+ *   raycaster.params.Points.threshold
+ *
+ * and does not store fake raycast configuration in userData.
+ *
+ * Selection is resolved only when an actual click is received.
  *
  * ============================================================================
  */
 
 /* ============================================================================
  * CONSTANTS
- * ============================================================================ */
+ * ========================================================================== */
 
 const EARTH_RADIUS_KM = 6371;
 
-/**
- * Semantic debris colors.
- */
 const DEBRIS_COLOR = "#f59e0b";
 
 const HIGH_RISK_COLOR = "#ef4444";
 
 const SELECTED_COLOR = "#e6fbff";
 
-/**
- * Keep GPU pixel ratio bounded.
- */
 const MAX_PIXEL_RATIO = 2;
 
-/**
- * Marker size configuration.
- *
- * These values are intentionally restrained because the target UI is an
- * aerospace command-center visualization rather than a game-style particle
- * field.
- */
 const POINT_SIZE = Object.freeze({
   normal: 4.2,
   medium: 5.4,
@@ -152,112 +148,79 @@ const POINT_SIZE = Object.freeze({
  * PREVIEW DATA
  * ============================================================================
  *
- * UI DEVELOPMENT ONLY.
+ * Kept exported for compatibility with any existing development/import usage.
  *
- * This is intentionally exported so VisualizationScene can temporarily use
- * it while the visualization UI is being developed independently of the
- * backend visualization API.
- *
- * Once visualizationService.js is connected, production data should be passed
- * through the `objects` prop instead.
+ * IMPORTANT:
+ * This data is NOT used by the production rendering path.
+ * DebrisLayer renders only the objects supplied through its `objects` prop.
  */
 
-export const DEBRIS_PREVIEW_OBJECTS =
-  Object.freeze([
-    {
-      noradId: 21247,
-      name: "DEBRIS-21247",
-      objectType: "DEBRIS",
+export const DEBRIS_PREVIEW_OBJECTS = Object.freeze([
+  {
+    noradId: 21247,
+    name: "DEBRIS-21247",
+    objectType: "DEBRIS",
+    xKm: 2100,
+    yKm: -4150,
+    zKm: 2250,
+    latitude: 18.5,
+    longitude: 74.2,
+    altitudeKm: 510.4,
+    timestamp: "2026-10-06T14:00:00Z",
+    frame: "ITRF",
+    riskLevel: "HIGH",
+  },
 
-      xKm: 2100,
-      yKm: -4150,
-      zKm: 2250,
+  {
+    noradId: 23014,
+    name: "DEBRIS-23014",
+    objectType: "DEBRIS",
+    xKm: -3500,
+    yKm: 2650,
+    zKm: 3100,
+    latitude: 27.8,
+    longitude: 132.5,
+    altitudeKm: 640.2,
+    timestamp: "2026-10-06T14:00:00Z",
+    frame: "ITRF",
+    riskLevel: "MEDIUM",
+  },
 
-      latitude: 18.5,
-      longitude: 74.2,
-      altitudeKm: 510.4,
+  {
+    noradId: 24851,
+    name: "DEBRIS-24851",
+    objectType: "DEBRIS",
+    xKm: 4650,
+    yKm: 1850,
+    zKm: -2350,
+    latitude: -21.7,
+    longitude: 21.4,
+    altitudeKm: 575.8,
+    timestamp: "2026-10-06T14:00:00Z",
+    frame: "ITRF",
+    riskLevel: "LOW",
+  },
 
-      timestamp:
-        "2026-10-06T14:00:00Z",
-
-      frame: "ITRF",
-
-      riskLevel: "HIGH",
-    },
-
-    {
-      noradId: 23014,
-      name: "DEBRIS-23014",
-      objectType: "DEBRIS",
-
-      xKm: -3500,
-      yKm: 2650,
-      zKm: 3100,
-
-      latitude: 27.8,
-      longitude: 132.5,
-      altitudeKm: 640.2,
-
-      timestamp:
-        "2026-10-06T14:00:00Z",
-
-      frame: "ITRF",
-
-      riskLevel: "MEDIUM",
-    },
-
-    {
-      noradId: 24851,
-      name: "DEBRIS-24851",
-      objectType: "DEBRIS",
-
-      xKm: 4650,
-      yKm: 1850,
-      zKm: -2350,
-
-      latitude: -21.7,
-      longitude: 21.4,
-      altitudeKm: 575.8,
-
-      timestamp:
-        "2026-10-06T14:00:00Z",
-
-      frame: "ITRF",
-
-      riskLevel: "LOW",
-    },
-
-    {
-      noradId: 29118,
-      name: "DEBRIS-29118",
-      objectType: "DEBRIS",
-
-      xKm: -1750,
-      yKm: -4800,
-      zKm: 2550,
-
-      latitude: 22.9,
-      longitude: -109.6,
-      altitudeKm: 720.5,
-
-      timestamp:
-        "2026-10-06T14:00:00Z",
-
-      frame: "ITRF",
-
-      riskLevel: "MEDIUM",
-    },
-  ]);
+  {
+    noradId: 29118,
+    name: "DEBRIS-29118",
+    objectType: "DEBRIS",
+    xKm: -1750,
+    yKm: -4800,
+    zKm: 2550,
+    latitude: 22.9,
+    longitude: -109.6,
+    altitudeKm: 720.5,
+    timestamp: "2026-10-06T14:00:00Z",
+    frame: "ITRF",
+    riskLevel: "MEDIUM",
+  },
+]);
 
 /* ============================================================================
  * OBJECT ID
- * ============================================================================ */
+ * ========================================================================== */
 
-/**
- * Resolve the identifier used by the visualization selection system.
- *
- * Supports the same identifier hierarchy used by Visualization.jsx.
- */
 const getObjectId = (object) =>
   object?.noradId ??
   object?.noradCatalogId ??
@@ -265,54 +228,85 @@ const getObjectId = (object) =>
   null;
 
 /* ============================================================================
- * VALIDATION
- * ============================================================================ */
+ * NUMERIC VALIDATION
+ * ========================================================================== */
 
-/**
- * Validate backend-provided Cartesian coordinates.
- *
- * We intentionally do not reconstruct missing coordinates.
- */
-const hasCartesianPosition = (
-  object,
-) =>
-  Number.isFinite(
-    Number(object?.xKm),
-  ) &&
-  Number.isFinite(
-    Number(object?.yKm),
-  ) &&
-  Number.isFinite(
-    Number(object?.zKm),
-  );
+const toFiniteNumber = (value) => {
+  const number = Number(value);
 
-/**
- * Make sure the object belongs to the debris layer.
- *
- * The scene normally filters this before passing data here, but keeping the
- * guard here prevents accidental satellite/debris mixing.
- */
-const isDebrisObject = (
-  object,
-) =>
-  String(
+  return Number.isFinite(number) ? number : null;
+};
+
+/* ============================================================================
+ * OBJECT TYPE
+ * ========================================================================== */
+
+const isDebrisObject = (object) => {
+  const type = String(
     object?.objectType ??
       object?.type ??
       "",
-  ).toUpperCase() === "DEBRIS";
+  )
+    .trim()
+    .toUpperCase();
+
+  return type === "DEBRIS";
+};
+
+/* ============================================================================
+ * CARTESIAN VALIDATION
+ * ========================================================================== */
+
+/**
+ * Supports the normalized frontend contract:
+ *
+ *   xKm / yKm / zKm
+ *
+ * and defensively supports lowercase JSON fields:
+ *
+ *   xkm / ykm / zkm
+ *
+ * The visualization service already normalizes these values, but keeping
+ * this defensive fallback makes the rendering layer resilient to the actual
+ * HTTP payload shape.
+ */
+const getCartesianCoordinates = (object) => {
+  if (!object) {
+    return null;
+  }
+
+  const xKm = toFiniteNumber(
+    object.xKm ?? object.xkm,
+  );
+
+  const yKm = toFiniteNumber(
+    object.yKm ?? object.ykm,
+  );
+
+  const zKm = toFiniteNumber(
+    object.zKm ?? object.zkm,
+  );
+
+  if (
+    xKm === null ||
+    yKm === null ||
+    zKm === null
+  ) {
+    return null;
+  }
+
+  return {
+    xKm,
+    yKm,
+    zKm,
+  };
+};
 
 /* ============================================================================
  * RISK HELPERS
- * ============================================================================ */
+ * ========================================================================== */
 
-/**
- * Normalize backend-provided risk information.
- *
- * No risk calculation occurs in the frontend.
- */
-const getRiskLevel = (
-  object,
-) => {
+const getRiskLevel = (object) => {
   const value =
     object?.riskLevel ??
     object?.risk ??
@@ -324,207 +318,221 @@ const getRiskLevel = (
     .toUpperCase();
 };
 
-const isHighRisk = (
-  object,
-) =>
-  getRiskLevel(object) ===
-  "HIGH";
+const isHighRisk = (object) =>
+  getRiskLevel(object) === "HIGH";
 
-const isMediumRisk = (
-  object,
-) =>
-  getRiskLevel(object) ===
-  "MEDIUM";
+const isMediumRisk = (object) =>
+  getRiskLevel(object) === "MEDIUM";
 
 /* ============================================================================
  * POSITION CONVERSION
- * ============================================================================ */
+ * ========================================================================== */
 
 /**
- * Convert ITRF kilometres into normalized Three.js scene coordinates.
+ * Converts backend ITRF kilometres to the scene coordinate system.
  *
- * Backend coordinates remain untouched.
+ * This function accepts already extracted numeric coordinates so that the
+ * geometry creation path does not repeatedly parse the same object.
  */
-const toScenePosition = (
-  object,
-) => [
-  Number(object.xKm) /
-    EARTH_RADIUS_KM,
+const toScenePosition = (coordinates) => {
+  if (!coordinates) {
+    return null;
+  }
 
-  Number(object.yKm) /
-    EARTH_RADIUS_KM,
+  const position = [
+    coordinates.xKm / EARTH_RADIUS_KM,
+    coordinates.yKm / EARTH_RADIUS_KM,
+    coordinates.zKm / EARTH_RADIUS_KM,
+  ];
 
-  Number(object.zKm) /
-    EARTH_RADIUS_KM,
-];
+  if (!position.every(Number.isFinite)) {
+    return null;
+  }
+
+  return position;
+};
 
 /* ============================================================================
- * VALID OBJECTS
- * ============================================================================ */
+ * RENDERABLE OBJECTS
+ * ========================================================================== */
 
 /**
- * Prepare the subset that can actually be rendered.
+ * Creates the exact list of debris objects that can actually be rendered.
  *
- * This keeps invalid backend records from entering the GPU buffers.
+ * No console logging.
+ * No diagnostic traversal.
+ * No duplicate coordinate conversion.
  */
-const getRenderableObjects = (
-  objects,
-) => {
+const getRenderableObjects = (objects) => {
   if (!Array.isArray(objects)) {
     return [];
   }
 
-  return objects.filter(
-    (object) =>
-      isDebrisObject(object) &&
-      hasCartesianPosition(object),
-  );
+  const renderableObjects = [];
+
+  for (const object of objects) {
+    if (!isDebrisObject(object)) {
+      continue;
+    }
+
+    const coordinates =
+      getCartesianCoordinates(object);
+
+    if (!coordinates) {
+      continue;
+    }
+
+    const position =
+      toScenePosition(coordinates);
+
+    if (!position) {
+      continue;
+    }
+
+    renderableObjects.push(object);
+  }
+
+  return renderableObjects;
 };
 
 /* ============================================================================
  * DEBRIS GEOMETRY
- * ============================================================================ */
+ * ========================================================================== */
 
-/**
- * Build one BufferGeometry for all visible debris.
- *
- * Every debris object becomes one GPU point.
- */
 const createDebrisGeometry = (
   objects,
-  selectedNoradId,
+  selectedObjectId,
 ) => {
   const validObjects =
-    getRenderableObjects(
-      objects,
-    );
+    getRenderableObjects(objects);
 
   const count =
     validObjects.length;
 
   const positions =
-    new Float32Array(
-      count * 3,
-    );
+    new Float32Array(count * 3);
 
   const colors =
-    new Float32Array(
-      count * 3,
-    );
+    new Float32Array(count * 3);
 
   const sizes =
-    new Float32Array(
-      count,
-    );
+    new Float32Array(count);
 
   const brightness =
-    new Float32Array(
-      count,
+    new Float32Array(count);
+
+  const selectedId = String(
+    selectedObjectId ?? "",
+  );
+
+  const color =
+    new THREE.Color();
+
+  for (
+    let index = 0;
+    index < count;
+    index += 1
+  ) {
+    const object =
+      validObjects[index];
+
+    /**
+     * Extract coordinates exactly once during geometry creation.
+     */
+    const coordinates =
+      getCartesianCoordinates(object);
+
+    const position =
+      toScenePosition(coordinates);
+
+    if (!position) {
+      continue;
+    }
+
+    const offset =
+      index * 3;
+
+    positions[offset] =
+      position[0];
+
+    positions[offset + 1] =
+      position[1];
+
+    positions[offset + 2] =
+      position[2];
+
+    /* ----------------------------------------------------------------------
+     * SELECTION
+     * -------------------------------------------------------------------- */
+
+    const objectId =
+      getObjectId(object);
+
+    const isSelected =
+      objectId !== null &&
+      String(objectId) === selectedId;
+
+    /* ----------------------------------------------------------------------
+     * RISK
+     * -------------------------------------------------------------------- */
+
+    const highRisk =
+      isHighRisk(object);
+
+    const mediumRisk =
+      isMediumRisk(object);
+
+    /* ----------------------------------------------------------------------
+     * COLOR
+     * -------------------------------------------------------------------- */
+
+    color.set(
+      isSelected
+        ? SELECTED_COLOR
+        : highRisk
+          ? HIGH_RISK_COLOR
+          : DEBRIS_COLOR,
     );
 
-  validObjects.forEach(
-    (object, index) => {
-      const [
-        x,
-        y,
-        z,
-      ] = toScenePosition(
-        object,
-      );
+    colors[offset] =
+      color.r;
 
-      const offset =
-        index * 3;
+    colors[offset + 1] =
+      color.g;
 
-      positions[offset] =
-        x;
+    colors[offset + 2] =
+      color.b;
 
-      positions[
-        offset + 1
-      ] = y;
+    /* ----------------------------------------------------------------------
+     * SIZE / BRIGHTNESS
+     * -------------------------------------------------------------------- */
 
-      positions[
-        offset + 2
-      ] = z;
+    if (isSelected) {
+      sizes[index] =
+        POINT_SIZE.selected;
 
-      /* ================================================================
-         SELECTION
-         ================================================================ */
+      brightness[index] =
+        1.0;
+    } else if (highRisk) {
+      sizes[index] =
+        POINT_SIZE.highRisk;
 
-      const objectId =
-        getObjectId(object);
+      brightness[index] =
+        0.95;
+    } else if (mediumRisk) {
+      sizes[index] =
+        POINT_SIZE.medium;
 
-      const isSelected =
-        String(objectId) ===
-        String(
-          selectedNoradId ??
-            "",
-        );
+      brightness[index] =
+        0.82;
+    } else {
+      sizes[index] =
+        POINT_SIZE.normal;
 
-      /* ================================================================
-         RISK
-         ================================================================ */
-
-      const highRisk =
-        isHighRisk(object);
-
-      const mediumRisk =
-        isMediumRisk(object);
-
-      /* ================================================================
-         COLOR
-         ================================================================ */
-
-      const color =
-        new THREE.Color(
-          isSelected
-            ? SELECTED_COLOR
-            : highRisk
-              ? HIGH_RISK_COLOR
-              : DEBRIS_COLOR,
-        );
-
-      colors[offset] =
-        color.r;
-
-      colors[
-        offset + 1
-      ] = color.g;
-
-      colors[
-        offset + 2
-      ] = color.b;
-
-      /* ================================================================
-         SIZE / BRIGHTNESS
-         ================================================================ */
-
-      if (isSelected) {
-        sizes[index] =
-          POINT_SIZE.selected;
-
-        brightness[index] =
-          1;
-      } else if (highRisk) {
-        sizes[index] =
-          POINT_SIZE.highRisk;
-
-        brightness[index] =
-          0.95;
-      } else if (mediumRisk) {
-        sizes[index] =
-          POINT_SIZE.medium;
-
-        brightness[index] =
-          0.82;
-      } else {
-        sizes[index] =
-          POINT_SIZE.normal;
-
-        brightness[index] =
-          0.68;
-      }
-    },
-  );
+      brightness[index] =
+        0.68;
+    }
+  }
 
   const geometry =
     new THREE.BufferGeometry();
@@ -561,6 +569,16 @@ const createDebrisGeometry = (
     ),
   );
 
+  /**
+   * Required for frustum culling.
+   *
+   * Previously this layer used:
+   *
+   *   frustumCulled={false}
+   *
+   * which forced Three.js to consider the complete point cloud even when
+   * it was outside the camera frustum.
+   */
   geometry.computeBoundingSphere();
 
   return {
@@ -571,7 +589,7 @@ const createDebrisGeometry = (
 
 /* ============================================================================
  * DEBRIS VERTEX SHADER
- * ============================================================================ */
+ * ========================================================================== */
 
 const DEBRIS_VERTEX_SHADER = `
   attribute float aSize;
@@ -583,31 +601,19 @@ const DEBRIS_VERTEX_SHADER = `
   uniform float uPixelRatio;
 
   void main() {
-
     vColor = color;
     vBrightness = aBrightness;
 
     vec4 modelPosition =
       modelViewMatrix *
-      vec4(
-        position,
-        1.0
-      );
+      vec4(position, 1.0);
 
-    /*
-     * Camera-space depth.
-     *
-     * Positive depth keeps the calculation stable.
-     */
     float depth =
       max(
         -modelPosition.z,
         0.1
       );
 
-    /*
-     * Perspective-aware point size.
-     */
     float pointSize =
       aSize *
       uPixelRatio *
@@ -628,14 +634,13 @@ const DEBRIS_VERTEX_SHADER = `
 
 /* ============================================================================
  * DEBRIS FRAGMENT SHADER
- * ============================================================================ */
+ * ========================================================================== */
 
 const DEBRIS_FRAGMENT_SHADER = `
   varying vec3 vColor;
   varying float vBrightness;
 
   void main() {
-
     vec2 centered =
       gl_PointCoord -
       vec2(0.5);
@@ -643,30 +648,20 @@ const DEBRIS_FRAGMENT_SHADER = `
     float distanceFromCenter =
       length(centered);
 
-    /*
-     * Circular marker.
-     */
     if (
-      distanceFromCenter >
-      0.5
+      distanceFromCenter > 0.5
     ) {
       discard;
     }
 
-    /*
-     * Soft outer edge.
-     */
     float edge =
       1.0 -
       smoothstep(
         0.25,
-        0.5,
+        0.50,
         distanceFromCenter
       );
 
-    /*
-     * Bright central core.
-     */
     float core =
       1.0 -
       smoothstep(
@@ -703,14 +698,8 @@ const DEBRIS_FRAGMENT_SHADER = `
 
 /* ============================================================================
  * MATERIAL
- * ============================================================================ */
+ * ========================================================================== */
 
-/**
- * Create the GPU material.
- *
- * Pixel ratio is updated after creation by the component effect so this
- * function remains safe and deterministic.
- */
 const createDebrisMaterial = () =>
   new THREE.ShaderMaterial({
     uniforms: {
@@ -737,24 +726,36 @@ const createDebrisMaterial = () =>
       THREE.AdditiveBlending,
 
     toneMapped: false,
+
+    depthFunc:
+      THREE.LessEqualDepth,
   });
 
 /* ============================================================================
  * DEBRIS LAYER
- * ============================================================================ */
+ * ========================================================================== */
 
 const DebrisLayer = ({
   objects = [],
   visible = true,
-  selectedNoradId = null,
-  onSelect,
+  selectedObjectId = null,
+  onObjectSelect,
 }) => {
   const pointsRef =
     useRef(null);
 
   /* ==========================================================================
-     GEOMETRY
-     ========================================================================== */
+   * NORMALIZE INPUT
+   * ======================================================================== */
+
+  const sourceObjects =
+    Array.isArray(objects)
+      ? objects
+      : [];
+
+  /* ==========================================================================
+   * GEOMETRY
+   * ======================================================================== */
 
   const {
     geometry,
@@ -762,18 +763,18 @@ const DebrisLayer = ({
   } = useMemo(
     () =>
       createDebrisGeometry(
-        objects,
-        selectedNoradId,
+        sourceObjects,
+        selectedObjectId,
       ),
     [
-      objects,
-      selectedNoradId,
+      sourceObjects,
+      selectedObjectId,
     ],
   );
 
   /* ==========================================================================
-     MATERIAL
-     ========================================================================== */
+   * MATERIAL
+   * ======================================================================== */
 
   const material =
     useMemo(
@@ -783,8 +784,8 @@ const DebrisLayer = ({
     );
 
   /* ==========================================================================
-     PIXEL RATIO
-     ========================================================================== */
+   * PIXEL RATIO
+   * ======================================================================== */
 
   useEffect(() => {
     const updatePixelRatio =
@@ -792,8 +793,7 @@ const DebrisLayer = ({
         const pixelRatio =
           typeof window !==
           "undefined"
-            ? window.devicePixelRatio ||
-              1
+            ? window.devicePixelRatio || 1
             : 1;
 
         material.uniforms.uPixelRatio.value =
@@ -804,6 +804,13 @@ const DebrisLayer = ({
       };
 
     updatePixelRatio();
+
+    if (
+      typeof window ===
+      "undefined"
+    ) {
+      return undefined;
+    }
 
     window.addEventListener(
       "resize",
@@ -816,111 +823,104 @@ const DebrisLayer = ({
         updatePixelRatio,
       );
     };
-  }, [
-    material,
-  ]);
+  }, [material]);
 
   /* ==========================================================================
-     GEOMETRY CLEANUP
-     ========================================================================== */
+   * GEOMETRY CLEANUP
+   * ======================================================================== */
 
-  useEffect(
-    () => {
-      return () => {
-        geometry.dispose();
-      };
-    },
-    [
-      geometry,
-    ],
-  );
+  useEffect(() => {
+    return () => {
+      geometry.dispose();
+    };
+  }, [geometry]);
 
   /* ==========================================================================
-     MATERIAL CLEANUP
-     ========================================================================== */
+   * MATERIAL CLEANUP
+   * ======================================================================== */
 
-  useEffect(
-    () => {
-      return () => {
-        material.dispose();
-      };
-    },
-    [
-      material,
-    ],
-  );
+  useEffect(() => {
+    return () => {
+      material.dispose();
+    };
+  }, [material]);
 
   /* ==========================================================================
-     POINTER SELECTION
-     ========================================================================== */
+   * POINTER SELECTION
+   * ======================================================================== */
 
-  const handlePointerDown =
-    (event) => {
-      event.stopPropagation();
+  const handleClick =
+    useCallback(
+      (event) => {
+        event.stopPropagation();
 
-      const index =
-        event.index;
+        /**
+         * R3F exposes the clicked point index directly for THREE.Points.
+         */
+        const directIndex =
+          Number.isInteger(
+            event?.index,
+          )
+            ? event.index
+            : null;
 
-      if (
-        !Number.isInteger(
-          index,
-        )
-      ) {
-        return;
-      }
+        /**
+         * Defensive fallback for cases where the direct index is not
+         * available but the intersection contains the current Points object.
+         */
+        const intersection =
+          event?.intersections?.find(
+            (candidate) =>
+              candidate?.object ===
+              pointsRef.current,
+          ) ?? null;
 
-      const selectedObject =
-        validObjects[index];
+        const intersectionIndex =
+          Number.isInteger(
+            intersection?.index,
+          )
+            ? intersection.index
+            : null;
 
-      if (
-        !selectedObject
-      ) {
-        return;
-      }
+        const index =
+          directIndex ??
+          intersectionIndex;
 
-      if (
-        typeof onSelect ===
-        "function"
-      ) {
-        onSelect(
+        if (
+          !Number.isInteger(index) ||
+          index < 0 ||
+          index >= validObjects.length
+        ) {
+          return;
+        }
+
+        const selectedObject =
+          validObjects[index];
+
+        if (!selectedObject) {
+          return;
+        }
+
+        if (
+          typeof onObjectSelect !==
+          "function"
+        ) {
+          return;
+        }
+
+        onObjectSelect(
           selectedObject,
         );
-      }
-    };
+      },
+      [
+        validObjects,
+        onObjectSelect,
+      ],
+    );
 
   /* ==========================================================================
-     POINTER HOVER
-     ========================================================================== */
-
-  const handlePointerOver =
-    (event) => {
-      event.stopPropagation();
-
-      if (
-        typeof document !==
-        "undefined"
-      ) {
-        document.body.style.cursor =
-          "pointer";
-      }
-    };
-
-  const handlePointerOut =
-    (event) => {
-      event.stopPropagation();
-
-      if (
-        typeof document !==
-        "undefined"
-      ) {
-        document.body.style.cursor =
-          "";
-      }
-    };
-
-  /* ==========================================================================
-     VISIBILITY
-     ========================================================================== */
+   * VISIBILITY
+   * ======================================================================== */
 
   if (
     !visible ||
@@ -930,8 +930,8 @@ const DebrisLayer = ({
   }
 
   /* ==========================================================================
-     RENDER
-     ========================================================================== */
+   * RENDER
+   * ======================================================================== */
 
   return (
     <points
@@ -939,17 +939,15 @@ const DebrisLayer = ({
       name="OrbitGuard-DebrisLayer"
       geometry={geometry}
       material={material}
-      frustumCulled={false}
+
+      /**
+       * Allow Three.js to use geometry.boundingSphere for frustum culling.
+       */
+      frustumCulled
+
       renderOrder={11}
-      onPointerDown={
-        handlePointerDown
-      }
-      onPointerOver={
-        handlePointerOver
-      }
-      onPointerOut={
-        handlePointerOut
-      }
+
+      onClick={handleClick}
     />
   );
 };
