@@ -17,6 +17,8 @@ import CameraControls from "../../features/visualization/components/CameraContro
 
 import { getAllVisualizationObjects } from "../../services/visualizationService";
 
+import { FiLayers } from "react-icons/fi";
+
 /**
  * ============================================================================
  * OrbitGuard AI — 3D Visualization Command Center
@@ -75,18 +77,20 @@ import { getAllVisualizationObjects } from "../../services/visualizationService"
  *
  *     1. VisualizationTopStatus
  *     2. 3D workspace
- *     3. Mobile interaction panels
+ *     3. Space Objects trigger
+ *     4. Mobile legend
+ *     5. Space Objects panel
+ *     6. Object Inspector after object selection
  *
- * Object inspector:
+ * IMPORTANT:
  *
- *     - starts below the top status area
- *     - extends completely to the bottom of the viewport
- *     - uses full mobile width
+ * Mobile now supports both:
  *
- * Space objects panel:
+ *     SPACE OBJECTS
+ *     OBJECT INSPECTOR
  *
- *     - starts below the top status area
- *     - keeps the bottom interaction-safe area
+ * Selecting an object on mobile automatically switches from
+ * SpaceObjectsPanel to ObjectInspector.
  *
  * ============================================================================
  */
@@ -104,19 +108,7 @@ let inFlightVisualizationRequest = null;
  */
 const requestVisualizationData = () => {
   if (inFlightVisualizationRequest) {
-    if (import.meta.env.DEV) {
-      console.info(
-        "[OrbitGuard Visualization] Reusing existing in-flight bulk visualization request.",
-      );
-    }
-
     return inFlightVisualizationRequest;
-  }
-
-  if (import.meta.env.DEV) {
-    console.info(
-      "[OrbitGuard Visualization] Starting new bulk visualization request.",
-    );
   }
 
   let request;
@@ -169,6 +161,12 @@ const VISUALIZATION_FILTERS = Object.freeze({
   DEBRIS: "DEBRIS",
 });
 
+/**
+ * Mobile panel state.
+ *
+ * OBJECTS    -> Space Objects panel
+ * INSPECTOR  -> Selected Object Inspector
+ */
 const MOBILE_PANELS = Object.freeze({
   OBJECTS: "objects",
   INSPECTOR: "inspector",
@@ -177,38 +175,31 @@ const MOBILE_PANELS = Object.freeze({
 const DEFAULT_TIMELINE_OFFSET = 0;
 const DEFAULT_PLAYBACK_SPEED = 1;
 
-/**
- * ============================================================================
+/* ============================================================================
  * MOBILE LAYOUT CONSTANTS
- * ============================================================================
- *
+ * ========================================================================== */
+
+/**
  * VisualizationTopStatus is rendered at top-3.
  *
- * The status component is visually taller than 68px on mobile.
- *
- * Therefore mobile controls/panels start below that region.
- *
- * IMPORTANT:
- *
- * The mobile objects panel and mobile inspector intentionally use different
- * bottom boundaries.
- *
- * OBJECTS:
- *     bottom-[72px]
- *
- * INSPECTOR:
- *     bottom-0
- *
- * This allows the inspector to reach the actual bottom of the visualization
- * viewport while the objects panel continues to preserve the lower interaction
- * area.
+ * Interactive mobile controls therefore begin below 96px.
  */
-
 const MOBILE_CONTENT_TOP_CLASS = "top-[96px]";
 
+/**
+ * Preserve the bottom interaction area.
+ */
 const MOBILE_OBJECTS_BOTTOM_CLASS = "bottom-[72px]";
 
-const MOBILE_INSPECTOR_BOTTOM_CLASS = "bottom-0";
+/**
+ * Mobile legend position.
+ */
+const MOBILE_LEGEND_CLASS = `
+  absolute
+  bottom-3
+  left-3
+  z-[45]
+`;
 
 /* ============================================================================
  * HELPERS
@@ -297,6 +288,24 @@ const calculateObjectCounts = (objects) => {
   };
 };
 
+/**
+ * Determine whether the current viewport is using the mobile layout.
+ *
+ * This matches the Tailwind `lg` breakpoint used by this page:
+ *
+ * lg = 1024px
+ *
+ * This check is intentionally performed only when an object is selected.
+ * No resize listener or additional render loop is introduced.
+ */
+const isMobileViewport = () => {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return window.matchMedia("(max-width: 1023px)").matches;
+};
+
 /* ============================================================================
  * COMPONENT
  * ========================================================================== */
@@ -325,12 +334,6 @@ const Visualization = () => {
         setIsLoading(true);
         setLoadError(null);
 
-        if (import.meta.env.DEV) {
-          console.info(
-            "[OrbitGuard Visualization] Loading real backend visualization data...",
-          );
-        }
-
         const response = await requestVisualizationData();
 
         if (!active) {
@@ -341,29 +344,10 @@ const Visualization = () => {
 
         setObjects(normalized.objects);
         setDataEpoch(normalized.propagatedAt);
-
-        if (import.meta.env.DEV) {
-          const counts = calculateObjectCounts(normalized.objects);
-
-          console.info(
-            "[OrbitGuard Visualization] Backend visualization data loaded successfully.",
-            {
-              objectCount: normalized.objects.length,
-              satellites: counts.satellites,
-              debris: counts.debris,
-              propagatedAt: normalized.propagatedAt,
-            },
-          );
-        }
       } catch (error) {
         if (!active) {
           return;
         }
-
-        console.error(
-          "[OrbitGuard Visualization] Backend visualization data loading failed:",
-          error,
-        );
 
         setObjects([]);
         setDataEpoch(null);
@@ -418,7 +402,8 @@ const Visualization = () => {
 
     const currentObject = objects.find(
       (object) =>
-        String(getObjectId(object) ?? "") === String(selectedObjectId),
+        String(getObjectId(object) ?? "") ===
+        String(selectedObjectId),
     );
 
     if (!currentObject) {
@@ -463,9 +448,17 @@ const Visualization = () => {
   }, []);
 
   /* ==========================================================================
-   * MOBILE PANELS
+   * MOBILE PANEL
    * ======================================================================== */
 
+  /**
+   * Mobile supports two panels:
+   *
+   *     OBJECTS
+   *     INSPECTOR
+   *
+   * Selection changes the mobile panel from OBJECTS to INSPECTOR.
+   */
   const [mobilePanel, setMobilePanel] = useState(null);
 
   /* ==========================================================================
@@ -495,6 +488,27 @@ const Visualization = () => {
    * OBJECT SELECTION
    * ======================================================================== */
 
+  /**
+   * Central object-selection flow.
+   *
+   * Desktop:
+   *
+   *     select object
+   *     -> selectedObject state
+   *     -> desktop ObjectInspector appears
+   *
+   * Mobile:
+   *
+   *     select object
+   *     -> selectedObject state
+   *     -> Space Objects panel closes
+   *     -> Object Inspector opens
+   *
+   * This works for both:
+   *
+   *     1. SpaceObjectsPanel selection
+   *     2. 3D Satellite/Debris selection
+   */
   const handleObjectSelect = useCallback((object) => {
     if (!object) {
       setSelectedObjectId(null);
@@ -506,43 +520,32 @@ const Visualization = () => {
     const objectId = getObjectId(object);
 
     if (objectId === null || objectId === undefined) {
-      if (import.meta.env.DEV) {
-        console.warn(
-          "[OrbitGuard Visualization] Selection ignored because the selected object has no NORAD/object identifier.",
-          object,
-        );
-      }
-
       return;
-    }
-
-    if (import.meta.env.DEV) {
-      console.debug(
-        "[OrbitGuard Visualization] Object selected.",
-        {
-          objectId,
-          name: object?.name,
-          objectType: getObjectType(object),
-        },
-      );
     }
 
     setSelectedObjectId(objectId);
     setSelectedObject(object);
 
-    setMobilePanel(MOBILE_PANELS.INSPECTOR);
+    /**
+     * IMPORTANT:
+     *
+     * Only switch the mobile navigation when the current viewport is
+     * actually mobile.
+     *
+     * Desktop selection remains completely unchanged.
+     */
+    if (isMobileViewport()) {
+      setMobilePanel(MOBILE_PANELS.INSPECTOR);
+    }
   }, []);
 
   /**
    * Central selection-clear operation.
+   *
+   * Closing the mobile inspector returns the user to the main
+   * visualization workspace.
    */
   const handleClearSelection = useCallback(() => {
-    if (import.meta.env.DEV) {
-      console.debug(
-        "[OrbitGuard Visualization] Clearing selected object and inspector.",
-      );
-    }
-
     setSelectedObjectId(null);
     setSelectedObject(null);
     setMobilePanel(null);
@@ -664,9 +667,15 @@ const Visualization = () => {
   }, []);
 
   /* ==========================================================================
-   * MOBILE PANEL ACTIONS
+   * MOBILE SPACE OBJECTS
    * ======================================================================== */
 
+  /**
+   * Opens/closes the Space Objects panel.
+   *
+   * If the inspector is currently open, this action returns to
+   * the Space Objects panel.
+   */
   const handleOpenObjectsPanel = useCallback(() => {
     setMobilePanel((currentPanel) =>
       currentPanel === MOBILE_PANELS.OBJECTS
@@ -675,24 +684,21 @@ const Visualization = () => {
     );
   }, []);
 
-  const handleOpenInspector = useCallback(() => {
-    if (!selectedObject) {
-      if (import.meta.env.DEV) {
-        console.debug(
-          "[OrbitGuard Visualization] Inspector open ignored because no object is selected.",
-        );
-      }
+  /**
+   * Return from Object Inspector to Space Objects.
+   *
+   * Selection is intentionally preserved.
+   *
+   * This allows the user to inspect an object and then go back
+   * to the object list without losing the selected object.
+   */
+  const handleBackToObjectsPanel = useCallback(() => {
+    setMobilePanel(MOBILE_PANELS.OBJECTS);
+  }, []);
 
-      return;
-    }
-
-    setMobilePanel((currentPanel) =>
-      currentPanel === MOBILE_PANELS.INSPECTOR
-        ? null
-        : MOBILE_PANELS.INSPECTOR,
-    );
-  }, [selectedObject]);
-
+  /**
+   * Close any mobile panel.
+   */
   const handleCloseMobilePanel = useCallback(() => {
     setMobilePanel(null);
   }, []);
@@ -821,7 +827,7 @@ const Visualization = () => {
         </div>
 
         {/* ==================================================================
-            DESKTOP COMMAND UI
+            COMMAND UI
             ================================================================== */}
 
         <section
@@ -836,7 +842,7 @@ const Visualization = () => {
           "
         >
           {/* ================================================================
-              LEFT COMMAND DOCK
+              DESKTOP LEFT COMMAND DOCK
               ================================================================ */}
 
           <div
@@ -892,7 +898,7 @@ const Visualization = () => {
             </div>
 
             {/* ================================================================
-                LEGEND
+                DESKTOP LEGEND
                 ================================================================ */}
 
             <div
@@ -909,7 +915,7 @@ const Visualization = () => {
           </div>
 
           {/* ================================================================
-              RIGHT INSPECTOR
+              DESKTOP RIGHT INSPECTOR
               ================================================================ */}
 
           {selectedObject && (
@@ -949,7 +955,7 @@ const Visualization = () => {
           )}
 
           {/* ================================================================
-              CAMERA CONTROLS
+              DESKTOP CAMERA CONTROLS
               ================================================================ */}
 
           <div
@@ -975,7 +981,7 @@ const Visualization = () => {
           </div>
 
           {/* ================================================================
-              MOBILE PANEL SWITCHER
+              MOBILE SPACE OBJECTS BUTTON
               ================================================================ */}
 
           {mobilePanel === null && (
@@ -986,17 +992,7 @@ const Visualization = () => {
                 left-1/2
                 ${MOBILE_CONTENT_TOP_CLASS}
                 z-50
-                flex
                 -translate-x-1/2
-                items-center
-                gap-1
-                rounded-lg
-                border
-                border-white/[0.07]
-                bg-[#03101d]/90
-                p-1
-                shadow-[0_10px_35px_rgba(0,0,0,0.35)]
-                backdrop-blur-xl
 
                 lg:hidden
               `}
@@ -1004,70 +1000,113 @@ const Visualization = () => {
               <button
                 type="button"
                 onClick={handleOpenObjectsPanel}
-                aria-label="Open space objects panel"
-                aria-expanded={
-                  mobilePanel === MOBILE_PANELS.OBJECTS
-                }
-                className={`
-                  min-h-[36px]
-                  rounded-md
-                  px-3
+                aria-label="Open space objects"
+                aria-expanded={false}
+                className="
+                  group
+                  flex
+                  min-h-[40px]
+                  items-center
+                  gap-2
+                  rounded-lg
+                  border
+                  border-cyan-400/[0.16]
+                  bg-[#03101d]/[0.94]
+                  px-3.5
                   py-2
-                  font-['Orbitron']
-                  text-[7px]
-                  tracking-[0.08em]
-                  transition
+                  shadow-[0_10px_30px_rgba(0,0,0,0.38)]
+                  backdrop-blur-xl
+                  transition-all
+                  duration-200
+
+                  hover:border-cyan-400/30
+                  hover:bg-[#041523]
+                  active:scale-[0.97]
 
                   focus-visible:outline-none
                   focus-visible:ring-1
                   focus-visible:ring-cyan-400/70
-
-                  ${
-                    mobilePanel === MOBILE_PANELS.OBJECTS
-                      ? "bg-cyan-400/12 text-cyan-200"
-                      : "text-slate-500 hover:text-slate-300"
-                  }
-                `}
+                "
               >
-                OBJECTS
+                <span
+                  className="
+                    flex
+                    h-7
+                    w-8
+                    shrink-0
+                    items-center
+                    justify-center
+                    rounded-md
+                    border
+                    border-cyan-400/15
+                    bg-cyan-400/[0.06]
+                    text-cyan-300
+                    transition-colors
+                    group-hover:bg-cyan-400/[0.10]
+                  "
+                >
+                  <FiLayers
+                    className="h-3.5 w-3.5"
+                    strokeWidth={1.5}
+                    aria-hidden="true"
+                  />
+                </span>
+
+                <span className="flex flex-col items-start">
+                  <span
+                    className="
+                      font-['Orbitron']
+                      text-[7px]
+                      font-semibold
+                      uppercase
+                      tracking-[0.10em]
+                      text-cyan-200
+                    "
+                  >
+                    SPACE OBJECTS
+                  </span>
+
+                  <span
+                    className="
+                      mt-0.5
+                      font-['Inter']
+                      text-[6px]
+                      uppercase
+                      tracking-[0.06em]
+                      text-slate-600
+                    "
+                  >
+                    {objectCounts.satellites.toLocaleString("en-US")} SAT
+                    {" · "}
+                    {objectCounts.debris.toLocaleString("en-US")} DEBRIS
+                  </span>
+                </span>
               </button>
+            </div>
+          )}
 
-              <button
-                type="button"
-                onClick={handleOpenInspector}
-                disabled={!selectedObject}
-                aria-label="Open object inspector"
-                aria-expanded={
-                  Boolean(selectedObject) &&
-                  mobilePanel === MOBILE_PANELS.INSPECTOR
-                }
-                className={`
-                  min-h-[36px]
-                  rounded-md
-                  px-3
-                  py-2
-                  font-['Orbitron']
-                  text-[7px]
-                  tracking-[0.08em]
-                  transition
+          {/* ================================================================
+              MOBILE LEGEND
+              ================================================================ */}
 
-                  focus-visible:outline-none
-                  focus-visible:ring-1
-                  focus-visible:ring-cyan-400/70
-
-                  ${
-                    mobilePanel === MOBILE_PANELS.INSPECTOR &&
-                    selectedObject
-                      ? "bg-cyan-400/12 text-cyan-200"
-                      : "text-slate-500 hover:text-slate-300"
-                  }
-
-                  disabled:cursor-not-allowed
-                  disabled:opacity-40
-                `}
-              >
-                INSPECTOR
-              </button>
+          {mobilePanel === null && (
+            <div
+              className={`
+                pointer-events-auto
+                ${MOBILE_LEGEND_CLASS}
+                lg:hidden
+              `}
+            >
+              <VisualizationLegend
+                defaultOpen
+                collapsible
+                className="
+                  static
+                  w-[178px]
+                  max-w-[calc(100vw-24px)]
+                  sm:w-[190px]
+                "
+              />
             </div>
           )}
 
@@ -1112,15 +1151,6 @@ const Visualization = () => {
 
           {/* ================================================================
               MOBILE OBJECT INSPECTOR
-
-              IMPORTANT:
-              This panel intentionally reaches the bottom of the viewport.
-
-              Unlike the Objects panel, it does NOT preserve the 72px bottom
-              interaction area.
-
-              It also uses inset-x-0 so the ObjectInspector bottom sheet can
-              occupy the complete mobile width.
               ================================================================ */}
 
           {mobilePanel === MOBILE_PANELS.INSPECTOR &&
@@ -1129,9 +1159,9 @@ const Visualization = () => {
                 className={`
                   pointer-events-auto
                   absolute
-                  inset-x-0
+                  inset-x-3
                   ${MOBILE_CONTENT_TOP_CLASS}
-                  ${MOBILE_INSPECTOR_BOTTOM_CLASS}
+                  ${MOBILE_OBJECTS_BOTTOM_CLASS}
                   z-[55]
                   overflow-hidden
                   lg:hidden
@@ -1143,14 +1173,14 @@ const Visualization = () => {
                   onFocusObject={handleFocusSelected}
                   onShowOrbit={handleShowSelectedOrbit}
                   onClose={handleClearSelection}
-                  open={Boolean(selectedObject)}
+                  open
                 />
               </div>
             )}
 
-          {/* ================================================================
-              MOBILE TIMELINE
-              ================================================================ */}
+          {/* ==================================================================
+              MOBILE TIMELINE RESERVED AREA
+              ================================================================== */}
 
           <div
             className="

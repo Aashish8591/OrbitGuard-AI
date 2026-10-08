@@ -1,3 +1,5 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+
 import {
   FiCrosshair,
   FiMaximize,
@@ -37,49 +39,10 @@ import {
  *
  * Camera behavior remains owned by VisualizationScene.
  *
- * Visualization.jsx supplies callbacks.
- *
- * ============================================================================
- * CURRENT VISUALIZATION CONTRACT
- * ============================================================================
- *
- * Visualization.jsx currently passes:
- *
- *   onZoomIn
- *   onZoomOut
- *   onFocusSelected
- *   onReset
- *   hasSelectedObject
- *
- * Therefore this component intentionally uses `onReset`.
- *
- * ============================================================================
- * DESIGN
- * ============================================================================
- *
- * Desktop:
- *
- *        ┌────┬────┬────┬────┬────┐
- *        │ ◎  │ +  │ −  │ ↻  │ ⛶  │
- *        └────┴────┴────┴────┴────┘
- *
- * Positioned:
- *
- *        bottom-right
- *
- * This matches the OrbitGuard command-center visualization reference.
- *
- * Mobile:
- *
- * Controls remain horizontal with slightly smaller dimensions so they do not
- * compete with the orbital timeline.
+ * Fullscreen is a browser UI concern and is handled safely here.
  *
  * ============================================================================
  */
-
-/* ============================================================================
- * CONTROL BUTTON
- * ============================================================================ */
 
 const CameraControlButton = ({
   label,
@@ -194,37 +157,131 @@ const CameraControlButton = ({
 
 /* ============================================================================
  * CAMERA CONTROLS
- * ============================================================================ */
+ * ========================================================================== */
 
 const CameraControls = ({
   onZoomIn,
   onZoomOut,
   onFocusSelected,
-
-  /**
-   * IMPORTANT:
-   *
-   * Visualization.jsx passes:
-   *
-   *     onReset={handleResetCamera}
-   *
-   * So this component uses the same contract.
-   */
   onReset,
 
+  /**
+   * Optional external fullscreen callback.
+   *
+   * If Visualization.jsx provides this callback, it will be used.
+   *
+   * If it does not, this component uses the browser Fullscreen API
+   * automatically on the nearest visualization <main> container.
+   */
   onFullscreen,
 
   hasSelectedObject = false,
 
-  fullscreen = false,
+  fullscreen: controlledFullscreen,
 
   disabled = false,
 
   className = "",
 }) => {
+  const controlsRef = useRef(null);
+
+  /**
+   * Internal fullscreen state.
+   *
+   * This allows the component to work even when Visualization.jsx
+   * does not yet provide an onFullscreen callback.
+   */
+  const [internalFullscreen, setInternalFullscreen] = useState(false);
+
+  /**
+   * If the parent controls fullscreen state, use that state.
+   * Otherwise use our internal browser fullscreen state.
+   */
+  const fullscreen =
+    typeof controlledFullscreen === "boolean"
+      ? controlledFullscreen
+      : internalFullscreen;
+
   /* ==========================================================================
-     SAFE CALLBACKS
-     ========================================================================== */
+   * FIND VISUALIZATION CONTAINER
+   * ======================================================================== */
+
+  const getFullscreenTarget = useCallback(() => {
+    const controlsElement = controlsRef.current;
+
+    if (!controlsElement) {
+      return null;
+    }
+
+    /**
+     * Current Visualization.jsx structure places CameraControls inside
+     * the visualization <main> area.
+     *
+     * Prefer the closest main element so we fullscreen the visualization
+     * area rather than the entire browser document.
+     */
+    const mainElement = controlsElement.closest("main");
+
+    if (mainElement) {
+      return mainElement;
+    }
+
+    /**
+     * Fallback:
+     *
+     * Walk upward until we find a sufficiently large container.
+     *
+     * This protects the component if the surrounding JSX changes slightly.
+     */
+    let current = controlsElement.parentElement;
+
+    while (current) {
+      const rect = current.getBoundingClientRect();
+
+      if (rect.width > 500 && rect.height > 300) {
+        return current;
+      }
+
+      current = current.parentElement;
+    }
+
+    return null;
+  }, []);
+
+  /* ==========================================================================
+   * FULLSCREEN STATE SYNCHRONIZATION
+   * ======================================================================== */
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const isFullscreen = Boolean(document.fullscreenElement);
+
+      setInternalFullscreen(isFullscreen);
+    };
+
+    document.addEventListener(
+      "fullscreenchange",
+      handleFullscreenChange
+    );
+
+    /**
+     * Initial synchronization.
+     */
+    setInternalFullscreen(
+      Boolean(document.fullscreenElement)
+    );
+
+    return () => {
+      document.removeEventListener(
+        "fullscreenchange",
+        handleFullscreenChange
+      );
+    };
+  }, []);
+
+  /* ==========================================================================
+   * SAFE CALLBACKS
+   * ======================================================================== */
 
   const handleZoomIn = () => {
     if (
@@ -252,8 +309,7 @@ const CameraControls = ({
     if (
       disabled ||
       !hasSelectedObject ||
-      typeof onFocusSelected !==
-        "function"
+      typeof onFocusSelected !== "function"
     ) {
       return;
     }
@@ -272,35 +328,81 @@ const CameraControls = ({
     onReset();
   };
 
-  /**
-   * --------------------------------------------------------------------------
+  /* ==========================================================================
    * FULLSCREEN
-   * --------------------------------------------------------------------------
-   *
-   * Fullscreen remains optional.
-   *
-   * If Visualization.jsx does not provide the callback yet, the control stays
-   * disabled rather than appearing functional while doing nothing.
-   */
+   * ======================================================================== */
 
-  const handleFullscreen = () => {
+  const handleFullscreen = async () => {
+    if (disabled) {
+      return;
+    }
+
+    /**
+     * If parent already supplies its own fullscreen behavior,
+     * preserve that existing contract.
+     */
+    if (typeof onFullscreen === "function") {
+      onFullscreen();
+      return;
+    }
+
+    /**
+     * Browser Fullscreen API is not available.
+     */
     if (
-      disabled ||
-      typeof onFullscreen !==
-        "function"
+      typeof document === "undefined" ||
+      !document.fullscreenEnabled
     ) {
       return;
     }
 
-    onFullscreen();
+    try {
+      /**
+       * Currently fullscreen?
+       *
+       * Exit it.
+       */
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        return;
+      }
+
+      /**
+       * Find the visualization container.
+       */
+      const target = getFullscreenTarget();
+
+      if (!target) {
+        return;
+      }
+
+      /**
+       * Enter native browser fullscreen.
+       */
+      await target.requestFullscreen();
+    } catch (error) {
+      /**
+       * Fullscreen can be rejected by the browser because of:
+       *
+       * - browser restrictions
+       * - iframe permissions
+       * - user gesture restrictions
+       *
+       * Do not throw the error into the React render tree.
+       */
+      setInternalFullscreen(
+        Boolean(document.fullscreenElement)
+      );
+    }
   };
 
   /* ==========================================================================
-     RENDER
-     ========================================================================== */
+   * RENDER
+   * ======================================================================== */
 
   return (
     <div
+      ref={controlsRef}
       className={`
         pointer-events-auto
 
@@ -341,16 +443,12 @@ const CameraControls = ({
             : "Select an object to focus"
         }
         icon={FiCrosshair}
-        onClick={
-          handleFocusSelected
-        }
+        onClick={handleFocusSelected}
         disabled={
           disabled ||
           !hasSelectedObject
         }
-        active={
-          hasSelectedObject
-        }
+        active={hasSelectedObject}
       />
 
       {/* ==================================================================
@@ -361,9 +459,7 @@ const CameraControls = ({
         label="Zoom in"
         ariaLabel="Zoom in"
         icon={FiPlus}
-        onClick={
-          handleZoomIn
-        }
+        onClick={handleZoomIn}
         disabled={disabled}
       />
 
@@ -375,9 +471,7 @@ const CameraControls = ({
         label="Zoom out"
         ariaLabel="Zoom out"
         icon={FiMinus}
-        onClick={
-          handleZoomOut
-        }
+        onClick={handleZoomOut}
         disabled={disabled}
       />
 
@@ -389,9 +483,7 @@ const CameraControls = ({
         label="Reset camera"
         ariaLabel="Reset camera"
         icon={FiRefreshCw}
-        onClick={
-          handleReset
-        }
+        onClick={handleReset}
         disabled={
           disabled ||
           typeof onReset !== "function"
@@ -414,17 +506,9 @@ const CameraControls = ({
             : "Enter fullscreen"
         }
         icon={FiMaximize}
-        onClick={
-          handleFullscreen
-        }
-        disabled={
-          disabled ||
-          typeof onFullscreen !==
-            "function"
-        }
-        active={
-          fullscreen
-        }
+        onClick={handleFullscreen}
+        disabled={disabled}
+        active={fullscreen}
       />
     </div>
   );

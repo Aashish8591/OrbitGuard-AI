@@ -1,9 +1,9 @@
 import api from "./api";
 
 /**
- * ================================================================
+ * ============================================================================
  * OrbitGuard AI - Visualization Service
- * ================================================================
+ * ============================================================================
  *
  * Frontend service responsible for communicating with the
  * OrbitGuard AI 3D Visualization REST APIs.
@@ -49,7 +49,7 @@ import api from "./api";
  *
  * No coordinate calculation or transformation occurs here.
  *
- * ================================================================
+ * ============================================================================
  */
 
 /**
@@ -58,14 +58,11 @@ import api from "./api";
  * This must match VisualizationApiConstants.BASE_PATH
  * in the Spring Boot backend.
  */
-const VISUALIZATION_BASE_PATH =
-  "/api/visualization";
+const VISUALIZATION_BASE_PATH = "/api/visualization";
 
-/**
- * ================================================================
+/* ============================================================================
  * INTERNAL HELPERS
- * ================================================================
- */
+ * ========================================================================== */
 
 /**
  * Convert a JavaScript Date or supported date value into the
@@ -102,8 +99,7 @@ const formatTargetTime = (targetTime) => {
    * If caller already provides a string, normalize it.
    */
   if (typeof targetTime === "string") {
-    const trimmed =
-      targetTime.trim();
+    const trimmed = targetTime.trim();
 
     if (!trimmed) {
       return undefined;
@@ -124,10 +120,7 @@ const formatTargetTime = (targetTime) => {
      */
     return trimmed
       .replace(/Z$/i, "")
-      .replace(
-        /[+-]\d{2}:\d{2}$/,
-        ""
-      )
+      .replace(/[+-]\d{2}:\d{2}$/, "")
       .slice(0, 19);
   }
 
@@ -193,13 +186,10 @@ const validateNoradId = (
     );
   }
 
-  const numericId =
-    Number(noradId);
+  const numericId = Number(noradId);
 
   if (
-    !Number.isInteger(
-      numericId
-    ) ||
+    !Number.isInteger(numericId) ||
     numericId <= 0
   ) {
     throw new Error(
@@ -210,11 +200,9 @@ const validateNoradId = (
   return numericId;
 };
 
-/**
- * ================================================================
+/* ============================================================================
  * VISUALIZATION OBJECT NORMALIZATION
- * ================================================================
- */
+ * ========================================================================== */
 
 /**
  * Normalize one backend visualization object into the frontend
@@ -278,11 +266,9 @@ const normalizeVisualizationObject = (
   };
 };
 
-/**
- * ================================================================
+/* ============================================================================
  * VISUALIZATION DATA NORMALIZATION
- * ================================================================
- */
+ * ========================================================================== */
 
 /**
  * Normalize the extracted visualization payload.
@@ -318,9 +304,7 @@ const normalizeVisualizationData = (
   /**
    * Bulk visualization response.
    */
-  if (
-    Array.isArray(data.objects)
-  ) {
+  if (Array.isArray(data.objects)) {
     normalized.objects =
       data.objects.map(
         normalizeVisualizationObject
@@ -344,11 +328,9 @@ const normalizeVisualizationData = (
   return normalized;
 };
 
-/**
- * ================================================================
+/* ============================================================================
  * RESPONSE EXTRACTION
- * ================================================================
- */
+ * ========================================================================== */
 
 /**
  * Resolve the actual visualization payload from the common
@@ -420,12 +402,9 @@ const extractVisualizationData = (
    * If the backend directly returned the visualization object.
    */
   if (
-    responseData.objects !==
-      undefined ||
-    responseData.object !==
-      undefined ||
-    responseData.propagatedAt !==
-      undefined
+    responseData.objects !== undefined ||
+    responseData.object !== undefined ||
+    responseData.propagatedAt !== undefined
   ) {
     return normalizeVisualizationData(
       responseData
@@ -437,156 +416,11 @@ const extractVisualizationData = (
   );
 };
 
-/**
- * ================================================================
- * DEVELOPMENT LOGGING
- * ================================================================
- */
-
-/**
- * Log useful development information without dumping the
- * complete 11 MB bulk response into the browser console.
- */
-const logBulkResponseSummary = (
-  data,
-  targetTime
-) => {
-  if (!import.meta.env.DEV) {
-    return;
-  }
-
-  const objects =
-    Array.isArray(data?.objects)
-      ? data.objects
-      : [];
-
-  const firstObject =
-    objects[0] ?? null;
-
-  console.info(
-    "[OrbitGuard Visualization] Bulk response received.",
-    {
-      targetTime,
-      propagatedAt:
-        data?.propagatedAt ??
-        null,
-      objectCount:
-        objects.length,
-    }
-  );
-
-  /**
-   * Log only the first normalized object's coordinate contract.
-   *
-   * This gives us visibility into the API boundary without
-   * flooding the browser console with thousands of objects.
-   */
-  if (firstObject) {
-    console.info(
-      "[OrbitGuard Visualization] First normalized visualization object.",
-      {
-        noradId:
-          firstObject.noradId ??
-          null,
-
-        name:
-          firstObject.name ??
-          null,
-
-        objectType:
-          firstObject.objectType ??
-          null,
-
-        xKm:
-          firstObject.xKm ??
-          null,
-
-        yKm:
-          firstObject.yKm ??
-          null,
-
-        zKm:
-          firstObject.zKm ??
-          null,
-
-        frame:
-          firstObject.frame ??
-          null,
-
-        timestamp:
-          firstObject.timestamp ??
-          null,
-      }
-    );
-  }
-};
-
-/**
- * Log a single normalized visualization object during development.
- */
-const logSingleVisualizationObject = (
-  object,
-  objectType,
-  objectId
-) => {
-  if (!import.meta.env.DEV) {
-    return;
-  }
-
-  if (!object) {
-    console.warn(
-      "[OrbitGuard Visualization] Single visualization response did not contain an object.",
-      {
-        objectType,
-        objectId,
-      }
-    );
-
-    return;
-  }
-
-  console.info(
-    "[OrbitGuard Visualization] Normalized single visualization object.",
-    {
-      objectType,
-      objectId,
-
-      noradId:
-        object.noradId ??
-        null,
-
-      name:
-        object.name ??
-        null,
-
-      xKm:
-        object.xKm ??
-        null,
-
-      yKm:
-        object.yKm ??
-        null,
-
-      zKm:
-        object.zKm ??
-        null,
-
-      frame:
-        object.frame ??
-        null,
-
-      timestamp:
-        object.timestamp ??
-        null,
-    }
-  );
-};
-
-/**
- * ================================================================
+/* ============================================================================
  * BULK VISUALIZATION
- * ================================================================
- *
+ * ========================================================================== */
+
+/**
  * Retrieves all active satellites and debris objects for the
  * requested propagation time.
  *
@@ -598,282 +432,166 @@ const logSingleVisualizationObject = (
  *
  * GET /api/visualization/objects?targetTime=2026-10-07T00:00:00
  */
-export const getAllVisualizationObjects =
-  async (
-    targetTime = undefined
-  ) => {
-    const formattedTargetTime =
-      formatTargetTime(
-        targetTime
-      );
+export const getAllVisualizationObjects = async (
+  targetTime = undefined
+) => {
+  const formattedTargetTime =
+    formatTargetTime(targetTime);
 
-    const params = {};
+  const params = {};
 
-    /**
-     * If targetTime is not supplied, backend controller will use:
-     *
-     * LocalDateTime.now(ZoneOffset.UTC)
-     *
-     * We therefore intentionally do not send an undefined query
-     * parameter.
-     */
-    if (formattedTargetTime) {
-      params.targetTime =
-        formattedTargetTime;
-    }
+  /**
+   * If targetTime is not supplied, backend controller will use:
+   *
+   * LocalDateTime.now(ZoneOffset.UTC)
+   *
+   * We therefore intentionally do not send an undefined query
+   * parameter.
+   */
+  if (formattedTargetTime) {
+    params.targetTime =
+      formattedTargetTime;
+  }
 
-    if (import.meta.env.DEV) {
-      console.info(
-        "[OrbitGuard Visualization] Requesting bulk visualization data.",
+  try {
+    const response =
+      await api.get(
+        `${VISUALIZATION_BASE_PATH}/objects`,
         {
-          targetTime:
-            formattedTargetTime ??
-            "backend UTC now",
+          params,
         }
       );
-    }
 
-    try {
-      const response =
-        await api.get(
-          `${VISUALIZATION_BASE_PATH}/objects`,
-          {
-            params,
-          }
-        );
-
-      const data =
-        extractVisualizationData(
-          response
-        );
-
-      logBulkResponseSummary(
-        data,
-        formattedTargetTime ??
-          null
+    const data =
+      extractVisualizationData(
+        response
       );
 
-      return data;
-    } catch (error) {
-      if (import.meta.env.DEV) {
-        console.error(
-          "[OrbitGuard Visualization] Bulk request failed.",
-          {
-            targetTime:
-              formattedTargetTime ??
-              "backend UTC now",
+    return data;
+  } catch (error) {
+    /**
+     * Preserve the original error so the calling layer can
+     * display/handle it appropriately.
+     *
+     * No console logging is performed here.
+     */
+    throw error;
+  }
+};
 
-            status:
-              error?.response
-                ?.status ??
-              null,
-
-            message:
-              error?.message ??
-              null,
-          }
-        );
-      }
-
-      throw error;
-    }
-  };
+/* ============================================================================
+ * SINGLE SATELLITE VISUALIZATION
+ * ========================================================================== */
 
 /**
- * ================================================================
- * SINGLE SATELLITE VISUALIZATION
- * ================================================================
- *
  * Backend:
  *
  * GET /api/visualization/satellite/{noradCatalogId}
  */
-export const getSatelliteVisualization =
-  async (
-    noradCatalogId,
-    targetTime = undefined
-  ) => {
-    const validNoradId =
-      validateNoradId(
-        noradCatalogId,
-        "Satellite NORAD catalog ID"
-      );
+export const getSatelliteVisualization = async (
+  noradCatalogId,
+  targetTime = undefined
+) => {
+  const validNoradId =
+    validateNoradId(
+      noradCatalogId,
+      "Satellite NORAD catalog ID"
+    );
 
-    const formattedTargetTime =
-      formatTargetTime(
-        targetTime
-      );
+  const formattedTargetTime =
+    formatTargetTime(targetTime);
 
-    const params = {};
+  const params = {};
 
-    if (formattedTargetTime) {
-      params.targetTime =
-        formattedTargetTime;
-    }
+  if (formattedTargetTime) {
+    params.targetTime =
+      formattedTargetTime;
+  }
 
-    if (import.meta.env.DEV) {
-      console.info(
-        "[OrbitGuard Visualization] Requesting satellite visualization.",
+  try {
+    const response =
+      await api.get(
+        `${VISUALIZATION_BASE_PATH}/satellite/${validNoradId}`,
         {
-          noradCatalogId:
-            validNoradId,
-
-          targetTime:
-            formattedTargetTime ??
-            "backend UTC now",
+          params,
         }
       );
-    }
 
-    try {
-      const response =
-        await api.get(
-          `${VISUALIZATION_BASE_PATH}/satellite/${validNoradId}`,
-          {
-            params,
-          }
-        );
-
-      const data =
-        extractVisualizationData(
-          response
-        );
-
-      logSingleVisualizationObject(
-        data?.object,
-        "SATELLITE",
-        validNoradId
+    const data =
+      extractVisualizationData(
+        response
       );
 
-      return data;
-    } catch (error) {
-      if (import.meta.env.DEV) {
-        console.error(
-          "[OrbitGuard Visualization] Satellite request failed.",
-          {
-            noradCatalogId:
-              validNoradId,
+    return data;
+  } catch (error) {
+    /**
+     * Preserve the original Axios/application error.
+     *
+     * No console logging is performed here.
+     */
+    throw error;
+  }
+};
 
-            targetTime:
-              formattedTargetTime ??
-              "backend UTC now",
-
-            status:
-              error?.response
-                ?.status ??
-              null,
-
-            message:
-              error?.message ??
-              null,
-          }
-        );
-      }
-
-      throw error;
-    }
-  };
+/* ============================================================================
+ * SINGLE DEBRIS VISUALIZATION
+ * ========================================================================== */
 
 /**
- * ================================================================
- * SINGLE DEBRIS VISUALIZATION
- * ================================================================
- *
  * Backend:
  *
  * GET /api/visualization/debris/{noradId}
  */
-export const getDebrisVisualization =
-  async (
-    noradId,
-    targetTime = undefined
-  ) => {
-    const validNoradId =
-      validateNoradId(
-        noradId,
-        "Debris NORAD ID"
-      );
+export const getDebrisVisualization = async (
+  noradId,
+  targetTime = undefined
+) => {
+  const validNoradId =
+    validateNoradId(
+      noradId,
+      "Debris NORAD ID"
+    );
 
-    const formattedTargetTime =
-      formatTargetTime(
-        targetTime
-      );
+  const formattedTargetTime =
+    formatTargetTime(targetTime);
 
-    const params = {};
+  const params = {};
 
-    if (formattedTargetTime) {
-      params.targetTime =
-        formattedTargetTime;
-    }
+  if (formattedTargetTime) {
+    params.targetTime =
+      formattedTargetTime;
+  }
 
-    if (import.meta.env.DEV) {
-      console.info(
-        "[OrbitGuard Visualization] Requesting debris visualization.",
+  try {
+    const response =
+      await api.get(
+        `${VISUALIZATION_BASE_PATH}/debris/${validNoradId}`,
         {
-          noradId:
-            validNoradId,
-
-          targetTime:
-            formattedTargetTime ??
-            "backend UTC now",
+          params,
         }
       );
-    }
 
-    try {
-      const response =
-        await api.get(
-          `${VISUALIZATION_BASE_PATH}/debris/${validNoradId}`,
-          {
-            params,
-          }
-        );
-
-      const data =
-        extractVisualizationData(
-          response
-        );
-
-      logSingleVisualizationObject(
-        data?.object,
-        "DEBRIS",
-        validNoradId
+    const data =
+      extractVisualizationData(
+        response
       );
 
-      return data;
-    } catch (error) {
-      if (import.meta.env.DEV) {
-        console.error(
-          "[OrbitGuard Visualization] Debris request failed.",
-          {
-            noradId:
-              validNoradId,
+    return data;
+  } catch (error) {
+    /**
+     * Preserve the original Axios/application error.
+     *
+     * No console logging is performed here.
+     */
+    throw error;
+  }
+};
 
-            targetTime:
-              formattedTargetTime ??
-              "backend UTC now",
-
-            status:
-              error?.response
-                ?.status ??
-              null,
-
-            message:
-              error?.message ??
-              null,
-          }
-        );
-      }
-
-      throw error;
-    }
-  };
+/* ============================================================================
+ * DEFAULT SERVICE OBJECT
+ * ========================================================================== */
 
 /**
- * ================================================================
- * DEFAULT SERVICE OBJECT
- * ================================================================
- *
  * Allows both:
  *
  * import {
