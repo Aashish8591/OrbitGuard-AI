@@ -1,5 +1,4 @@
-import { useState } from "react";
-
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { NavLink } from "react-router-dom";
 
@@ -31,9 +30,33 @@ const NAVBAR_HEIGHT = 68;
 
 const EASE = [0.22, 1, 0.36, 1];
 
-const SIDEBAR_BACKGROUND = {
-  backgroundImage:
-    "linear-gradient(rgba(2, 9, 20, 0.82), rgba(2, 9, 20, 0.92)), url('/images/background/space-sidebar-bg.png')",
+const SIDEBAR_IMAGE = "/images/About/about_bg.png";
+
+const DESKTOP_IMAGE_STYLE = {
+  backgroundImage: `
+    linear-gradient(
+      180deg,
+      rgba(2, 9, 20, 0.84) 0%,
+      rgba(2, 9, 20, 0.82) 48%,
+      rgba(2, 9, 20, 0.92) 100%
+    ),
+    url("${SIDEBAR_IMAGE}")
+  `,
+  backgroundSize: "cover",
+  backgroundPosition: "center",
+  backgroundRepeat: "no-repeat",
+};
+
+const MOBILE_IMAGE_STYLE = {
+  backgroundImage: `
+    linear-gradient(
+      180deg,
+      rgba(2, 9, 20, 0.90) 0%,
+      rgba(2, 9, 20, 0.80) 50%,
+      rgba(2, 9, 20, 0.90) 100%
+    ),
+    url("${SIDEBAR_IMAGE}")
+  `,
   backgroundSize: "cover",
   backgroundPosition: "center",
   backgroundRepeat: "no-repeat",
@@ -78,6 +101,37 @@ function Sidebar({
 
   const isExpanded = isHovered;
 
+  /* ===============================================================
+     MOBILE SCROLL LOCK AND ESCAPE KEY
+     =============================================================== */
+
+  useEffect(() => {
+    if (!mobileOpen) return undefined;
+
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow =
+      document.documentElement.style.overflow;
+
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        onMobileClose();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow =
+        previousHtmlOverflow;
+
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [mobileOpen, onMobileClose]);
+
   const handleNavigation = () => {
     onMobileClose();
   };
@@ -89,7 +143,10 @@ function Sidebar({
 
   return (
     <>
-      {/* Mobile backdrop */}
+      {/* =========================================================
+          MOBILE BACKDROP
+          ========================================================= */}
+
       <AnimatePresence>
         {mobileOpen && (
           <motion.button
@@ -102,15 +159,19 @@ function Sidebar({
             transition={{ duration: 0.2 }}
             className="
               fixed inset-x-0 bottom-0 z-40
-              cursor-default bg-[#02050c]/70
-              backdrop-blur-[2px] md:hidden
+              cursor-default bg-[#02050c]/80
+              md:hidden
             "
             style={{ top: NAVBAR_HEIGHT }}
           />
         )}
       </AnimatePresence>
 
-      {/* Desktop / tablet sidebar */}
+      {/* =========================================================
+          DESKTOP / TABLET SIDEBAR
+          Desktop behavior intentionally preserved.
+          ========================================================= */}
+
       <motion.aside
         initial={false}
         animate={{
@@ -119,81 +180,137 @@ function Sidebar({
             : SIDEBAR_COLLAPSED_WIDTH,
         }}
         transition={{
-          width: { duration: 0.28, ease: EASE },
+          width: {
+            duration: 0.28,
+            ease: EASE,
+          },
         }}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         aria-label="Application navigation"
         className="
           fixed left-0 bottom-0 z-50 hidden
-          overflow-hidden rounded-r-[28px]
-          border-r border-t border-white/[0.07]
-          bg-[#070c18]/95
-          shadow-[12px_10px_40px_rgba(0,0,0,0.32)]
-          backdrop-blur-xl md:flex md:flex-col
+          isolate overflow-hidden
+          rounded-r-[28px]
+          border-r border-t border-white/[0.08]
+          bg-[#020914]
+          shadow-[12px_10px_40px_rgba(0,0,0,0.45)]
+          md:flex md:flex-col
         "
         style={{
           top: NAVBAR_HEIGHT,
-          ...SIDEBAR_BACKGROUND,
+          borderTopRightRadius: 28,
+          borderBottomRightRadius: 28,
         }}
       >
-        <SidebarContent
-          isExpanded={isExpanded}
-          onNavigation={handleNavigation}
-          onLogout={handleLogout}
-        />
+        {/* Desktop image layer */}
+        <div
+          aria-hidden="true"
+          className="
+            pointer-events-none absolute inset-0 z-0
+            overflow-hidden rounded-r-[28px]
+          "
+        >
+          <div
+            className="absolute inset-0"
+            style={DESKTOP_IMAGE_STYLE}
+          />
+        </div>
+
+        {/* Desktop content */}
+        <div className="relative z-10 flex min-h-0 flex-1 flex-col bg-[#020914]/10">
+          <SidebarContent
+            isExpanded={isExpanded}
+            onNavigation={handleNavigation}
+            onLogout={handleLogout}
+          />
+        </div>
       </motion.aside>
 
-      {/* Mobile drawer */}
+      {/* =========================================================
+          MOBILE DRAWER
+          The animated wrapper does not paint the background image.
+          The inner panel clips all image pixels to its own bounds.
+          ========================================================= */}
+
       <AnimatePresence>
         {mobileOpen && (
           <motion.div
             initial={{ x: "-100%" }}
             animate={{ x: 0 }}
             exit={{ x: "-100%" }}
-            transition={{ duration: 0.32, ease: EASE }}
+            transition={{
+              duration: 0.32,
+              ease: EASE,
+            }}
             className="
-              fixed left-0 bottom-0 z-50
+              fixed left-0 z-50
               w-[250px] max-w-[86vw]
-              pointer-events-auto md:hidden
+              overflow-visible
+              md:hidden
             "
-            style={{ top: NAVBAR_HEIGHT }}
+            style={{
+              top: NAVBAR_HEIGHT,
+              height: `calc(100dvh - ${NAVBAR_HEIGHT}px)`,
+              maxHeight: `calc(100dvh - ${NAVBAR_HEIGHT}px)`,
+            }}
           >
-            {/* Mobile sidebar panel */}
+            {/* Actual mobile drawer and clipping boundary */}
             <aside
               aria-label="Mobile application navigation"
               className="
-                relative flex h-full w-full flex-col
-                overflow-hidden rounded-r-[28px]
+                absolute inset-0
+                isolate flex min-h-0 w-full flex-col
+                overflow-hidden
+                rounded-r-[28px]
                 border-r border-t border-white/[0.08]
-                bg-[#070c18]
+                bg-[#020914]
                 shadow-[20px_10px_60px_rgba(0,0,0,0.55)]
-                backdrop-blur-xl
               "
-              style={SIDEBAR_BACKGROUND}
+              style={{
+                clipPath: "inset(0 round 0 28px 28px 0)",
+              }}
             >
-              <SidebarContent
-                isExpanded
-                onNavigation={handleNavigation}
-                onLogout={handleLogout}
-              />
+              {/* Mobile background: contained by the panel */}
+              <div
+                aria-hidden="true"
+                className="
+                  pointer-events-none absolute inset-0 z-0
+                  overflow-hidden
+                "
+              >
+                <div
+                  className="absolute inset-0"
+                  style={MOBILE_IMAGE_STYLE}
+                />
+              </div>
+
+              {/* Mobile navigation content */}
+              <div className="relative z-10 flex min-h-0 flex-1 flex-col">
+                <SidebarContent
+                  isExpanded
+                  onNavigation={handleNavigation}
+                  onLogout={handleLogout}
+                />
+              </div>
             </aside>
 
-            {/* Close button outside the drawer */}
+            {/* Close button stays outside the clipped panel */}
             <button
               type="button"
               onClick={onMobileClose}
               aria-label="Close navigation"
               title="Close navigation"
               className="
-                pointer-events-auto absolute -right-11 top-4
-                flex h-9 w-9 shrink-0 items-center justify-center
-                rounded-full border border-white/[0.10]
-                bg-[#070c18]/95 text-white/70
-                shadow-[0_8px_24px_rgba(0,0,0,0.35)]
-                backdrop-blur-xl transition-all duration-200
-                hover:border-cyan-300/[0.20]
-                hover:bg-[#0a1222] hover:text-cyan-300
+                absolute -right-11 top-4 z-20
+                flex h-9 w-9 items-center justify-center
+                rounded-full border border-white/[0.12]
+                bg-[#020914] text-slate-300
+                shadow-[0_8px_24px_rgba(0,0,0,0.45)]
+                transition-colors duration-200
+                hover:border-cyan-300/40
+                hover:bg-[#0a1222]
+                hover:text-cyan-300
                 focus-visible:outline-none
                 focus-visible:ring-2 focus-visible:ring-cyan-400
               "
@@ -218,7 +335,6 @@ function SidebarContent({
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* Navigation */}
       <nav
         aria-label="Application navigation"
         className="
@@ -258,15 +374,15 @@ function SidebarContent({
       </nav>
 
       {/* Logout */}
-      <div className="shrink-0 border-t border-white/[0.07] p-2">
+      <div className="shrink-0 border-t border-white/[0.08] p-2">
         <button
           type="button"
           onClick={onLogout}
           title={!isExpanded ? "Sign out" : undefined}
           className={`
             group flex h-11 w-full items-center rounded-xl
-            text-white/50 transition-all duration-200
-            hover:bg-red-400/[0.06] hover:text-red-300/90
+            text-white/60 transition-colors duration-200
+            hover:bg-red-400/[0.08] hover:text-red-300
             focus-visible:outline-none
             focus-visible:ring-2 focus-visible:ring-cyan-400
             ${
@@ -292,7 +408,10 @@ function SidebarContent({
                 initial={{ opacity: 0, x: -6 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -6 }}
-                transition={{ duration: 0.16, ease: EASE }}
+                transition={{
+                  duration: 0.16,
+                  ease: EASE,
+                }}
                 className="
                   font-display whitespace-nowrap
                   text-[9px] font-medium uppercase tracking-[0.14em]
@@ -320,7 +439,6 @@ function SidebarSection({
 }) {
   return (
     <section className="mb-5 last:mb-0">
-      {/* Section heading */}
       <div className="mb-1.5 h-5 overflow-hidden px-2">
         <AnimatePresence initial={false}>
           {isExpanded ? (
@@ -328,11 +446,14 @@ function SidebarSection({
               initial={{ opacity: 0, x: -6 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -6 }}
-              transition={{ duration: 0.16, ease: EASE }}
+              transition={{
+                duration: 0.16,
+                ease: EASE,
+              }}
               className="
                 font-display whitespace-nowrap
                 text-[8px] font-medium uppercase
-                tracking-[0.20em] text-white/40
+                tracking-[0.20em] text-white/45
               "
             >
               {title}
@@ -349,7 +470,6 @@ function SidebarSection({
         </AnimatePresence>
       </div>
 
-      {/* Section items */}
       <div className="space-y-1">
         {items.map((item) => (
           <SidebarItem
@@ -382,7 +502,7 @@ function SidebarItem({
       title={!isExpanded ? item.label : undefined}
       className={({ isActive }) => `
         group relative flex h-11 w-full items-center
-        rounded-xl transition-all duration-200
+        rounded-xl transition-colors duration-200
         focus-visible:outline-none
         focus-visible:ring-2 focus-visible:ring-cyan-400
         ${
@@ -393,7 +513,7 @@ function SidebarItem({
         ${
           isActive
             ? "bg-cyan-300/[0.10] text-cyan-200"
-            : "text-white/60 hover:bg-white/[0.05] hover:text-white/90"
+            : "text-white/65 hover:bg-white/[0.05] hover:text-white/90"
         }
       `}
     >
@@ -406,7 +526,10 @@ function SidebarItem({
               opacity: isActive ? 1 : 0,
               scaleY: isActive ? 1 : 0.5,
             }}
-            transition={{ duration: 0.18, ease: EASE }}
+            transition={{
+              duration: 0.18,
+              ease: EASE,
+            }}
             className="
               absolute left-0 top-2 h-7 w-[2px]
               origin-center rounded-full bg-cyan-300
@@ -418,7 +541,7 @@ function SidebarItem({
           <span
             className={`
               relative flex h-8 w-8 shrink-0 items-center
-              justify-center rounded-lg transition-all duration-200
+              justify-center rounded-lg transition-colors duration-200
               ${
                 isActive
                   ? "bg-cyan-300/[0.10] text-cyan-300"
@@ -436,7 +559,10 @@ function SidebarItem({
                 initial={{ opacity: 0, x: -7 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -7 }}
-                transition={{ duration: 0.16, ease: EASE }}
+                transition={{
+                  duration: 0.16,
+                  ease: EASE,
+                }}
                 className={`
                   font-display min-w-0 flex-1 truncate
                   whitespace-nowrap text-[9px] font-medium
@@ -444,7 +570,7 @@ function SidebarItem({
                   ${
                     isActive
                       ? "text-cyan-100/90"
-                      : "text-white/65 group-hover:text-white/90"
+                      : "text-white/70 group-hover:text-white/90"
                   }
                 `}
               >
@@ -460,8 +586,11 @@ function SidebarItem({
                 initial={{ opacity: 0, x: -4 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -4 }}
-                transition={{ duration: 0.16, ease: EASE }}
-                className="text-cyan-300/70"
+                transition={{
+                  duration: 0.16,
+                  ease: EASE,
+                }}
+                className="shrink-0 text-cyan-300/70"
               >
                 <FiChevronRight size={13} strokeWidth={1.8} />
               </motion.span>
