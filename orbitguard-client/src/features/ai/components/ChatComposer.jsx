@@ -1,10 +1,4 @@
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 import {
   FiPaperclip,
@@ -35,8 +29,8 @@ const ChatComposer = memo(function ChatComposer({
   const isBusy = disabled || isLoading || submitting;
 
   const canSend =
-    normalizedDraft.length > 0 &&
-    draft.length <= maxLength &&
+    normalizedDraft.length >= 2 &&
+    normalizedDraft.length <= maxLength &&
     !isBusy &&
     typeof onSendMessage === "function";
 
@@ -64,13 +58,14 @@ const ChatComposer = memo(function ChatComposer({
     [maxLength],
   );
 
-  // Submit a single message.
+  // Submit a message and clear the draft only after success.
   const handleSubmit = useCallback(
     async (event) => {
       event?.preventDefault();
 
       if (
-        !normalizedDraft ||
+        normalizedDraft.length < 2 ||
+        normalizedDraft.length > maxLength ||
         isBusy ||
         submittingRef.current ||
         typeof onSendMessage !== "function"
@@ -82,14 +77,20 @@ const ChatComposer = memo(function ChatComposer({
       setSubmitting(true);
 
       try {
-        await onSendMessage(normalizedDraft);
+        const result = await onSendMessage(normalizedDraft);
+
+        // The parent can explicitly report a failed request.
+        if (result === false) {
+          return;
+        }
+
         setDraft("");
 
         if (textareaRef.current) {
           textareaRef.current.style.height = "auto";
         }
       } catch (error) {
-        // Preserve the draft when submission fails.
+        // Preserve the draft so the user can retry.
         console.error(
           "[OrbitGuard AI] Message submission failed.",
           error,
@@ -99,7 +100,7 @@ const ChatComposer = memo(function ChatComposer({
         setSubmitting(false);
       }
     },
-    [normalizedDraft, isBusy, onSendMessage],
+    [normalizedDraft, maxLength, isBusy, onSendMessage],
   );
 
   // Enter sends; Shift + Enter inserts a newline.
@@ -111,7 +112,7 @@ const ChatComposer = memo(function ChatComposer({
         !event.nativeEvent.isComposing
       ) {
         event.preventDefault();
-        handleSubmit(event);
+        void handleSubmit(event);
       }
     },
     [handleSubmit],
@@ -223,7 +224,7 @@ const ChatComposer = memo(function ChatComposer({
             sm:px-3
           "
         >
-          {/* Attachment: disabled until upload is connected */}
+          {/* Attachment: enabled only when a handler is supplied */}
           <div className="flex min-w-0 items-center gap-1">
             <input
               ref={fileInputRef}

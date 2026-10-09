@@ -1,4 +1,3 @@
-
 import api from "./api";
 
 /**
@@ -6,9 +5,13 @@ import api from "./api";
  * OrbitGuard AI - AI Service
  * ================================================================
  *
- * Responsible for communicating with the OrbitGuard AI REST API.
+ * Responsibilities:
+ * - Validate AI chat messages.
+ * - Communicate with the existing Spring Boot backend.
+ * - Extract the generated answer from the API response.
+ * - Normalize errors for presentation components.
  *
- * Backend contract:
+ * Backend endpoint:
  *   POST /api/ai/chat
  *
  * Request:
@@ -16,7 +19,7 @@ import api from "./api";
  *     "message": "Explain orbital debris."
  *   }
  *
- * Response data contract:
+ * Expected response:
  *   ApiResponse<AiChatResponse>
  *
  * AiChatResponse:
@@ -24,34 +27,45 @@ import api from "./api";
  *     "response": "Generated AI answer..."
  *   }
  *
- * This service uses the existing Axios instance so the configured
- * backend base URL, authentication interceptors, and common headers
- * remain centralized in api.js.
- *
- * It does not call Gemini directly. Gemini communication belongs
- * exclusively to the Spring Boot backend.
+ * IMPORTANT:
+ * - The Spring Boot backend remains the source of truth.
+ * - Gemini communication stays exclusively in the backend.
+ * - The existing Axios instance handles the base URL,
+ *   authentication, and common request configuration.
+ * - This service does not generate AI responses locally.
+ * ================================================================
  */
 
-// Keep the endpoint relative to the configured Axios base URL.
+// ----------------------------------------------------------------
+// API CONFIGURATION
+// ----------------------------------------------------------------
+
 const AI_CHAT_ENDPOINT = "/api/ai/chat";
 
-// The backend validates messages between 2 and 4000 characters.
 const MIN_MESSAGE_LENGTH = 2;
 const MAX_MESSAGE_LENGTH = 4000;
 
+// ----------------------------------------------------------------
+// ERROR NORMALIZATION
+// ----------------------------------------------------------------
+
 /**
- * Normalizes a potential API error into a user-readable message.
+ * Converts API errors into readable messages.
  *
- * Does not expose stack traces or internal provider exceptions.
- *
- * @param {unknown} error Axios or application error
- * @returns {string} Safe error message for the UI
+ * @param {unknown} error Axios or application error.
+ * @returns {string} User-readable error message.
  */
 const getErrorMessage = (error) => {
   const status = error?.response?.status;
   const backendData = error?.response?.data;
 
+  // A response-less error may be a network failure, timeout,
+  // or a request setup error.
   if (!error?.response) {
+    if (error?.code === "ECONNABORTED") {
+      return "The AI request timed out. Please try again.";
+    }
+
     return (
       "Unable to reach the OrbitGuard AI backend. " +
       "Check your connection and backend server."
@@ -100,29 +114,34 @@ const getErrorMessage = (error) => {
   );
 };
 
+// ----------------------------------------------------------------
+// RESPONSE EXTRACTION
+// ----------------------------------------------------------------
+
 /**
- * Extracts the AI response from the common backend response wrapper.
+ * Extracts the generated answer from supported response structures.
  *
- * The precise ApiResponse property names were not included in the
- * supplied backend code, so this method supports common wrapper
- * conventions while requiring AiChatResponse.response to exist.
+ * Supported examples:
  *
- * @param {unknown} payload Backend response payload
- * @returns {string} Generated AI response
- * @throws {Error} If the expected response is missing
+ * { response: "Generated answer" }
+ *
+ * { data: { response: "Generated answer" } }
+ *
+ * { data: { data: { response: "Generated answer" } } }
+ *
+ * { response: { response: "Generated answer" } }
+ *
+ * @param {unknown} payload Axios response body.
+ * @returns {string} Generated AI answer.
+ * @throws {Error} If a usable answer cannot be found.
  */
 const extractAiResponse = (payload) => {
   if (!payload || typeof payload !== "object") {
     throw new Error(
-      "The AI backend returned an invalid response payload.",
+      "The AI backend returned an invalid response payload."
     );
   }
 
-  // Supports common ApiResponse wrapper shapes:
-  // { data: { response: "..." } }
-  // { data: { data: { response: "..." } } }
-  // { response: { response: "..." } }
-  // { response: "..." }
   const candidates = [
     payload.data?.response,
     payload.data?.data?.response,
@@ -132,25 +151,32 @@ const extractAiResponse = (payload) => {
 
   const generatedResponse = candidates.find(
     (candidate) =>
-      typeof candidate === "string" && candidate.trim().length > 0,
+      typeof candidate === "string" &&
+      candidate.trim().length > 0
   );
 
   if (typeof generatedResponse !== "string") {
     throw new Error(
       "The AI backend responded, but its generated answer was missing. " +
-      "Verify the ApiResponse structure returned by the backend.",
+      "Verify the response structure returned by the backend."
     );
   }
 
   return generatedResponse.trim();
 };
 
+// ----------------------------------------------------------------
+// INTERNAL MESSAGE SERVICE
+// ----------------------------------------------------------------
+
 /**
- * Sends a message to OrbitGuard AI.
+ * Sends a message to the Spring Boot AI endpoint.
  *
- * @param {string} message User's message
- * @returns {Promise<{ response: string }>} Generated AI answer
- * @throws {Error} If validation, network, or API processing fails
+ * Returns an object so existing callers can use:
+ *   result.response
+ *
+ * @param {string} message User message.
+ * @returns {Promise<{response: string}>} Generated answer.
  */
 const sendMessage = async (message) => {
   if (typeof message !== "string") {
@@ -165,7 +191,7 @@ const sendMessage = async (message) => {
 
   if (normalizedMessage.length > MAX_MESSAGE_LENGTH) {
     throw new Error(
-      "Your message cannot exceed 4000 characters.",
+      "Your message cannot exceed 4000 characters."
     );
   }
 
@@ -180,7 +206,9 @@ const sendMessage = async (message) => {
       response: generatedResponse,
     };
   } catch (error) {
-    // Preserve already-normalized validation or response errors.
+    // Preserve validation errors and response-parsing errors
+    // generated by this service instead of mislabeling them
+    // as network failures.
     if (
       error instanceof TypeError ||
       (
@@ -196,23 +224,55 @@ const sendMessage = async (message) => {
       throw error;
     }
 
-    const messageText = getErrorMessage(error);
+    const normalizedError = new Error(
+      getErrorMessage(error)
+    );
 
-    const normalizedError = new Error(messageText);
     normalizedError.cause = error;
 
     throw normalizedError;
   }
 };
 
+// ----------------------------------------------------------------
+// DASHBOARD COMPATIBILITY
+// ----------------------------------------------------------------
+
 /**
- * Public AI service API.
+ * Compatibility wrapper for Dashboard.jsx.
  *
- * Keep the exported interface small and predictable so components
- * can call aiService.sendMessage(message).
+ * Dashboard.jsx expects the generated answer as a string:
+ *
+ *   const generatedResponse =
+ *     await sendAiMessage(normalizedMessage);
+ *
+ * Existing callers of sendMessage continue receiving:
+ *
+ *   { response: "Generated answer" }
+ *
+ * @param {string} message User message.
+ * @returns {Promise<string>} Generated AI answer.
  */
-const aiService = {
-  sendMessage,
+const sendAiMessage = async (message) => {
+  const result = await sendMessage(message);
+
+  return result.response;
 };
 
+// ----------------------------------------------------------------
+// PUBLIC SERVICE API
+// ----------------------------------------------------------------
+
+const aiService = {
+  sendMessage,
+  sendAiMessage,
+};
+
+// Named exports support direct function imports.
+export {
+  sendMessage,
+  sendAiMessage,
+};
+
+// Default export preserves the existing service-object interface.
 export default aiService;

@@ -1,10 +1,8 @@
-
 import {
   memo,
   useCallback,
   useEffect,
   useRef,
-  useState,
 } from "react";
 
 import {
@@ -13,492 +11,13 @@ import {
 } from "framer-motion";
 
 import {
-  FiCopy,
-  FiThumbsUp,
-  FiThumbsDown,
-  FiUser,
-  FiCheck,
   FiAlertCircle,
   FiMessageSquare,
 } from "react-icons/fi";
 
-/**
- * ================================================================
- * OrbitGuard AI — Chat Workspace
- * ================================================================
- *
- * RESPONSIBILITIES
- * - Render user and assistant messages.
- * - Display timestamps and message actions.
- * - Handle clipboard operations and response feedback.
- * - Show loading, error, and empty states.
- * - Follow new messages without interrupting users reading history.
- * - Support accessible, responsive conversation layouts.
- *
- * OUT OF SCOPE
- * - API requests and AI response generation.
- * - Conversation persistence.
- * - Backend retry implementation.
- *
- * MESSAGE CONTRACT
- * {
- *   id: string,
- *   role: "user" | "assistant",
- *   content: string,
- *   timestamp?: string | number | Date
- * }
- *
- * PROPS
- * messages: array
- * loading: boolean
- * error: string | null
- * onRetry: optional callback
- * onRateMessage: optional callback (message, rating)
- * ================================================================
- */
+import ChatMessage from "./ChatMessage";
 
-const formatTimestamp = (timestamp) => {
-  if (
-    timestamp === undefined ||
-    timestamp === null ||
-    timestamp === ""
-  ) {
-    return "";
-  }
-
-  const date =
-    timestamp instanceof Date
-      ? timestamp
-      : new Date(timestamp);
-
-  if (Number.isNaN(date.getTime())) {
-    return typeof timestamp === "string"
-      ? timestamp
-      : "";
-  }
-
-  return date.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  });
-};
-
-/**
- * ================================================================
- * MESSAGE ACTION BUTTON
- * ================================================================
- */
-
-const MessageAction = memo(function MessageAction({
-  label,
-  onClick,
-  children,
-  active = false,
-  disabled = false,
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      disabled={disabled}
-      className={`
-        inline-flex
-        h-8
-        w-8
-        shrink-0
-        items-center
-        justify-center
-        rounded-lg
-        border
-        transition-colors
-        duration-200
-        focus-visible:outline-none
-        focus-visible:ring-2
-        focus-visible:ring-cyan-300
-        disabled:cursor-not-allowed
-        disabled:opacity-40
-
-        ${
-          active
-            ? "border-cyan-400/25 bg-cyan-400/10 text-cyan-300"
-            : "border-transparent text-slate-400 hover:border-slate-700 hover:bg-white/[0.045] hover:text-cyan-300"
-        }
-      `}
-    >
-      {children}
-    </button>
-  );
-});
-
-/**
- * ================================================================
- * CHAT MESSAGE
- * ================================================================
- */
-
-const ChatMessage = memo(function ChatMessage({
-  message,
-  onRateMessage,
-}) {
-  const shouldReduceMotion = useReducedMotion();
-
-  const [copyStatus, setCopyStatus] = useState("idle");
-  const [rating, setRating] = useState(null);
-
-  const copyTimeoutRef = useRef(null);
-
-  const isUser = message?.role === "user";
-
-  const content =
-    typeof message?.content === "string"
-      ? message.content
-      : "";
-
-  const timestamp = formatTimestamp(message?.timestamp);
-
-  /**
-   * Clean up pending clipboard feedback timers.
-   */
-  useEffect(() => {
-    return () => {
-      if (copyTimeoutRef.current !== null) {
-        clearTimeout(copyTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  /**
-   * Reset message-specific UI state if the message changes.
-   */
-  useEffect(() => {
-    setCopyStatus("idle");
-    setRating(null);
-
-    if (copyTimeoutRef.current !== null) {
-      clearTimeout(copyTimeoutRef.current);
-      copyTimeoutRef.current = null;
-    }
-  }, [message?.id, content]);
-
-  /**
-   * Copy message content.
-   *
-   * Clipboard access is performed only after a user action.
-   * No clipboard data is sent to the backend.
-   */
-  const handleCopy = useCallback(async () => {
-    if (!content || copyStatus === "copying") {
-      return;
-    }
-
-    setCopyStatus("copying");
-
-    try {
-      if (
-        typeof navigator === "undefined" ||
-        !navigator.clipboard?.writeText
-      ) {
-        throw new Error(
-          "Clipboard access is unavailable in this browser context.",
-        );
-      }
-
-      await navigator.clipboard.writeText(content);
-
-      setCopyStatus("copied");
-
-      copyTimeoutRef.current = setTimeout(() => {
-        setCopyStatus("idle");
-        copyTimeoutRef.current = null;
-      }, 1800);
-    } catch (error) {
-      console.error(
-        "[OrbitGuard AI] Unable to copy message.",
-        error,
-      );
-
-      setCopyStatus("failed");
-
-      copyTimeoutRef.current = setTimeout(() => {
-        setCopyStatus("idle");
-        copyTimeoutRef.current = null;
-      }, 2200);
-    }
-  }, [content, copyStatus]);
-
-  /**
-   * Toggle response feedback.
-   */
-  const handleRating = useCallback(
-    (nextRating) => {
-      const nextValue =
-        rating === nextRating
-          ? null
-          : nextRating;
-
-      setRating(nextValue);
-
-      onRateMessage?.(message, nextValue);
-    },
-    [message, onRateMessage, rating],
-  );
-
-  return (
-    <article
-      className={`
-        flex
-        min-w-0
-        gap-2
-        sm:gap-3
-
-        ${isUser ? "justify-end" : "justify-start"}
-      `}
-      aria-label={
-        isUser
-          ? "Your message"
-          : "OrbitGuard AI response"
-      }
-    >
-      {/* ASSISTANT IDENTITY */}
-
-      {!isUser && (
-        <div
-          className="
-            flex
-            h-8
-            w-8
-            shrink-0
-            items-center
-            justify-center
-            self-start
-            rounded-xl
-            border
-            border-cyan-400/20
-            bg-[#06182a]
-            text-cyan-300
-            shadow-[0_0_16px_rgba(34,211,238,0.05)]
-            sm:h-9
-            sm:w-9
-          "
-          aria-hidden="true"
-        >
-          <span
-            className="
-              font-['Orbitron']
-              text-[11px]
-              font-bold
-              tracking-tight
-            "
-          >
-            OG
-          </span>
-        </div>
-      )}
-
-      {/* MESSAGE CONTENT */}
-
-      <div
-        className={`
-          flex
-          min-w-0
-          max-w-[calc(100%-2.5rem)]
-          flex-col
-
-          sm:max-w-[88%]
-          lg:max-w-[82%]
-
-          ${isUser ? "items-end" : "items-start"}
-        `}
-      >
-        {/* MESSAGE BUBBLE */}
-
-        <div
-          className={`
-            min-w-0
-            max-w-full
-            overflow-hidden
-            rounded-2xl
-            border
-            px-3.5
-            py-3
-            sm:px-4
-            sm:py-3.5
-
-            ${
-              isUser
-                ? "rounded-br-md border-cyan-400/20 bg-gradient-to-br from-[#075985]/90 to-[#123b64]/95 text-slate-100 shadow-[0_5px_20px_rgba(0,0,0,0.12)]"
-                : "rounded-tl-md border-slate-700/65 bg-gradient-to-br from-[#101e30]/95 to-[#091523]/95 text-slate-200 shadow-[0_6px_24px_rgba(0,0,0,0.12)]"
-            }
-          `}
-        >
-          {content ? (
-            <p
-              className="
-                whitespace-pre-wrap
-                break-words
-                [overflow-wrap:anywhere]
-                font-['Inter']
-                text-[12px]
-                leading-[1.75]
-                sm:text-[13px]
-                sm:leading-[1.8]
-              "
-            >
-              {content}
-            </p>
-          ) : (
-            <p className="font-['Inter'] text-xs leading-5 text-slate-400">
-              No message content available.
-            </p>
-          )}
-        </div>
-
-        {/* TIMESTAMP AND ACTIONS */}
-
-        <div
-          className={`
-            mt-1.5
-            flex
-            min-h-8
-            w-full
-            min-w-0
-            flex-wrap
-            items-center
-            gap-1.5
-
-            ${
-              isUser
-                ? "justify-end"
-                : "justify-between"
-            }
-          `}
-        >
-          {timestamp ? (
-            <time
-              dateTime={
-                message.timestamp instanceof Date
-                  ? message.timestamp.toISOString()
-                  : typeof message.timestamp === "number" ||
-                      (typeof message.timestamp === "string" &&
-                        !Number.isNaN(
-                          Date.parse(message.timestamp),
-                        ))
-                    ? new Date(
-                        message.timestamp,
-                      ).toISOString()
-                    : undefined
-              }
-              className="
-                px-1
-                font-['Inter']
-                text-[10px]
-                tabular-nums
-                text-slate-500
-              "
-            >
-              {timestamp}
-            </time>
-          ) : (
-            <span />
-          )}
-
-          {!isUser && (
-            <div
-              className="flex shrink-0 items-center gap-0.5"
-              aria-label="Response actions"
-            >
-              <MessageAction
-                label={
-                  copyStatus === "copied"
-                    ? "Message copied"
-                    : copyStatus === "failed"
-                      ? "Copy failed; try again"
-                      : "Copy message"
-                }
-                onClick={handleCopy}
-                active={copyStatus === "copied"}
-                disabled={
-                  !content || copyStatus === "copying"
-                }
-              >
-                {copyStatus === "copied" ? (
-                  <FiCheck
-                    aria-hidden="true"
-                    className="h-3.5 w-3.5"
-                  />
-                ) : (
-                  <FiCopy
-                    aria-hidden="true"
-                    className="h-3.5 w-3.5"
-                  />
-                )}
-              </MessageAction>
-
-              <MessageAction
-                label="Helpful response"
-                onClick={() => handleRating("positive")}
-                active={rating === "positive"}
-              >
-                <FiThumbsUp
-                  aria-hidden="true"
-                  className="h-3.5 w-3.5"
-                />
-              </MessageAction>
-
-              <MessageAction
-                label="Unhelpful response"
-                onClick={() => handleRating("negative")}
-                active={rating === "negative"}
-              >
-                <FiThumbsDown
-                  aria-hidden="true"
-                  className="h-3.5 w-3.5"
-                />
-              </MessageAction>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* USER IDENTITY */}
-
-      {isUser && (
-        <div
-          className="
-            flex
-            h-8
-            w-8
-            shrink-0
-            items-center
-            justify-center
-            self-start
-            rounded-full
-            border
-            border-cyan-400/20
-            bg-[#0b2740]
-            text-sky-300
-            sm:h-9
-            sm:w-9
-          "
-          aria-hidden="true"
-        >
-          <FiUser className="h-4 w-4" />
-        </div>
-      )}
-    </article>
-  );
-});
-
-ChatMessage.displayName = "ChatMessage";
-
-/**
- * ================================================================
- * ASSISTANT TYPING INDICATOR
- * ================================================================
- */
+const ORBITGUARD_LOGO = "/images/branding/orbitguard-mark.png";
 
 const AssistantTypingIndicator = memo(
   function AssistantTypingIndicator() {
@@ -510,6 +29,7 @@ const AssistantTypingIndicator = memo(
         role="status"
         aria-label="OrbitGuard AI is generating a response"
       >
+        {/* OrbitGuard logo replaces the OG text badge */}
         <div
           className="
             flex
@@ -518,20 +38,23 @@ const AssistantTypingIndicator = memo(
             shrink-0
             items-center
             justify-center
+            overflow-hidden
             rounded-xl
             border
             border-cyan-400/20
             bg-[#06182a]
-            font-['Orbitron']
-            text-[11px]
-            font-bold
-            text-cyan-300
+            p-1
             sm:h-9
             sm:w-9
           "
-          aria-hidden="true"
         >
-          OG
+          <img
+            src={ORBITGUARD_LOGO}
+            alt=""
+            aria-hidden="true"
+            className="h-full w-full object-contain"
+            draggable="false"
+          />
         </div>
 
         <div
@@ -572,9 +95,7 @@ const AssistantTypingIndicator = memo(
                 }
                 transition={{
                   duration: 0.9,
-                  repeat: shouldReduceMotion
-                    ? 0
-                    : Infinity,
+                  repeat: shouldReduceMotion ? 0 : Infinity,
                   delay: dot * 0.15,
                 }}
               />
@@ -586,14 +107,7 @@ const AssistantTypingIndicator = memo(
   },
 );
 
-AssistantTypingIndicator.displayName =
-  "AssistantTypingIndicator";
-
-/**
- * ================================================================
- * CHAT WORKSPACE
- * ================================================================
- */
+AssistantTypingIndicator.displayName = "AssistantTypingIndicator";
 
 const ChatWorkspace = memo(function ChatWorkspace({
   messages = [],
@@ -606,12 +120,6 @@ const ChatWorkspace = memo(function ChatWorkspace({
 
   const scrollContainerRef = useRef(null);
   const bottomAnchorRef = useRef(null);
-
-  /**
-   * Remember whether the user was near the bottom BEFORE
-   * messages change. This avoids calculating against the
-   * already-expanded scroll height after rendering new messages.
-   */
   const shouldFollowRef = useRef(true);
 
   const validMessages = Array.isArray(messages)
@@ -619,37 +127,31 @@ const ChatWorkspace = memo(function ChatWorkspace({
         (message) =>
           message &&
           (message.role === "user" ||
-            message.role === "assistant"),
+            message.role === "assistant") &&
+          typeof message.content === "string",
       )
     : [];
 
-  /**
-   * Track user scroll intent.
-   */
+  const normalizedError =
+    typeof error === "string" && error.trim()
+      ? error.trim()
+      : null;
+
   const handleScroll = useCallback(() => {
     const container = scrollContainerRef.current;
 
-    if (!container) {
-      return;
-    }
+    if (!container) return;
 
     const distanceFromBottom =
       container.scrollHeight -
       container.scrollTop -
       container.clientHeight;
 
-    shouldFollowRef.current =
-      distanceFromBottom < 160;
+    shouldFollowRef.current = distanceFromBottom < 160;
   }, []);
 
-  /**
-   * Follow new messages only when the user was already
-   * near the bottom. Reading older messages is not interrupted.
-   */
   useEffect(() => {
-    if (!shouldFollowRef.current) {
-      return;
-    }
+    if (!shouldFollowRef.current) return;
 
     bottomAnchorRef.current?.scrollIntoView({
       behavior: shouldReduceMotion ? "auto" : "smooth",
@@ -658,7 +160,7 @@ const ChatWorkspace = memo(function ChatWorkspace({
   }, [
     validMessages.length,
     loading,
-    error,
+    normalizedError,
     shouldReduceMotion,
   ]);
 
@@ -675,10 +177,7 @@ const ChatWorkspace = memo(function ChatWorkspace({
         overflow-hidden
       "
     >
-      {/* ======================================================
-          MESSAGE HISTORY
-          ====================================================== */}
-
+      {/* MESSAGE HISTORY */}
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
@@ -715,7 +214,6 @@ const ChatWorkspace = memo(function ChatWorkspace({
           "
         >
           {/* EMPTY STATE */}
-
           {validMessages.length === 0 && !loading && (
             <div
               className="
@@ -784,22 +282,15 @@ const ChatWorkspace = memo(function ChatWorkspace({
           )}
 
           {/* MESSAGES */}
-
           {validMessages.map((message, index) => (
             <motion.div
-              key={
-                message.id ??
-                `${message.role}-${index}`
-              }
+              key={message.id ?? `${message.role}-${index}`}
               initial={
                 shouldReduceMotion
                   ? false
                   : { opacity: 0, y: 8 }
               }
-              animate={{
-                opacity: 1,
-                y: 0,
-              }}
+              animate={{ opacity: 1, y: 0 }}
               transition={{
                 duration: shouldReduceMotion ? 0 : 0.25,
               }}
@@ -813,12 +304,10 @@ const ChatWorkspace = memo(function ChatWorkspace({
           ))}
 
           {/* LOADING */}
-
           {loading && <AssistantTypingIndicator />}
 
           {/* ERROR */}
-
-          {error && (
+          {normalizedError && (
             <div
               role="alert"
               className="
@@ -860,7 +349,7 @@ const ChatWorkspace = memo(function ChatWorkspace({
                     text-red-200
                   "
                 >
-                  {error}
+                  {normalizedError}
                 </p>
               </div>
 
@@ -868,6 +357,7 @@ const ChatWorkspace = memo(function ChatWorkspace({
                 <button
                   type="button"
                   onClick={onRetry}
+                  disabled={loading}
                   className="
                     min-h-9
                     shrink-0
@@ -885,6 +375,8 @@ const ChatWorkspace = memo(function ChatWorkspace({
                     focus-visible:outline-none
                     focus-visible:ring-2
                     focus-visible:ring-red-300
+                    disabled:cursor-not-allowed
+                    disabled:opacity-50
                     sm:self-center
                   "
                 >
@@ -895,7 +387,6 @@ const ChatWorkspace = memo(function ChatWorkspace({
           )}
 
           {/* SCROLL ANCHOR */}
-
           <div
             ref={bottomAnchorRef}
             aria-hidden="true"

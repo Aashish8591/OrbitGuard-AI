@@ -1,8 +1,8 @@
-
 import {
   memo,
   useCallback,
   useEffect,
+  useRef,
   useState,
 } from "react";
 
@@ -14,39 +14,11 @@ import {
   FiCheck,
 } from "react-icons/fi";
 
-/**
- * ================================================================
- * OrbitGuard AI — Chat Message
- * ================================================================
- *
- * Renders one message in the AI conversation.
- *
- * Responsibilities:
- * - Display user or assistant message content.
- * - Display optional timestamps.
- * - Provide assistant message copy and feedback actions.
- * - Preserve readable text wrapping on all screen sizes.
- *
- * This component does not:
- * - Make API requests.
- * - Generate AI responses.
- * - Manage the conversation history.
- * - Persist feedback.
- *
- * Expected message:
- * {
- *   id: string,
- *   role: "user" | "assistant",
- *   content: string,
- *   timestamp?: string | number | Date
- * }
- *
- * Optional callback:
- * onRateMessage(message, rating)
- *
- * rating: "positive" | "negative" | null
- * ================================================================
- */
+// ================================================================
+// OrbitGuard AI — Chat Message
+// ================================================================
+
+const LOGO_PATH = "/images/branding/orbitguard-mark.png";
 
 const formatTimestamp = (timestamp) => {
   if (
@@ -63,9 +35,7 @@ const formatTimestamp = (timestamp) => {
       : new Date(timestamp);
 
   if (Number.isNaN(date.getTime())) {
-    return typeof timestamp === "string"
-      ? timestamp
-      : "";
+    return typeof timestamp === "string" ? timestamp : "";
   }
 
   return date.toLocaleTimeString([], {
@@ -75,16 +45,35 @@ const formatTimestamp = (timestamp) => {
   });
 };
 
-/**
- * ================================================================
- * MESSAGE ACTION BUTTON
- * ================================================================
- */
+const toDateTime = (timestamp) => {
+  if (
+    timestamp === undefined ||
+    timestamp === null ||
+    timestamp === ""
+  ) {
+    return undefined;
+  }
+
+  const date =
+    timestamp instanceof Date
+      ? timestamp
+      : new Date(timestamp);
+
+  return Number.isNaN(date.getTime())
+    ? undefined
+    : date.toISOString();
+};
+
+// ================================================================
+// Message action button
+// ================================================================
 
 const MessageAction = memo(function MessageAction({
   label,
   onClick,
   active = false,
+  disabled = false,
+  children,
 }) {
   return (
     <button
@@ -92,6 +81,7 @@ const MessageAction = memo(function MessageAction({
       aria-label={label}
       title={label}
       onClick={onClick}
+      disabled={disabled}
       className={`
         inline-flex
         h-8
@@ -106,6 +96,8 @@ const MessageAction = memo(function MessageAction({
         focus-visible:outline-none
         focus-visible:ring-2
         focus-visible:ring-cyan-300
+        disabled:cursor-not-allowed
+        disabled:opacity-40
         ${
           active
             ? "border-cyan-400/25 bg-cyan-400/10 text-cyan-300"
@@ -113,46 +105,25 @@ const MessageAction = memo(function MessageAction({
         }
       `}
     >
-      {label === "Copy message" ||
-      label === "Message copied" ? (
-        active ? (
-          <FiCheck
-            aria-hidden="true"
-            className="h-3.5 w-3.5"
-          />
-        ) : (
-          <FiCopy
-            aria-hidden="true"
-            className="h-3.5 w-3.5"
-          />
-        )
-      ) : label === "Helpful response" ? (
-        <FiThumbsUp
-          aria-hidden="true"
-          className="h-3.5 w-3.5"
-        />
-      ) : (
-        <FiThumbsDown
-          aria-hidden="true"
-          className="h-3.5 w-3.5"
-        />
-      )}
+      {children}
     </button>
   );
 });
 
-/**
- * ================================================================
- * CHAT MESSAGE
- * ================================================================
- */
+MessageAction.displayName = "MessageAction";
+
+// ================================================================
+// Chat message
+// ================================================================
 
 const ChatMessage = memo(function ChatMessage({
   message,
   onRateMessage,
 }) {
-  const [copied, setCopied] = useState(false);
+  const [copyStatus, setCopyStatus] = useState("idle");
   const [rating, setRating] = useState(null);
+
+  const copyTimeoutRef = useRef(null);
 
   const isUser = message?.role === "user";
 
@@ -161,76 +132,94 @@ const ChatMessage = memo(function ChatMessage({
       ? message.content
       : "";
 
-  const timestamp = formatTimestamp(
-    message?.timestamp,
-  );
+  const timestamp = formatTimestamp(message?.timestamp);
+  const dateTime = toDateTime(message?.timestamp);
 
-  /**
-   * Reset local interaction state when the displayed message
-   * changes. This does not modify the message itself.
-   */
+  // Reset message-specific UI state when the displayed message changes.
   useEffect(() => {
-    setCopied(false);
+    setCopyStatus("idle");
     setRating(null);
+
+    return () => {
+      if (copyTimeoutRef.current !== null) {
+        clearTimeout(copyTimeoutRef.current);
+        copyTimeoutRef.current = null;
+      }
+    };
   }, [message?.id, content]);
 
-  /**
-   * Copy the current message using the browser Clipboard API.
-   */
+  // --------------------------------------------------------------
+  // Copy message
+  // --------------------------------------------------------------
+
   const handleCopy = useCallback(async () => {
-    if (!content) {
+    if (!content || copyStatus === "copying") {
       return;
     }
 
+    if (copyTimeoutRef.current !== null) {
+      clearTimeout(copyTimeoutRef.current);
+      copyTimeoutRef.current = null;
+    }
+
+    setCopyStatus("copying");
+
     try {
       if (
+        typeof navigator === "undefined" ||
         !navigator.clipboard?.writeText
       ) {
-        throw new Error(
-          "Clipboard access is not available in this browser.",
-        );
+        throw new Error("Clipboard access is unavailable.");
       }
 
-      await navigator.clipboard.writeText(
-        content,
-      );
+      await navigator.clipboard.writeText(content);
 
-      setCopied(true);
+      setCopyStatus("copied");
+
+      copyTimeoutRef.current = setTimeout(() => {
+        setCopyStatus("idle");
+        copyTimeoutRef.current = null;
+      }, 1800);
     } catch (error) {
       console.error(
-        "[OrbitGuard AI] Failed to copy message.",
+        "[OrbitGuard AI] Unable to copy message.",
         error,
       );
-    }
-  }, [content]);
 
-  /**
-   * Update local feedback state and notify the parent.
-   * No feedback API is assumed or called here.
-   */
+      setCopyStatus("failed");
+
+      copyTimeoutRef.current = setTimeout(() => {
+        setCopyStatus("idle");
+        copyTimeoutRef.current = null;
+      }, 2200);
+    }
+  }, [content, copyStatus]);
+
+  // --------------------------------------------------------------
+  // Message feedback
+  // --------------------------------------------------------------
+
   const handleRating = useCallback(
     (nextRating) => {
       const nextValue =
-        rating === nextRating
-          ? null
-          : nextRating;
+        rating === nextRating ? null : nextRating;
 
       setRating(nextValue);
 
-      onRateMessage?.(
-        message,
-        nextValue,
-      );
+      // The parent owns any backend persistence.
+      onRateMessage?.(message, nextValue);
     },
     [message, onRateMessage, rating],
   );
 
+  // --------------------------------------------------------------
+  // Render
+  // --------------------------------------------------------------
+
   return (
     <article
       aria-label={
-        isUser
-          ? "Your message"
-          : "OrbitGuard AI response"
+        isUser ? "Your message" : "OrbitGuard AI response"
       }
       className={`
         flex
@@ -239,17 +228,10 @@ const ChatMessage = memo(function ChatMessage({
         items-start
         gap-2
         sm:gap-3
-        ${
-          isUser
-            ? "justify-end"
-            : "justify-start"
-        }
+        ${isUser ? "justify-end" : "justify-start"}
       `}
     >
-      {/* ========================================================
-          ORBITGUARD AI IDENTITY
-          ======================================================== */}
-
+      {/* OrbitGuard logo for completed assistant messages */}
       {!isUser && (
         <div
           className="
@@ -266,6 +248,7 @@ const ChatMessage = memo(function ChatMessage({
             border
             border-cyan-400/20
             bg-[#071526]
+            p-1
             shadow-[0_0_15px_rgba(34,211,238,0.06)]
             sm:h-10
             sm:w-10
@@ -285,44 +268,34 @@ const ChatMessage = memo(function ChatMessage({
             "
           />
 
-          <span
+          <img
+            src={LOGO_PATH}
+            alt=""
             aria-hidden="true"
+            draggable="false"
             className="
               relative
-              font-['Orbitron']
-              text-[10px]
-              font-bold
-              tracking-[-0.08em]
-              text-cyan-300
-              sm:text-xs
+              z-10
+              h-full
+              w-full
+              object-contain
             "
-          >
-            OG
-          </span>
+          />
         </div>
       )}
 
-      {/* ========================================================
-          MESSAGE BODY
-          ======================================================== */}
-
+      {/* Message content */}
       <div
         className={`
           flex
           min-w-0
           max-w-[calc(100%-2.75rem)]
           flex-col
-          ${
-            isUser
-              ? "items-end"
-              : "items-start"
-          }
           sm:max-w-[88%]
           lg:max-w-[82%]
+          ${isUser ? "items-end" : "items-start"}
         `}
       >
-        {/* Message bubble */}
-
         <div
           className={`
             w-fit
@@ -358,10 +331,7 @@ const ChatMessage = memo(function ChatMessage({
           </p>
         </div>
 
-        {/* ======================================================
-            TIMESTAMP AND MESSAGE ACTIONS
-            ====================================================== */}
-
+        {/* Timestamp and assistant actions */}
         <div
           className={`
             mt-1
@@ -379,24 +349,22 @@ const ChatMessage = memo(function ChatMessage({
             }
           `}
         >
-          <time
-            className="
-              px-1
-              font-['Inter']
-              text-[9px]
-              tabular-nums
-              text-slate-500
-            "
-            dateTime={
-              message?.timestamp
-                ? new Date(
-                    message.timestamp,
-                  ).toISOString?.() ?? undefined
-                : undefined
-            }
-          >
-            {timestamp}
-          </time>
+          {timestamp ? (
+            <time
+              dateTime={dateTime}
+              className="
+                px-1
+                font-['Inter']
+                text-[9px]
+                tabular-nums
+                text-slate-500
+              "
+            >
+              {timestamp}
+            </time>
+          ) : (
+            <span aria-hidden="true" />
+          )}
 
           {!isUser && (
             <div
@@ -405,38 +373,66 @@ const ChatMessage = memo(function ChatMessage({
             >
               <MessageAction
                 label={
-                  copied
+                  copyStatus === "copied"
                     ? "Message copied"
-                    : "Copy message"
+                    : copyStatus === "failed"
+                      ? "Copy failed; try again"
+                      : "Copy message"
                 }
-                active={copied}
+                active={copyStatus === "copied"}
+                disabled={
+                  !content || copyStatus === "copying"
+                }
                 onClick={handleCopy}
-              />
+              >
+                {copyStatus === "copied" ? (
+                  <FiCheck
+                    aria-hidden="true"
+                    className="h-3.5 w-3.5"
+                  />
+                ) : (
+                  <FiCopy
+                    aria-hidden="true"
+                    className="h-3.5 w-3.5"
+                  />
+                )}
+              </MessageAction>
 
               <MessageAction
-                label="Helpful response"
+                label={
+                  rating === "positive"
+                    ? "Remove helpful rating"
+                    : "Helpful response"
+                }
                 active={rating === "positive"}
-                onClick={() =>
-                  handleRating("positive")
-                }
-              />
+                onClick={() => handleRating("positive")}
+              >
+                <FiThumbsUp
+                  aria-hidden="true"
+                  className="h-3.5 w-3.5"
+                />
+              </MessageAction>
 
               <MessageAction
-                label="Unhelpful response"
-                active={rating === "negative"}
-                onClick={() =>
-                  handleRating("negative")
+                label={
+                  rating === "negative"
+                    ? "Remove unhelpful rating"
+                    : "Unhelpful response"
                 }
-              />
+                active={rating === "negative"}
+                onClick={() => handleRating("negative")}
+              >
+                <FiThumbsDown
+                  aria-hidden="true"
+                  className="h-3.5 w-3.5"
+                />
+              </MessageAction>
             </div>
           )}
         </div>
       </div>
 
-      {/* ========================================================
-          USER AVATAR
-          ======================================================== */}
-
+      {/* User avatar remains unchanged */}
       {isUser && (
         <div
           className="

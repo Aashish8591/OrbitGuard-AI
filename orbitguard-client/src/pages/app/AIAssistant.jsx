@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useRef,
   useState,
 } from "react";
 
@@ -26,8 +27,7 @@ import CapabilitiesPanel from "../../features/ai/components/CapabilitiesPanel";
 import ProfessionalGuidance from "../../features/ai/components/ProfessionalGuidance";
 import ProtectedBackground from "../../components/common/ProtectedBackground";
 
-const EMPTY_MESSAGES = [];
-const EMPTY_CONVERSATIONS = [];
+import aiService from "../../services/aiService";
 
 const PAGE_VARIANTS = {
   hidden: { opacity: 0 },
@@ -41,28 +41,116 @@ const PAGE_VARIANTS = {
 };
 
 const NAVBAR_HEIGHT = 68;
+const MIN_MESSAGE_LENGTH = 2;
+const MAX_MESSAGE_LENGTH = 4000;
+const MAX_TITLE_LENGTH = 48;
+const MAX_PREVIEW_LENGTH = 100;
+
+const createMessageId = (prefix) => {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+
+  return `${prefix}-${Date.now()}-${Math.random()
+    .toString(36)
+    .slice(2)}`;
+};
+
+const createConversationTitle = (message) => {
+  const text = message.replace(/\s+/g, " ").trim();
+
+  return text.length > MAX_TITLE_LENGTH
+    ? `${text.slice(0, MAX_TITLE_LENGTH - 1).trimEnd()}…`
+    : text;
+};
+
+const createPreview = (message) => {
+  const text = message.replace(/\s+/g, " ").trim();
+
+  return text.length > MAX_PREVIEW_LENGTH
+    ? `${text.slice(0, MAX_PREVIEW_LENGTH - 1).trimEnd()}…`
+    : text;
+};
+
+const formatConversationTime = (timestamp) => {
+  if (!timestamp) return "";
+
+  const date = new Date(timestamp);
+
+  if (Number.isNaN(date.getTime())) return "";
+
+  const now = new Date();
+
+  const isToday =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+
+  return isToday
+    ? date.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : date.toLocaleDateString([], {
+        month: "short",
+        day: "numeric",
+      });
+};
+
+const getChatErrorMessage = (error) => {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+
+  return "Unable to contact OrbitGuard AI. Please try again.";
+};
 
 const AIAssistant = () => {
   const reduceMotion = useReducedMotion();
   const instanceId = useId();
 
   // ------------------------------------------------------------
-  // UI state
+  // State
   // ------------------------------------------------------------
 
-  const [messages, setMessages] = useState(EMPTY_MESSAGES);
+  const [conversations, setConversations] = useState([]);
+
+  // Single source of truth for all conversation messages.
+  // Each conversation owns its own message array.
+  const [messagesByConversation, setMessagesByConversation] =
+    useState({});
+
   const [activeConversationId, setActiveConversationId] =
     useState(null);
+
   const [selectedTopic, setSelectedTopic] = useState(null);
   const [chatNotice, setChatNotice] = useState("");
   const [mobileDrawer, setMobileDrawer] = useState(null);
 
-  // Backend integration is not connected in this component yet.
-  const chatLoading = false;
-  const conversations = EMPTY_CONVERSATIONS;
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatError, setChatError] = useState(null);
+  const [failedMessage, setFailedMessage] = useState(null);
 
-  const conversationsDrawerId = `conversations-${instanceId}`;
-  const resourcesDrawerId = `resources-${instanceId}`;
+  // Prevent two requests from being submitted simultaneously.
+  const requestInProgressRef = useRef(false);
+
+  // A response may update the UI only if its request is still current.
+  const currentRequestIdRef = useRef(null);
+
+  const conversationsDrawerId =
+    `conversations-${instanceId}`;
+
+  const resourcesDrawerId =
+    `resources-${instanceId}`;
+
+  // Derive the displayed transcript from the active conversation.
+  // Do not maintain a second, independently updated messages state.
+  const messages = activeConversationId
+    ? messagesByConversation[activeConversationId] || []
+    : [];
 
   // ------------------------------------------------------------
   // Mobile drawer behavior
@@ -108,33 +196,128 @@ const AIAssistant = () => {
   }, []);
 
   // ------------------------------------------------------------
-  // Conversation actions
+  // Append a message exactly once to its conversation
+  // ------------------------------------------------------------
+
+  const appendMessageToConversation = useCallback(
+    (conversationId, message) => {
+      setMessagesByConversation((current) => {
+        const previous = current[conversationId] || [];
+
+        // This updater is deliberately pure.
+        // Do not call another state setter inside this updater.
+        return {
+          ...current,
+          [conversationId]: [...previous, message],
+        };
+      });
+    },
+    [],
+  );
+
+  // ------------------------------------------------------------
+  // Recent conversation metadata
+  // ------------------------------------------------------------
+
+  const updateConversation = useCallback(
+    (conversationId, message, isFirstMessage = false) => {
+      const timestamp =
+        message.timestamp || new Date().toISOString();
+
+      setConversations((current) => {
+        const exists = current.some(
+          (conversation) =>
+            String(conversation.id) === String(conversationId),
+        );
+
+        let updated;
+
+        if (exists) {
+          updated = current.map((conversation) =>
+            String(conversation.id) === String(conversationId)
+              ? {
+                  ...conversation,
+                  preview: createPreview(message.content),
+                  timestamp: formatConversationTime(timestamp),
+                  updatedAt: timestamp,
+                }
+              : conversation,
+          );
+        } else {
+          // Only a user message should create a conversation.
+          if (!isFirstMessage) {
+            return current;
+          }
+
+          updated = [
+            {
+              id: conversationId,
+              title: createConversationTitle(message.content),
+              preview: createPreview(message.content),
+              timestamp: formatConversationTime(timestamp),
+              updatedAt: timestamp,
+            },
+            ...current,
+          ];
+        }
+
+        return updated.sort(
+          (a, b) =>
+            new Date(b.updatedAt || 0).getTime() -
+            new Date(a.updatedAt || 0).getTime(),
+        );
+      });
+    },
+    [],
+  );
+
+  // ------------------------------------------------------------
+  // Start a new conversation
   // ------------------------------------------------------------
 
   const handleNewChat = useCallback(() => {
-    setMessages([]);
+    // Invalidate any response belonging to the previous view.
+    currentRequestIdRef.current = null;
+
     setActiveConversationId(null);
     setSelectedTopic(null);
     setChatNotice("");
+    setChatError(null);
+    setFailedMessage(null);
     setMobileDrawer(null);
-  }, []);
 
-  const handleSelectConversation = useCallback((conversation) => {
-    if (!conversation?.id) {
-      return;
-    }
-
-    setActiveConversationId(conversation.id);
-
-    setChatNotice(
-      "Conversation history will be available after backend integration.",
-    );
-
-    setMobileDrawer(null);
+    // Keep previous conversations and their messages intact.
+    // The next message will create a new conversation ID.
   }, []);
 
   // ------------------------------------------------------------
-  // Suggested-question action
+  // Select a conversation
+  // ------------------------------------------------------------
+
+  const handleSelectConversation = useCallback((conversation) => {
+    if (
+      !conversation ||
+      conversation.id === undefined ||
+      conversation.id === null
+    ) {
+      return;
+    }
+
+    currentRequestIdRef.current = null;
+
+    setActiveConversationId(String(conversation.id));
+    setSelectedTopic(null);
+    setChatError(null);
+    setChatNotice("");
+    setFailedMessage(null);
+    setMobileDrawer(null);
+
+    // `messages` automatically changes to the selected
+    // conversation's transcript through derived state.
+  }, []);
+
+  // ------------------------------------------------------------
+  // Suggested questions
   // ------------------------------------------------------------
 
   const handleSelectQuestion = useCallback((question) => {
@@ -155,44 +338,199 @@ const AIAssistant = () => {
 
     setSelectedTopic(questionText.trim());
     setChatNotice("");
+    setChatError(null);
     setMobileDrawer(null);
   }, []);
 
   // ------------------------------------------------------------
-  // UI-only message submission
+  // Submit a message
   // ------------------------------------------------------------
 
-  const handleSendMessage = useCallback((message) => {
-    const normalizedMessage =
-      typeof message === "string" ? message.trim() : "";
+  const submitMessage = useCallback(
+    async (rawMessage, options = {}) => {
+      const {
+        isRetry = false,
+        retryConversationId = null,
+      } = options;
 
-    if (!normalizedMessage) {
+      const normalizedMessage =
+        typeof rawMessage === "string"
+          ? rawMessage.trim()
+          : "";
+
+      if (
+        normalizedMessage.length < MIN_MESSAGE_LENGTH ||
+        normalizedMessage.length > MAX_MESSAGE_LENGTH
+      ) {
+        setChatError(
+          `Enter a message between ${MIN_MESSAGE_LENGTH} and ${MAX_MESSAGE_LENGTH} characters.`,
+        );
+        setChatNotice("");
+        return;
+      }
+
+      if (requestInProgressRef.current) {
+        return;
+      }
+
+      requestInProgressRef.current = true;
+
+      const requestId = createMessageId("request");
+
+      currentRequestIdRef.current = requestId;
+
+      // Reuse the original conversation for retries.
+      // A normal submission creates a conversation only when needed.
+      const conversationId = String(
+        isRetry
+          ? retryConversationId
+          : activeConversationId || createMessageId("conversation"),
+      );
+
+      setChatLoading(true);
+      setChatError(null);
+      setChatNotice("");
+      setSelectedTopic(null);
+
+      if (!isRetry) {
+        const timestamp = new Date().toISOString();
+
+        const userMessage = {
+          id: createMessageId("user"),
+          role: "user",
+          content: normalizedMessage,
+          timestamp,
+        };
+
+        // Set the active ID first. The transcript is derived from it.
+        setActiveConversationId(conversationId);
+
+        // Append the user message once to the single source of truth.
+        appendMessageToConversation(
+          conversationId,
+          userMessage,
+        );
+
+        // Update the sidebar independently of the message transcript.
+        updateConversation(
+          conversationId,
+          userMessage,
+          true,
+        );
+
+        setFailedMessage(null);
+      }
+
+      try {
+        // Existing backend contract:
+        // POST /api/ai/chat
+        // Request:  { message: "..." }
+        // Response: { response: "Generated AI answer..." }
+        const result = await aiService.sendMessage(
+          normalizedMessage,
+        );
+
+        const answer =
+          typeof result?.response === "string"
+            ? result.response.trim()
+            : "";
+
+        if (!answer) {
+          throw new Error(
+            "OrbitGuard AI returned an empty answer. Please try again.",
+          );
+        }
+
+        // Ignore an old response after a conversation switch or
+        // after the user starts a new chat.
+        if (currentRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        const assistantMessage = {
+          id: createMessageId("assistant"),
+          role: "assistant",
+          content: answer,
+          timestamp: new Date().toISOString(),
+        };
+
+        // The assistant response is appended once, in one place.
+        appendMessageToConversation(
+          conversationId,
+          assistantMessage,
+        );
+
+        updateConversation(
+          conversationId,
+          assistantMessage,
+        );
+
+        setFailedMessage(null);
+        setChatError(null);
+      } catch (error) {
+        console.error(
+          "[OrbitGuard AI] Message request failed:",
+          error,
+        );
+
+        if (currentRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        setFailedMessage({
+          content: normalizedMessage,
+          conversationId,
+        });
+
+        setChatError(getChatErrorMessage(error));
+      } finally {
+        requestInProgressRef.current = false;
+
+        if (currentRequestIdRef.current === requestId) {
+          setChatLoading(false);
+        }
+      }
+    },
+    [
+      activeConversationId,
+      appendMessageToConversation,
+      updateConversation,
+    ],
+  );
+
+  const handleSendMessage = useCallback(
+    async (message) => {
+      await submitMessage(message);
+    },
+    [submitMessage],
+  );
+
+  // ------------------------------------------------------------
+  // Retry without adding the user message again
+  // ------------------------------------------------------------
+
+  const handleRetry = useCallback(async () => {
+    if (
+      !failedMessage ||
+      requestInProgressRef.current
+    ) {
       return;
     }
 
-    const messageId =
-      typeof crypto !== "undefined" &&
-      typeof crypto.randomUUID === "function"
-        ? crypto.randomUUID()
-        : `user-${Date.now()}-${Math.random()
-            .toString(36)
-            .slice(2)}`;
+    const { content, conversationId } = failedMessage;
 
-    setMessages((currentMessages) => [
-      ...currentMessages,
-      {
-        id: messageId,
-        role: "user",
-        content: normalizedMessage,
-      },
-    ]);
+    // Invalidate the previous failed request before retrying.
+    currentRequestIdRef.current = null;
 
-    setSelectedTopic(null);
+    setActiveConversationId(conversationId);
+    setChatError(null);
+    setChatNotice("");
 
-    setChatNotice(
-      "Your message is displayed locally. Connect the AI backend to receive a real response.",
-    );
-  }, []);
+    await submitMessage(content, {
+      isRetry: true,
+      retryConversationId: conversationId,
+    });
+  }, [failedMessage, submitMessage]);
 
   // ------------------------------------------------------------
   // Animation
@@ -345,7 +683,6 @@ const AIAssistant = () => {
                 xl:hidden
               "
             >
-              {/* Open recent conversations */}
               <button
                 type="button"
                 onClick={() => toggleDrawer("conversations")}
@@ -374,7 +711,6 @@ const AIAssistant = () => {
                 )}
               </button>
 
-              {/* Open assistant resources */}
               <button
                 type="button"
                 onClick={() => toggleDrawer("resources")}
@@ -470,23 +806,19 @@ const AIAssistant = () => {
             <ChatWorkspace
               messages={messages}
               loading={chatLoading}
-              error={null}
-              onRetry={() =>
-                setChatNotice(
-                  "Retry will be available after backend integration.",
-                )
-              }
+              error={chatError}
+              onRetry={handleRetry}
               onRateMessage={() => {
-                // Message feedback persistence is not implemented.
+                // Feedback persistence requires a verified backend endpoint.
               }}
             />
           </div>
 
-          {/* Status remains outside the message scroller */}
-          {chatNotice && (
+          {/* Request error/notice */}
+          {(chatNotice || chatError) && (
             <div
-              role="status"
-              aria-live="polite"
+              role={chatError ? "alert" : "status"}
+              aria-live={chatError ? "assertive" : "polite"}
               className="
                 flex min-w-0 shrink-0 items-start gap-2
                 rounded-lg border border-cyan-400/15
@@ -504,12 +836,15 @@ const AIAssistant = () => {
               />
 
               <span className="min-w-0 flex-1 break-words">
-                {chatNotice}
+                {chatError || chatNotice}
               </span>
 
               <button
                 type="button"
-                onClick={() => setChatNotice("")}
+                onClick={() => {
+                  setChatNotice("");
+                  setChatError(null);
+                }}
                 aria-label="Dismiss notification"
                 className="
                   shrink-0 rounded px-1 text-slate-500
@@ -567,7 +902,7 @@ const AIAssistant = () => {
         </aside>
       </div>
 
-      {/* Mobile backdrop: starts below the application navbar */}
+      {/* Mobile backdrop */}
       {mobileDrawer && (
         <button
           type="button"
@@ -582,9 +917,7 @@ const AIAssistant = () => {
         />
       )}
 
-      {/* --------------------------------------------------------
-          Compact left drawer: recent conversations
-          -------------------------------------------------------- */}
+      {/* Compact left drawer: recent conversations */}
       <aside
         id={conversationsDrawerId}
         aria-label="Recent conversations"
@@ -626,9 +959,7 @@ const AIAssistant = () => {
         </div>
       </aside>
 
-      {/* --------------------------------------------------------
-          Compact right drawer: assistant resources
-          -------------------------------------------------------- */}
+      {/* Compact right drawer: assistant resources */}
       <aside
         id={resourcesDrawerId}
         aria-label="Assistant resources"
