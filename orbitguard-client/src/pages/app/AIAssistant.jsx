@@ -1,906 +1,677 @@
-import { useMemo, useState } from "react";
-import { motion } from "framer-motion";
+
 import {
-  FiAlertCircle,
-  FiCpu,
-  FiMessageCircle,
-  FiSend,
-  FiTrash2,
+  useCallback,
+  useEffect,
+  useId,
+  useState,
+} from "react";
+
+import {
+  motion,
+  useReducedMotion,
+} from "framer-motion";
+
+import {
+  FiMessageSquare,
+  FiGrid,
+  FiX,
 } from "react-icons/fi";
 
-/**
- * OrbitGuard AI Assistant
- *
- * Responsibility:
- * - Render the AI Assistant workspace.
- * - Manage local input state.
- * - Display real conversation messages supplied by the data layer.
- * - Provide a clean empty state when no conversation exists.
- *
- * This component intentionally does NOT:
- * - contain dummy conversations
- * - contain fake AI responses
- * - invent orbital data
- * - calculate risk
- * - call Gemini directly
- * - contain backend business logic
- *
- * Expected message shape:
- *
- * {
- *   id: string | number,
- *   role: "user" | "assistant",
- *   content: string,
- *   createdAt?: string
- * }
- *
- * Backend integration can later provide:
- *
- * messages
- * loading
- * error
- * onSendMessage
- */
+import ConversationSidebar from "../../features/ai/components/ConversationSidebar";
+import AIWelcomeHero from "../../features/ai/components/AIWelcomeHero";
+import ChatWorkspace from "../../features/ai/components/ChatWorkspace";
+import ChatComposer from "../../features/ai/components/ChatComposer";
+import SuggestedQuestions from "../../features/ai/components/SuggestedQuestions";
+import CapabilitiesPanel from "../../features/ai/components/CapabilitiesPanel";
+import ProfessionalGuidance from "../../features/ai/components/ProfessionalGuidance";
+import ProtectedBackground from "../../components/common/ProtectedBackground";
 
-const AIAssistant = ({
-  messages = [],
-  loading = false,
-  error = null,
-  onSendMessage,
-  onClearConversation,
-}) => {
-  const [input, setInput] = useState("");
+const EMPTY_MESSAGES = [];
+const EMPTY_CONVERSATIONS = [];
 
-  const normalizedMessages = useMemo(() => {
-    if (!Array.isArray(messages)) {
-      return [];
+const PAGE_VARIANTS = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      duration: 0.25,
+      ease: "easeOut",
+    },
+  },
+};
+
+const NAVBAR_HEIGHT = 68;
+
+const AIAssistant = () => {
+  const reduceMotion = useReducedMotion();
+  const instanceId = useId();
+
+  // ------------------------------------------------------------
+  // UI state
+  // ------------------------------------------------------------
+
+  const [messages, setMessages] = useState(EMPTY_MESSAGES);
+  const [activeConversationId, setActiveConversationId] =
+    useState(null);
+  const [selectedTopic, setSelectedTopic] = useState(null);
+  const [chatNotice, setChatNotice] = useState("");
+  const [mobileDrawer, setMobileDrawer] = useState(null);
+
+  // Backend integration is not connected in this component yet.
+  const chatLoading = false;
+  const conversations = EMPTY_CONVERSATIONS;
+
+  const conversationsDrawerId = `conversations-${instanceId}`;
+  const resourcesDrawerId = `resources-${instanceId}`;
+
+  // ------------------------------------------------------------
+  // Mobile drawer behavior
+  // ------------------------------------------------------------
+
+  useEffect(() => {
+    if (!mobileDrawer) {
+      return undefined;
     }
 
-    return messages.filter(
-      (message) =>
-        message &&
-        typeof message === "object" &&
-        (message.role === "user" || message.role === "assistant") &&
-        typeof message.content === "string" &&
-        message.content.trim() !== ""
-    );
-  }, [messages]);
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow =
+      document.documentElement.style.overflow;
 
-  const hasMessages = normalizedMessages.length > 0;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
 
-  const canSubmit =
-    input.trim().length > 0 &&
-    !loading &&
-    typeof onSendMessage === "function";
-
-  const handleSubmit = async (event) => {
-    event.preventDefault();
-
-    const message = input.trim();
-
-    if (!message || loading) {
-      return;
-    }
-
-    if (typeof onSendMessage !== "function") {
-      return;
-    }
-
-    try {
-      await onSendMessage(message);
-      setInput("");
-    } catch {
-      /*
-       * The data layer owns the actual error handling.
-       * We intentionally do not create a fake response here.
-       */
-    }
-  };
-
-  const handleKeyDown = (event) => {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-
-      if (canSubmit) {
-        handleSubmit(event);
+    const handleEscape = (event) => {
+      if (event.key === "Escape") {
+        setMobileDrawer(null);
       }
-    }
-  };
+    };
 
-  const handleClear = () => {
-    if (typeof onClearConversation === "function") {
-      onClearConversation();
-    }
-  };
+    document.addEventListener("keydown", handleEscape);
 
-  return (
-    <main
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow =
+        previousHtmlOverflow;
+
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [mobileDrawer]);
+
+  const closeDrawer = useCallback(() => {
+    setMobileDrawer(null);
+  }, []);
+
+  const toggleDrawer = useCallback((drawerName) => {
+    setMobileDrawer((current) =>
+      current === drawerName ? null : drawerName,
+    );
+  }, []);
+
+  // ------------------------------------------------------------
+  // Conversation actions
+  // ------------------------------------------------------------
+
+  const handleNewChat = useCallback(() => {
+    setMessages([]);
+    setActiveConversationId(null);
+    setSelectedTopic(null);
+    setChatNotice("");
+    setMobileDrawer(null);
+  }, []);
+
+  const handleSelectConversation = useCallback((conversation) => {
+    if (!conversation?.id) {
+      return;
+    }
+
+    setActiveConversationId(conversation.id);
+
+    setChatNotice(
+      "Conversation history will be available after backend integration.",
+    );
+
+    setMobileDrawer(null);
+  }, []);
+
+  // ------------------------------------------------------------
+  // Suggested-question action
+  // ------------------------------------------------------------
+
+  const handleSelectQuestion = useCallback((question) => {
+    const questionText =
+      typeof question === "string"
+        ? question
+        : question?.question ??
+          question?.text ??
+          question?.label ??
+          "";
+
+    if (
+      typeof questionText !== "string" ||
+      !questionText.trim()
+    ) {
+      return;
+    }
+
+    setSelectedTopic(questionText.trim());
+    setChatNotice("");
+    setMobileDrawer(null);
+  }, []);
+
+  // ------------------------------------------------------------
+  // UI-only message submission
+  // ------------------------------------------------------------
+
+  const handleSendMessage = useCallback((message) => {
+    const normalizedMessage =
+      typeof message === "string" ? message.trim() : "";
+
+    if (!normalizedMessage) {
+      return;
+    }
+
+    const messageId =
+      typeof crypto !== "undefined" &&
+      typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `user-${Date.now()}-${Math.random()
+            .toString(36)
+            .slice(2)}`;
+
+    setMessages((currentMessages) => [
+      ...currentMessages,
+      {
+        id: messageId,
+        role: "user",
+        content: normalizedMessage,
+      },
+    ]);
+
+    setSelectedTopic(null);
+
+    setChatNotice(
+      "Your message is displayed locally. Connect the AI backend to receive a real response.",
+    );
+  }, []);
+
+  // ------------------------------------------------------------
+  // Animation
+  // ------------------------------------------------------------
+
+  const pageAnimation = reduceMotion
+    ? {}
+    : {
+        initial: "hidden",
+        animate: "visible",
+        variants: PAGE_VARIANTS,
+      };
+
+  // ------------------------------------------------------------
+  // Shared conversation sidebar
+  // ------------------------------------------------------------
+
+  const conversationSidebar = (
+    <ConversationSidebar
+      conversations={conversations}
+      activeConversationId={activeConversationId}
+      onNewChat={handleNewChat}
+      onSelectConversation={handleSelectConversation}
+    />
+  );
+
+  // ------------------------------------------------------------
+  // Shared assistant resources
+  // ------------------------------------------------------------
+
+  const assistantResources = (
+    <>
+      <SuggestedQuestions
+        onSelectQuestion={handleSelectQuestion}
+        disabled={chatLoading}
+      />
+
+      <CapabilitiesPanel />
+
+      <ProfessionalGuidance />
+    </>
+  );
+
+  // ------------------------------------------------------------
+  // Shared mobile drawer header
+  // ------------------------------------------------------------
+
+  const renderDrawerHeader = (title, subtitle) => (
+    <div
       className="
-        min-h-full
-        w-full
-        bg-[#020914]
-        text-slate-100
+        flex shrink-0 items-center justify-between gap-3
+        border-b border-cyan-500/15
+        bg-[#061321] px-3 py-2.5
       "
     >
-      <div
-        className="
-          mx-auto
-          flex
-          w-full
-          max-w-[1500px]
-          flex-col
-          px-3
-          py-3
-          sm:px-4
-          sm:py-4
-          lg:px-6
-          lg:py-6
-          2xl:px-8
-        "
-      >
-        {/* =========================================================
-            HEADER
-        ========================================================= */}
-
-        <section
+      <div className="min-w-0">
+        <p
           className="
-            relative
-            overflow-hidden
-            border
-            border-cyan-300/[0.10]
-            bg-[#06101c]/90
+            font-['Orbitron'] text-[11px] font-semibold
+            tracking-wide text-cyan-300
           "
         >
-          {/* Technical accent */}
+          {title}
+        </p>
 
-          <div
-            className="
-              pointer-events-none
-              absolute
-              left-0
-              top-0
-              h-px
-              w-48
-              bg-gradient-to-r
-              from-cyan-300/70
-              to-transparent
-            "
-            aria-hidden="true"
-          />
+        <p className="mt-1 font-['Inter'] text-[10px] text-slate-500">
+          {subtitle}
+        </p>
+      </div>
 
-          <div
-            className="
-              flex
-              flex-col
-              gap-5
-              px-4
-              py-5
-              sm:px-6
-              sm:py-6
-              lg:flex-row
-              lg:items-center
-              lg:justify-between
-            "
-          >
-            <div className="flex min-w-0 items-start gap-3">
-              <div
+      <button
+        type="button"
+        onClick={closeDrawer}
+        aria-label={`Close ${title}`}
+        className="
+          inline-flex h-8 w-8 shrink-0 items-center justify-center
+          rounded-full border border-slate-700 bg-slate-900
+          text-slate-300 transition-colors
+          hover:border-cyan-400/50 hover:bg-cyan-400/10
+          hover:text-cyan-300
+          focus-visible:outline-none
+          focus-visible:ring-2 focus-visible:ring-cyan-400
+        "
+      >
+        <FiX size={17} aria-hidden="true" />
+      </button>
+    </div>
+  );
+
+  // ------------------------------------------------------------
+  // Render
+  // ------------------------------------------------------------
+
+  return (
+    <motion.main
+      {...pageAnimation}
+      aria-label="OrbitGuard AI assistant"
+      className="
+        relative isolate
+        flex h-[calc(100dvh-68px)]
+        min-h-0 w-full min-w-0
+        flex-col overflow-hidden
+        bg-[#020914] text-slate-100
+      "
+    >
+      <ProtectedBackground />
+
+      {/* Main responsive workspace */}
+      <div
+        className="
+          relative z-10 mx-auto
+          grid min-h-0 w-full max-w-[1920px]
+          min-w-0 flex-1 grid-cols-1
+          gap-2 overflow-hidden p-2
+          sm:gap-3 sm:p-3
+          xl:grid-cols-[220px_minmax(0,1fr)_270px]
+          xl:gap-3 xl:p-3
+          2xl:grid-cols-[240px_minmax(0,1fr)_300px]
+          2xl:gap-4 2xl:p-4
+        "
+      >
+        {/* Desktop conversation sidebar */}
+        <aside
+          aria-label="Conversation history"
+          className="
+            hidden min-h-0 min-w-0
+            xl:block xl:overflow-x-hidden
+            xl:overflow-y-auto xl:overscroll-y-contain
+            xl:scrollbar-thin
+            xl:scrollbar-thumb-cyan-500/30
+          "
+        >
+          {conversationSidebar}
+        </aside>
+
+        {/* Main chat workspace */}
+        <section
+          aria-label="AI chat workspace"
+          className="
+            flex h-full min-h-0 min-w-0
+            flex-col gap-2 overflow-hidden
+          "
+        >
+          {/* Hero and mobile drawer controls */}
+          <div className="relative min-w-0 shrink-0">
+            <div
+              className="
+                absolute right-2 top-2 z-20
+                flex items-center gap-2
+                xl:hidden
+              "
+            >
+              {/* Open recent conversations */}
+              <button
+                type="button"
+                onClick={() => toggleDrawer("conversations")}
+                aria-label={
+                  mobileDrawer === "conversations"
+                    ? "Close recent conversations"
+                    : "Open recent conversations"
+                }
+                aria-expanded={mobileDrawer === "conversations"}
+                aria-controls={conversationsDrawerId}
                 className="
-                  flex
-                  h-10
-                  w-10
-                  shrink-0
-                  items-center
-                  justify-center
-                  border
-                  border-cyan-300/15
-                  bg-cyan-400/[0.05]
+                  inline-flex h-9 w-9 shrink-0
+                  items-center justify-center
+                  rounded-xl border border-cyan-500/30
+                  bg-[#041321]/95 text-cyan-300
+                  shadow-lg backdrop-blur-md transition-colors
+                  hover:border-cyan-300/60 hover:bg-cyan-400/10
+                  focus-visible:outline-none
+                  focus-visible:ring-2 focus-visible:ring-cyan-400
                 "
               >
-                <FiCpu
-                  className="h-4 w-4 text-cyan-300"
-                  aria-hidden="true"
-                />
-              </div>
+                {mobileDrawer === "conversations" ? (
+                  <FiX size={18} aria-hidden="true" />
+                ) : (
+                  <FiMessageSquare size={18} aria-hidden="true" />
+                )}
+              </button>
 
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h1
-                    className="
-                      font-['Orbitron']
-                      text-sm
-                      font-semibold
-                      uppercase
-                      tracking-[0.16em]
-                      text-slate-100
-                      sm:text-base
-                    "
-                  >
-                    OrbitGuard AI
-                  </h1>
+              {/* Open assistant resources */}
+              <button
+                type="button"
+                onClick={() => toggleDrawer("resources")}
+                aria-label={
+                  mobileDrawer === "resources"
+                    ? "Close assistant resources"
+                    : "Open assistant resources"
+                }
+                aria-expanded={mobileDrawer === "resources"}
+                aria-controls={resourcesDrawerId}
+                className="
+                  inline-flex h-9 w-9 shrink-0
+                  items-center justify-center
+                  rounded-xl border border-cyan-500/30
+                  bg-[#041321]/95 text-cyan-300
+                  shadow-lg backdrop-blur-md transition-colors
+                  hover:border-cyan-300/60 hover:bg-cyan-400/10
+                  focus-visible:outline-none
+                  focus-visible:ring-2 focus-visible:ring-cyan-400
+                "
+              >
+                {mobileDrawer === "resources" ? (
+                  <FiX size={18} aria-hidden="true" />
+                ) : (
+                  <FiGrid size={18} aria-hidden="true" />
+                )}
+              </button>
+            </div>
 
-                  <span
-                    className="
-                      border
-                      border-cyan-300/10
-                      bg-cyan-400/[0.035]
-                      px-2
-                      py-1
-                      font-['Orbitron']
-                      text-[7px]
-                      uppercase
-                      tracking-[0.14em]
-                      text-cyan-300/70
-                    "
-                  >
-                    Assistant
-                  </span>
-                </div>
+            <div className="min-w-0 max-w-full">
+              <AIWelcomeHero />
+            </div>
+          </div>
+
+          {/* Selected suggested question */}
+          {selectedTopic && (
+            <div
+              className="
+                flex min-w-0 shrink-0
+                items-start justify-between gap-3
+                rounded-xl border border-cyan-500/20
+                bg-[#061321]/90 px-3 py-2
+                backdrop-blur-sm
+              "
+            >
+              <div className="min-w-0 flex-1">
+                <p
+                  className="
+                    font-['Orbitron'] text-[9px]
+                    uppercase tracking-wider text-cyan-300
+                  "
+                >
+                  Selected question
+                </p>
 
                 <p
                   className="
-                    mt-2
-                    max-w-[680px]
-                    font-['Inter']
-                    text-xs
-                    leading-5
-                    text-slate-500
-                    sm:text-sm
+                    mt-1 break-words font-['Inter']
+                    text-xs leading-5 text-slate-200
                   "
                 >
-                  Ask questions about orbital intelligence, satellite
-                  monitoring, debris, risk assessments, and available
-                  OrbitGuard data.
+                  {selectedTopic}
                 </p>
               </div>
-            </div>
 
-            {/* Conversation action */}
-
-            {hasMessages && (
               <button
                 type="button"
-                onClick={handleClear}
-                disabled={
-                  typeof onClearConversation !== "function"
-                }
+                onClick={() => setSelectedTopic(null)}
+                aria-label="Clear selected question"
                 className="
-                  inline-flex
-                  w-fit
-                  items-center
-                  gap-2
-                  border
-                  border-white/[0.08]
-                  bg-white/[0.02]
-                  px-3
-                  py-2
-                  font-['Orbitron']
-                  text-[7px]
-                  uppercase
-                  tracking-[0.12em]
-                  text-slate-500
-                  transition
-                  duration-200
-                  hover:border-red-300/20
-                  hover:bg-red-400/[0.04]
-                  hover:text-red-300
-                  disabled:cursor-not-allowed
-                  disabled:opacity-40
+                  shrink-0 rounded-lg px-2 py-1
+                  text-xs text-slate-400 transition-colors
+                  hover:bg-white/5 hover:text-cyan-300
+                  focus-visible:outline-none
+                  focus-visible:ring-2 focus-visible:ring-cyan-400
                 "
               >
-                <FiTrash2
-                  className="h-3 w-3"
-                  aria-hidden="true"
-                />
-
                 Clear
               </button>
-            )}
-          </div>
-        </section>
+            </div>
+          )}
 
-        {/* =========================================================
-            ASSISTANT WORKSPACE
-        ========================================================= */}
-
-        <section
-          className="
-            mt-4
-            flex
-            min-h-[620px]
-            flex-col
-            overflow-hidden
-            border
-            border-white/[0.08]
-            bg-[#040c17]/95
-            sm:min-h-[680px]
-            lg:min-h-[720px]
-          "
-        >
-          {/* Workspace header */}
-
+          {/* Only the message region scrolls */}
           <div
             className="
-              flex
-              min-h-[52px]
-              items-center
-              justify-between
-              border-b
-              border-white/[0.055]
-              px-4
-              sm:px-5
+              min-h-0 min-w-0 flex-1
+              overflow-x-hidden overflow-y-auto
+              overscroll-y-contain rounded-xl
+              [scrollbar-width:thin]
+              [scrollbar-color:rgba(34,211,238,0.25)_transparent]
             "
           >
-            <div className="flex items-center gap-2">
+            <ChatWorkspace
+              messages={messages}
+              loading={chatLoading}
+              error={null}
+              onRetry={() =>
+                setChatNotice(
+                  "Retry will be available after backend integration.",
+                )
+              }
+              onRateMessage={() => {
+                // Message feedback persistence is not implemented.
+              }}
+            />
+          </div>
+
+          {/* Status remains outside the message scroller */}
+          {chatNotice && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="
+                flex min-w-0 shrink-0 items-start gap-2
+                rounded-lg border border-cyan-400/15
+                bg-[#061321]/95 px-3 py-1.5
+                font-['Inter'] text-[11px]
+                leading-4 text-slate-300
+              "
+            >
               <span
-                className="
-                  h-1.5
-                  w-1.5
-                  rounded-full
-                  bg-cyan-300
-                  shadow-[0_0_8px_rgba(103,232,249,0.8)]
-                "
                 aria-hidden="true"
+                className="
+                  mt-1 h-1.5 w-1.5 shrink-0
+                  rounded-full bg-cyan-400
+                "
               />
 
-              <span
+              <span className="min-w-0 flex-1 break-words">
+                {chatNotice}
+              </span>
+
+              <button
+                type="button"
+                onClick={() => setChatNotice("")}
+                aria-label="Dismiss notification"
                 className="
-                  font-['Orbitron']
-                  text-[8px]
-                  font-medium
-                  uppercase
-                  tracking-[0.18em]
-                  text-slate-400
+                  shrink-0 rounded px-1 text-slate-500
+                  hover:text-cyan-300
+                  focus-visible:outline-none
+                  focus-visible:ring-2 focus-visible:ring-cyan-400
                 "
               >
-                Intelligence Session
-              </span>
+                ×
+              </button>
             </div>
-
-            <span
-              className="
-                font-['Orbitron']
-                text-[7px]
-                uppercase
-                tracking-[0.14em]
-                text-slate-700
-              "
-            >
-              OG / AI
-            </span>
-          </div>
-
-          {/* =======================================================
-              MESSAGES
-          ======================================================= */}
-
-          <div
-            className="
-              flex-1
-              overflow-y-auto
-              px-4
-              py-5
-              sm:px-6
-              sm:py-6
-            "
-          >
-            {loading && !hasMessages ? (
-              <AssistantLoadingState />
-            ) : hasMessages ? (
-              <div className="mx-auto flex w-full max-w-[900px] flex-col gap-5">
-                {normalizedMessages.map((message, index) => (
-                  <AssistantMessage
-                    key={
-                      message.id ??
-                      `${message.role}-${index}`
-                    }
-                    message={message}
-                  />
-                ))}
-
-                {loading && <AssistantThinkingState />}
-              </div>
-            ) : (
-              <AssistantEmptyState />
-            )}
-
-            {/* Backend error */}
-
-            {error && (
-              <div className="mx-auto mt-5 w-full max-w-[900px]">
-                <div
-                  className="
-                    flex
-                    items-start
-                    gap-3
-                    border
-                    border-red-300/15
-                    bg-red-400/[0.035]
-                    px-4
-                    py-3
-                  "
-                >
-                  <FiAlertCircle
-                    className="
-                      mt-0.5
-                      h-4
-                      w-4
-                      shrink-0
-                      text-red-300
-                    "
-                    aria-hidden="true"
-                  />
-
-                  <div>
-                    <p
-                      className="
-                        font-['Orbitron']
-                        text-[8px]
-                        font-semibold
-                        uppercase
-                        tracking-[0.12em]
-                        text-red-300
-                      "
-                    >
-                      AI Service Error
-                    </p>
-
-                    <p
-                      className="
-                        mt-1
-                        font-['Inter']
-                        text-[10px]
-                        leading-5
-                        text-slate-500
-                      "
-                    >
-                      {typeof error === "string"
-                        ? error
-                        : "The AI service could not process the request."}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* =========================================================
-              INPUT
-          ========================================================= */}
-
-          <div
-            className="
-              border-t
-              border-white/[0.055]
-              bg-[#030a13]/80
-              p-3
-              sm:p-4
-            "
-          >
-            <form
-              onSubmit={handleSubmit}
-              className="
-                mx-auto
-                w-full
-                max-w-[900px]
-              "
-            >
-              <div
-                className="
-                  relative
-                  flex
-                  items-end
-                  gap-2
-                  border
-                  border-cyan-300/10
-                  bg-[#06111f]
-                  p-2
-                  transition
-                  duration-200
-                  focus-within:border-cyan-300/25
-                  focus-within:shadow-[0_0_30px_rgba(34,211,238,0.04)]
-                "
-              >
-                <textarea
-                  value={input}
-                  onChange={(event) =>
-                    setInput(event.target.value)
-                  }
-                  onKeyDown={handleKeyDown}
-                  rows={2}
-                  maxLength={4000}
-                  disabled={loading}
-                  placeholder="Ask OrbitGuard AI..."
-                  className="
-                    min-h-[46px]
-                    flex-1
-                    resize-none
-                    bg-transparent
-                    px-2
-                    py-2
-                    font-['Inter']
-                    text-xs
-                    leading-5
-                    text-slate-200
-                    outline-none
-                    placeholder:text-slate-700
-                    disabled:cursor-not-allowed
-                    disabled:opacity-50
-                    sm:text-sm
-                  "
-                  aria-label="Ask OrbitGuard AI"
-                />
-
-                <button
-                  type="submit"
-                  disabled={!canSubmit}
-                  className="
-                    flex
-                    h-10
-                    w-10
-                    shrink-0
-                    items-center
-                    justify-center
-                    border
-                    border-cyan-300/15
-                    bg-cyan-400/[0.06]
-                    text-cyan-300
-                    transition
-                    duration-200
-                    hover:border-cyan-300/30
-                    hover:bg-cyan-400/[0.10]
-                    disabled:cursor-not-allowed
-                    disabled:border-white/[0.05]
-                    disabled:bg-white/[0.02]
-                    disabled:text-slate-700
-                  "
-                  aria-label="Send message"
-                >
-                  <FiSend
-                    className="h-3.5 w-3.5"
-                    aria-hidden="true"
-                  />
-                </button>
-              </div>
-
-              <div
-                className="
-                  mt-2
-                  flex
-                  items-center
-                  justify-between
-                  gap-3
-                "
-              >
-                <span
-                  className="
-                    font-['Inter']
-                    text-[8px]
-                    text-slate-700
-                  "
-                >
-                  Press Enter to send · Shift + Enter for a new line
-                </span>
-
-                <span
-                  className="
-                    shrink-0
-                    font-['Orbitron']
-                    text-[7px]
-                    tabular-nums
-                    text-slate-700
-                  "
-                >
-                  {input.length}/4000
-                </span>
-              </div>
-            </form>
-          </div>
-        </section>
-      </div>
-    </main>
-  );
-};
-
-/* ===============================================================
-   MESSAGE
-   =============================================================== */
-
-const AssistantMessage = ({ message }) => {
-  const isUser = message.role === "user";
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 6 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{
-        duration: 0.25,
-        ease: "easeOut",
-      }}
-      className={`flex ${
-        isUser ? "justify-end" : "justify-start"
-      }`}
-    >
-      <div
-        className={`
-          flex
-          w-full
-          max-w-[760px]
-          gap-3
-          ${
-            isUser
-              ? "flex-row-reverse"
-              : "flex-row"
-          }
-        `}
-      >
-        <div
-          className={`
-            flex
-            h-8
-            w-8
-            shrink-0
-            items-center
-            justify-center
-            border
-            ${
-              isUser
-                ? "border-slate-300/10 bg-slate-300/[0.035]"
-                : "border-cyan-300/15 bg-cyan-400/[0.05]"
-            }
-          `}
-        >
-          {isUser ? (
-            <FiMessageCircle
-              className="h-3.5 w-3.5 text-slate-400"
-              aria-hidden="true"
-            />
-          ) : (
-            <FiCpu
-              className="h-3.5 w-3.5 text-cyan-300"
-              aria-hidden="true"
-            />
           )}
-        </div>
 
-        <div
-          className={`
-            min-w-0
-            border
-            px-4
-            py-3
-            ${
-              isUser
-                ? "border-white/[0.07] bg-white/[0.025]"
-                : "border-cyan-300/[0.08] bg-cyan-400/[0.025]"
-            }
-          `}
-        >
-          <div className="flex items-center gap-2">
-            <span
-              className="
-                font-['Orbitron']
-                text-[7px]
-                font-semibold
-                uppercase
-                tracking-[0.14em]
-                text-slate-500
-              "
-            >
-              {isUser ? "Operator" : "OrbitGuard AI"}
-            </span>
-
-            {message.createdAt && (
-              <span
-                className="
-                  font-['Inter']
-                  text-[8px]
-                  text-slate-700
-                "
-              >
-                {formatMessageTime(message.createdAt)}
-              </span>
-            )}
-          </div>
-
-          <p
+          {/* Composer stays outside the message scroll region */}
+          <footer
             className="
-              mt-2
-              whitespace-pre-wrap
-              break-words
-              font-['Inter']
-              text-xs
-              leading-6
-              text-slate-300
-              sm:text-sm
+              relative z-20 shrink-0
+              bg-[#020914]/90 pt-1
+              pb-[max(0.125rem,env(safe-area-inset-bottom))]
+              backdrop-blur-md
             "
           >
-            {message.content}
-          </p>
-        </div>
+            <ChatComposer
+              onSendMessage={handleSendMessage}
+              isLoading={chatLoading}
+            />
+
+            <p
+              className="
+                mt-1 px-1 text-center
+                font-['Inter'] text-[9px]
+                leading-3 text-slate-400
+              "
+            >
+              OrbitGuard AI provides informational support.
+              Verify operational decisions using authoritative
+              sources.
+            </p>
+          </footer>
+        </section>
+
+        {/* Desktop assistant resources */}
+        <aside
+          aria-label="AI assistant resources"
+          className="
+            hidden min-h-0 min-w-0
+            flex-col gap-3 overflow-x-hidden
+            overflow-y-auto overscroll-y-contain
+            xl:flex xl:scrollbar-thin
+            xl:scrollbar-thumb-cyan-500/30
+            xl:scrollbar-track-transparent
+          "
+        >
+          {assistantResources}
+        </aside>
       </div>
-    </motion.div>
-  );
-};
 
-/* ===============================================================
-   EMPTY STATE
-   =============================================================== */
+      {/* Mobile backdrop: starts below the application navbar */}
+      {mobileDrawer && (
+        <button
+          type="button"
+          aria-label="Close open panel"
+          onClick={closeDrawer}
+          className="
+            fixed inset-x-0 bottom-0 z-40
+            bg-black/55 backdrop-blur-[2px]
+            xl:hidden
+          "
+          style={{ top: `${NAVBAR_HEIGHT}px` }}
+        />
+      )}
 
-const AssistantEmptyState = () => (
-  <div
-    className="
-      flex
-      min-h-[500px]
-      flex-col
-      items-center
-      justify-center
-      px-5
-      text-center
-    "
-  >
-    <div
-      className="
-        flex
-        h-14
-        w-14
-        items-center
-        justify-center
-        border
-        border-cyan-300/15
-        bg-cyan-400/[0.04]
-        shadow-[0_0_35px_rgba(34,211,238,0.04)]
-      "
-    >
-      <FiCpu
-        className="h-6 w-6 text-cyan-300/60"
-        aria-hidden="true"
-      />
-    </div>
-
-    <h2
-      className="
-        mt-5
-        font-['Orbitron']
-        text-xs
-        font-semibold
-        uppercase
-        tracking-[0.16em]
-        text-slate-400
-        sm:text-sm
-      "
-    >
-      Intelligence Session Ready
-    </h2>
-
-    <p
-      className="
-        mt-3
-        max-w-[520px]
-        font-['Inter']
-        text-xs
-        leading-6
-        text-slate-600
-        sm:text-sm
-      "
-    >
-      Connect the AI Assistant to the OrbitGuard backend to
-      begin a real intelligence session.
-    </p>
-
-    <div
-      className="
-        mt-5
-        flex
-        items-center
-        gap-2
-        font-['Orbitron']
-        text-[7px]
-        uppercase
-        tracking-[0.14em]
-        text-slate-700
-      "
-    >
-      <span
-        className="
-          h-1.5
-          w-1.5
-          rounded-full
-          bg-slate-700
-        "
-        aria-hidden="true"
-      />
-
-      Awaiting user query
-    </div>
-  </div>
-);
-
-/* ===============================================================
-   LOADING STATES
-   =============================================================== */
-
-const AssistantLoadingState = () => (
-  <div className="mx-auto flex min-h-[500px] w-full max-w-[900px] items-center justify-center">
-    <div className="flex items-center gap-3">
-      <span
-        className="
-          h-2
-          w-2
-          animate-pulse
-          rounded-full
-          bg-cyan-300
-        "
-      />
-
-      <span
-        className="
-          font-['Orbitron']
-          text-[8px]
-          uppercase
-          tracking-[0.18em]
-          text-slate-600
-        "
+      {/* --------------------------------------------------------
+          Compact left drawer: recent conversations
+          -------------------------------------------------------- */}
+      <aside
+        id={conversationsDrawerId}
+        aria-label="Recent conversations"
+        aria-hidden={mobileDrawer !== "conversations"}
+        inert={mobileDrawer !== "conversations"}
+        className={`
+          fixed left-3 z-50
+          flex w-[min(76vw,290px)] flex-col
+          overflow-hidden
+          rounded-2xl border border-cyan-500/30
+          bg-[#030b18]/[0.98]
+          shadow-[0_12px_40px_rgba(0,0,0,0.55)]
+          backdrop-blur-xl
+          transition-[transform,opacity] duration-200 ease-out
+          max-h-[min(68dvh,520px)]
+          ${
+            mobileDrawer === "conversations"
+              ? "translate-x-0 opacity-100"
+              : "-translate-x-[120%] opacity-0 pointer-events-none"
+          }
+          xl:hidden
+        `}
+        style={{ top: `${NAVBAR_HEIGHT + 16}px` }}
       >
-        Connecting to intelligence service
-      </span>
-    </div>
-  </div>
-);
+        {renderDrawerHeader(
+          "Recent Conversations",
+          "Your conversation history",
+        )}
 
-const AssistantThinkingState = () => (
-  <div className="flex items-center gap-3">
-    <div
-      className="
-        flex
-        h-8
-        w-8
-        shrink-0
-        items-center
-        justify-center
-        border
-        border-cyan-300/15
-        bg-cyan-400/[0.05]
-      "
-    >
-      <FiCpu
-        className="h-3.5 w-3.5 text-cyan-300"
-        aria-hidden="true"
-      />
-    </div>
+        <div
+          className="
+            min-h-0 flex-1 overflow-x-hidden
+            overflow-y-auto overscroll-y-contain p-2.5
+            [scrollbar-width:thin]
+            [scrollbar-color:rgba(34,211,238,0.3)_transparent]
+          "
+        >
+          {conversationSidebar}
+        </div>
+      </aside>
 
-    <div
-      className="
-        border
-        border-cyan-300/[0.08]
-        bg-cyan-400/[0.025]
-        px-4
-        py-3
-      "
-    >
-      <div className="flex items-center gap-1.5">
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-300/70" />
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-300/50 [animation-delay:150ms]" />
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-300/30 [animation-delay:300ms]" />
-      </div>
-    </div>
-  </div>
-);
+      {/* --------------------------------------------------------
+          Compact right drawer: assistant resources
+          -------------------------------------------------------- */}
+      <aside
+        id={resourcesDrawerId}
+        aria-label="Assistant resources"
+        aria-hidden={mobileDrawer !== "resources"}
+        inert={mobileDrawer !== "resources"}
+        className={`
+          fixed right-3 z-50
+          flex w-[min(82vw,320px)] flex-col
+          overflow-hidden
+          rounded-2xl border border-cyan-500/30
+          bg-[#030b18]/[0.98]
+          shadow-[0_12px_40px_rgba(0,0,0,0.55)]
+          backdrop-blur-xl
+          transition-[transform,opacity] duration-200 ease-out
+          max-h-[min(72dvh,560px)]
+          ${
+            mobileDrawer === "resources"
+              ? "translate-x-0 opacity-100"
+              : "translate-x-[120%] opacity-0 pointer-events-none"
+          }
+          xl:hidden
+        `}
+        style={{ top: `${NAVBAR_HEIGHT + 16}px` }}
+      >
+        {renderDrawerHeader(
+          "Assistant Resources",
+          "Questions, capabilities and guidance",
+        )}
 
-/* ===============================================================
-   HELPERS
-   =============================================================== */
-
-const formatMessageTime = (value) => {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
-
-  return date.toLocaleTimeString("en-IN", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+        <div
+          className="
+            min-h-0 flex-1 space-y-3
+            overflow-x-hidden overflow-y-auto
+            overscroll-y-contain p-2.5
+            [scrollbar-width:thin]
+            [scrollbar-color:rgba(34,211,238,0.3)_transparent]
+          "
+        >
+          {assistantResources}
+        </div>
+      </aside>
+    </motion.main>
+  );
 };
 
 export default AIAssistant;
