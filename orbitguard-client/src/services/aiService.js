@@ -1,246 +1,218 @@
-import api, {
-  getApiErrorMessage,
-} from "./api";
+
+import api from "./api";
 
 /**
  * ================================================================
  * OrbitGuard AI - AI Service
  * ================================================================
  *
- * Backend endpoint:
+ * Responsible for communicating with the OrbitGuard AI REST API.
  *
- * POST /api/ai/chat
+ * Backend contract:
+ *   POST /api/ai/chat
  *
  * Request:
- *
- * {
- *   "message": "What is a collision risk?"
- * }
- *
- * Backend transport response:
- *
- * {
- *   "success": true,
- *   "message": "AI response generated successfully.",
- *   "data": {
- *     "response": "..."
+ *   {
+ *     "message": "Explain orbital debris."
  *   }
- * }
  *
- * This service:
- * - Validates the user message
- * - Calls the backend AI endpoint
- * - Validates the ApiResponse envelope
- * - Extracts AiChatResponse
- * - Returns the generated response text
+ * Response data contract:
+ *   ApiResponse<AiChatResponse>
  *
- * This service does NOT:
- * - Generate AI responses
- * - Build Gemini prompts
- * - Call Gemini directly
- * - Store conversation history
- * - Contain React/UI logic
- * ================================================================
+ * AiChatResponse:
+ *   {
+ *     "response": "Generated AI answer..."
+ *   }
+ *
+ * This service uses the existing Axios instance so the configured
+ * backend base URL, authentication interceptors, and common headers
+ * remain centralized in api.js.
+ *
+ * It does not call Gemini directly. Gemini communication belongs
+ * exclusively to the Spring Boot backend.
  */
 
+// Keep the endpoint relative to the configured Axios base URL.
+const AI_CHAT_ENDPOINT = "/api/ai/chat";
+
+// The backend validates messages between 2 and 4000 characters.
+const MIN_MESSAGE_LENGTH = 2;
+const MAX_MESSAGE_LENGTH = 4000;
 
 /**
- * ----------------------------------------------------------------
- * AI CHAT CONTRACT
- * ----------------------------------------------------------------
- */
-
-export const AI_CHAT_PATH =
-  "/api/ai/chat";
-
-export const MIN_AI_MESSAGE_LENGTH = 2;
-
-export const MAX_AI_MESSAGE_LENGTH = 4000;
-
-
-/**
- * ----------------------------------------------------------------
- * Validate AI message
- * ----------------------------------------------------------------
- */
-
-export const isValidAiMessage = (
-  message,
-) => {
-  if (
-    typeof message !== "string"
-  ) {
-    return false;
-  }
-
-  const trimmedMessage =
-    message.trim();
-
-  return (
-    trimmedMessage.length >=
-      MIN_AI_MESSAGE_LENGTH &&
-    trimmedMessage.length <=
-      MAX_AI_MESSAGE_LENGTH
-  );
-};
-
-
-/**
- * ================================================================
- * Send AI Message
- * ================================================================
+ * Normalizes a potential API error into a user-readable message.
  *
- * @param {string} message
- * @returns {Promise<string>}
- * ================================================================
+ * Does not expose stack traces or internal provider exceptions.
+ *
+ * @param {unknown} error Axios or application error
+ * @returns {string} Safe error message for the UI
  */
+const getErrorMessage = (error) => {
+  const status = error?.response?.status;
+  const backendData = error?.response?.data;
 
-export async function sendAiMessage(
-  message,
-) {
-  /**
-   * --------------------------------------------------------------
-   * Validate message
-   * --------------------------------------------------------------
-   */
-
-  if (!isValidAiMessage(message)) {
-    throw new Error(
-      `AI message must contain between ${MIN_AI_MESSAGE_LENGTH} and ${MAX_AI_MESSAGE_LENGTH} characters.`,
+  if (!error?.response) {
+    return (
+      "Unable to reach the OrbitGuard AI backend. " +
+      "Check your connection and backend server."
     );
   }
 
+  if (status === 400) {
+    return (
+      backendData?.message ||
+      backendData?.error ||
+      "The message is invalid. Enter between 2 and 4000 characters."
+    );
+  }
 
-  const normalizedMessage =
-    message.trim();
+  if (status === 401) {
+    return "Your session has expired. Please sign in again.";
+  }
 
+  if (status === 403) {
+    return "You do not have permission to access OrbitGuard AI.";
+  }
+
+  if (status === 404) {
+    return (
+      "The AI chat endpoint was not found. " +
+      "Check the backend base URL and API mapping."
+    );
+  }
+
+  if (status === 429) {
+    return "Too many requests. Please wait before trying again.";
+  }
+
+  if (status >= 500) {
+    return (
+      backendData?.message ||
+      "The AI backend encountered a server error. Please try again."
+    );
+  }
+
+  return (
+    backendData?.message ||
+    backendData?.error ||
+    error?.message ||
+    "An unexpected error occurred while contacting OrbitGuard AI."
+  );
+};
+
+/**
+ * Extracts the AI response from the common backend response wrapper.
+ *
+ * The precise ApiResponse property names were not included in the
+ * supplied backend code, so this method supports common wrapper
+ * conventions while requiring AiChatResponse.response to exist.
+ *
+ * @param {unknown} payload Backend response payload
+ * @returns {string} Generated AI response
+ * @throws {Error} If the expected response is missing
+ */
+const extractAiResponse = (payload) => {
+  if (!payload || typeof payload !== "object") {
+    throw new Error(
+      "The AI backend returned an invalid response payload.",
+    );
+  }
+
+  // Supports common ApiResponse wrapper shapes:
+  // { data: { response: "..." } }
+  // { data: { data: { response: "..." } } }
+  // { response: { response: "..." } }
+  // { response: "..." }
+  const candidates = [
+    payload.data?.response,
+    payload.data?.data?.response,
+    payload.response?.response,
+    payload.response,
+  ];
+
+  const generatedResponse = candidates.find(
+    (candidate) =>
+      typeof candidate === "string" && candidate.trim().length > 0,
+  );
+
+  if (typeof generatedResponse !== "string") {
+    throw new Error(
+      "The AI backend responded, but its generated answer was missing. " +
+      "Verify the ApiResponse structure returned by the backend.",
+    );
+  }
+
+  return generatedResponse.trim();
+};
+
+/**
+ * Sends a message to OrbitGuard AI.
+ *
+ * @param {string} message User's message
+ * @returns {Promise<{ response: string }>} Generated AI answer
+ * @throws {Error} If validation, network, or API processing fails
+ */
+const sendMessage = async (message) => {
+  if (typeof message !== "string") {
+    throw new TypeError("AI message must be a string.");
+  }
+
+  const normalizedMessage = message.trim();
+
+  if (normalizedMessage.length < MIN_MESSAGE_LENGTH) {
+    throw new Error("Please enter at least 2 characters.");
+  }
+
+  if (normalizedMessage.length > MAX_MESSAGE_LENGTH) {
+    throw new Error(
+      "Your message cannot exceed 4000 characters.",
+    );
+  }
 
   try {
-    /**
-     * ------------------------------------------------------------
-     * Call backend
-     * ------------------------------------------------------------
-     */
+    const result = await api.post(AI_CHAT_ENDPOINT, {
+      message: normalizedMessage,
+    });
 
-    const response =
-      await api.post(
-        AI_CHAT_PATH,
-        {
-          message:
-            normalizedMessage,
-        },
-      );
+    const generatedResponse = extractAiResponse(result.data);
 
-
-    /**
-     * ------------------------------------------------------------
-     * Validate ApiResponse envelope
-     * ------------------------------------------------------------
-     */
-
-    const apiResponse =
-      response?.data;
-
-
-    if (!apiResponse) {
-      throw new Error(
-        "AI API returned an empty response.",
-      );
-    }
-
-
-    /**
-     * ------------------------------------------------------------
-     * Backend business failure
-     * ------------------------------------------------------------
-     */
-
-    if (
-      apiResponse.success === false
-    ) {
-      throw new Error(
-        apiResponse.message ||
-          "AI API request was unsuccessful.",
-      );
-    }
-
-
-    /**
-     * ------------------------------------------------------------
-     * Extract AiChatResponse
-     * ------------------------------------------------------------
-     */
-
-    const aiChatResponse =
-      apiResponse.data;
-
-
-    if (
-      !aiChatResponse ||
-      typeof aiChatResponse !== "object"
-    ) {
-      throw new Error(
-        "AI API response does not contain AI chat data.",
-      );
-    }
-
-
-    /**
-     * ------------------------------------------------------------
-     * Extract generated response
-     * ------------------------------------------------------------
-     */
-
-    const generatedResponse =
-      aiChatResponse.response;
-
-
-    if (
-      typeof generatedResponse !==
-        "string" ||
-      !generatedResponse.trim()
-    ) {
-      throw new Error(
-        "AI API returned an empty response.",
-      );
-    }
-
-
-    if (import.meta.env.DEV) {
-      console.log(
-        "[OrbitGuard AI] AI response received.",
-      );
-    }
-
-
-    return generatedResponse.trim();
-
+    return {
+      response: generatedResponse,
+    };
   } catch (error) {
-    /**
-     * ------------------------------------------------------------
-     * Preserve application errors.
-     * ------------------------------------------------------------
-     */
-
+    // Preserve already-normalized validation or response errors.
     if (
-      error instanceof Error &&
-      !error.response
+      error instanceof TypeError ||
+      (
+        error instanceof Error &&
+        !error?.response &&
+        (
+          error.message.startsWith("Please enter") ||
+          error.message.startsWith("Your message") ||
+          error.message.startsWith("The AI backend")
+        )
+      )
     ) {
       throw error;
     }
 
+    const messageText = getErrorMessage(error);
 
-    /**
-     * ------------------------------------------------------------
-     * Normalize Axios/backend errors.
-     * ------------------------------------------------------------
-     */
+    const normalizedError = new Error(messageText);
+    normalizedError.cause = error;
 
-    throw new Error(
-      getApiErrorMessage(
-        error,
-        "Unable to communicate with OrbitGuard AI.",
-      ),
-    );
+    throw normalizedError;
   }
-}
+};
+
+/**
+ * Public AI service API.
+ *
+ * Keep the exported interface small and predictable so components
+ * can call aiService.sendMessage(message).
+ */
+const aiService = {
+  sendMessage,
+};
+
+export default aiService;
