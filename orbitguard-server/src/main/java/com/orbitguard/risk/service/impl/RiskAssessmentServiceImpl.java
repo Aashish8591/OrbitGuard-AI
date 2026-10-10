@@ -35,6 +35,8 @@ import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.orbitguard.alert.dto.request.CreateAlertRequest;
+import com.orbitguard.alert.service.AlertService;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -60,6 +62,8 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
     private final MongoTemplate mongoTemplate;
 
     private final BusinessCodeGenerator businessCodeGenerator;
+
+    private final AlertService alertService;
 
     private final SequenceGeneratorService sequenceGeneratorService;
 
@@ -264,6 +268,17 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
          */
         CollisionRisk savedRisk =
                 collisionRiskRepository.save(collisionRisk);
+
+        /*
+         * Automatically create an alert for the newly saved risk.
+         * Use the MongoDB document ID, not the business risk code.
+         */
+        CreateAlertRequest alertRequest =
+                CreateAlertRequest.builder()
+                        .riskId(savedRisk.getId())
+                        .build();
+
+        alertService.createAlert(alertRequest);
 
         /*
          * --------------------------------------------------------------
