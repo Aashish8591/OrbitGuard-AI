@@ -21,6 +21,8 @@ import RiskDetails from "../pages/app/RiskDetails";
 
 import Visualization from "../pages/app/Visualization";
 
+import Alerts from "../pages/app/Alerts";
+
 function AppRoutes() {
   return (
     <Routes>
@@ -83,7 +85,7 @@ function AppRoutes() {
               ALERTS
               ===================================================== */}
 
-          <Route path="/alerts" element={<div>Alerts</div>} />
+          <Route path="/alerts" element={<Alerts />} />
 
           {/* =====================================================
               NOTIFICATIONS

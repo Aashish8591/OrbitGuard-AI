@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
-import { motion, useReducedMotion } from "framer-motion";
+import { useEffect, useId, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   FiArrowDown,
-  FiArrowUpDown,
+  FiArrowUp,
   FiCalendar,
   FiCheck,
   FiChevronDown,
@@ -55,21 +55,20 @@ const DEFAULT_FILTERS = {
 };
 
 const CONTROL_CLASS =
-  "min-h-10 w-full rounded-lg border border-white/[0.09] bg-[#07111f] px-3 text-sm text-slate-200 outline-none transition-colors placeholder:text-slate-600 hover:border-white/[0.16] focus:border-cyan-300/40 focus:ring-2 focus:ring-cyan-300/10 disabled:cursor-not-allowed disabled:opacity-50";
+  "block min-h-11 w-full min-w-0 rounded-lg border border-slate-700/80 bg-[#091525] px-3 text-sm text-slate-100 outline-none transition-colors placeholder:text-slate-500 hover:border-slate-600 focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/10 disabled:cursor-not-allowed disabled:opacity-50";
 
 const LABEL_CLASS =
-  "mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500";
+  "mb-2 block text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400";
 
-const isValidDate = (value) => {
-  if (!value) return true;
+const SELECT_CLASS =
+  "block min-h-11 w-full min-w-0 cursor-pointer appearance-none rounded-lg border border-slate-700/80 bg-[#091525] py-2 pl-3 pr-10 text-sm text-slate-100 outline-none transition-colors hover:border-slate-600 focus:border-cyan-400/60 focus:ring-2 focus:ring-cyan-400/10 disabled:cursor-not-allowed disabled:opacity-50";
 
-  const parsed = new Date(`${value}T00:00:00`);
-
-  return (
-    !Number.isNaN(parsed.getTime()) &&
-    parsed.toISOString().slice(0, 10) === value
-  );
-};
+function normalizeFilters(filters) {
+  return {
+    ...DEFAULT_FILTERS,
+    ...(filters ?? {}),
+  };
+}
 
 function countActiveFilters(filters) {
   return [
@@ -85,25 +84,116 @@ function countActiveFilters(filters) {
 function getAppliedFilters(filters) {
   return {
     ...filters,
-    search: filters.search.trim(),
+    search: String(filters.search ?? "").trim(),
   };
 }
 
-/**
- * OrbitGuard AI — Alert Toolbar
- *
- * This component owns the temporary search input value.
- * Applied filters are controlled by the parent component.
- *
- * @param {Object} props
- * @param {Object} [props.filters] Current applied filters.
- * @param {Function} [props.onFiltersChange] Receives the complete filter object.
- * @param {Function} [props.onSearchChange] Optional immediate search callback.
- * @param {Function} [props.onRefresh] Optional refresh callback.
- * @param {boolean} [props.isRefreshing=false]
- * @param {boolean} [props.isLoading=false]
- * @param {boolean} [props.disabled=false]
- */
+function isValidDate(value) {
+  if (!value) return true;
+
+  const parsed = new Date(`${value}T00:00:00`);
+
+  return (
+    !Number.isNaN(parsed.getTime()) &&
+    parsed.toISOString().slice(0, 10) === value
+  );
+}
+
+function getFilterCountLabel(count) {
+  return `${count} ${count === 1 ? "filter" : "filters"} applied`;
+}
+
+function SelectField({
+  id,
+  label,
+  value,
+  options,
+  onChange,
+  disabled,
+  placeholder,
+}) {
+  return (
+    <div className="min-w-0">
+      <label className={LABEL_CLASS} htmlFor={id}>
+        {label}
+      </label>
+
+      <div className="relative">
+        <select
+          id={id}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          disabled={disabled}
+          className={SELECT_CLASS}
+        >
+          <option value="">{placeholder}</option>
+
+          {options.map((option) => (
+            <option
+              key={option.value}
+              value={option.value}
+              className="bg-[#091525] text-slate-100"
+            >
+              {option.label}
+            </option>
+          ))}
+        </select>
+
+        <FiChevronDown
+          aria-hidden="true"
+          className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+        />
+      </div>
+    </div>
+  );
+}
+
+function DateField({
+  id,
+  label,
+  value,
+  onChange,
+  min,
+  max,
+  disabled,
+  invalid,
+}) {
+  return (
+    <div className="min-w-0">
+      <label className={LABEL_CLASS} htmlFor={id}>
+        {label}
+      </label>
+
+      <div className="relative">
+        <FiCalendar
+          aria-hidden="true"
+          className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+        />
+
+        <input
+          id={id}
+          type="date"
+          value={value}
+          min={min || undefined}
+          max={max || undefined}
+          onChange={(event) => onChange(event.target.value)}
+          disabled={disabled}
+          aria-invalid={invalid}
+          className={`${CONTROL_CLASS} pl-10 [color-scheme:dark] ${
+            invalid ? "border-rose-400/60 focus:border-rose-400" : ""
+          }`}
+        />
+      </div>
+
+      {invalid && (
+        <p className="mt-1.5 text-[11px] text-rose-300">
+          Enter a valid date.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function AlertToolbar({
   filters,
   onFiltersChange,
@@ -114,11 +204,9 @@ export default function AlertToolbar({
   disabled = false,
 }) {
   const shouldReduceMotion = useReducedMotion();
+  const generatedId = useId();
 
-  const appliedFilters = {
-    ...DEFAULT_FILTERS,
-    ...(filters ?? {}),
-  };
+  const appliedFilters = normalizeFilters(filters);
 
   const [searchInput, setSearchInput] = useState(
     appliedFilters.search ?? ""
@@ -127,9 +215,7 @@ export default function AlertToolbar({
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
   const isDisabled = disabled || isLoading;
-
   const activeFilterCount = countActiveFilters(appliedFilters);
-
   const hasSearch = Boolean(searchInput.trim());
 
   const hasAnyFilters =
@@ -147,12 +233,10 @@ export default function AlertToolbar({
   };
 
   const updateFilter = (key, value) => {
-    const nextFilters = {
+    emitFilters({
       ...appliedFilters,
       [key]: value,
-    };
-
-    emitFilters(nextFilters);
+    });
   };
 
   const handleSearchSubmit = (event) => {
@@ -160,13 +244,25 @@ export default function AlertToolbar({
 
     const search = searchInput.trim();
 
-    const nextFilters = {
+    emitFilters({
       ...appliedFilters,
       search,
-    };
+    });
 
-    emitFilters(nextFilters);
+    // The parent already receives the complete filter object.
+    // Notify the optional search callback only if the consumer needs it.
     onSearchChange?.(search);
+  };
+
+  const handleClearSearch = () => {
+    setSearchInput("");
+
+    emitFilters({
+      ...appliedFilters,
+      search: "",
+    });
+
+    onSearchChange?.("");
   };
 
   const handleClearFilters = () => {
@@ -174,13 +270,6 @@ export default function AlertToolbar({
 
     emitFilters({ ...DEFAULT_FILTERS });
     onSearchChange?.("");
-  };
-
-  const handleSortDirection = () => {
-    updateFilter(
-      "sortDirection",
-      appliedFilters.sortDirection === "asc" ? "desc" : "asc"
-    );
   };
 
   const handleDateChange = (key, value) => {
@@ -194,41 +283,53 @@ export default function AlertToolbar({
       nextFilters.toDate &&
       nextFilters.fromDate > nextFilters.toDate
     ) {
+      // Keep the date range valid and let the user correct it.
       return;
     }
 
     emitFilters(nextFilters);
   };
 
+  const handleRefresh = () => {
+    if (isDisabled || isRefreshing) return;
+    onRefresh?.();
+  };
+
+  const searchId = `alert-search-${generatedId}`;
+  const sortId = `alert-sort-${generatedId}`;
+  const filtersId = `alert-advanced-filters-${generatedId}`;
+
   return (
     <motion.section
       initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{
-        duration: shouldReduceMotion ? 0 : 0.25,
-      }}
+      transition={{ duration: shouldReduceMotion ? 0 : 0.22 }}
       aria-label="Alert search and filters"
-      className="mb-5 rounded-xl border border-white/[0.07] bg-[#050d19] p-3.5 sm:p-4"
+      className="relative z-20 mb-5 min-w-0 rounded-xl border border-slate-800/90 bg-[#050d19] p-3.5 sm:p-4 lg:p-5"
     >
-      {/* Search and primary controls */}
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+      {/* Main toolbar */}
+      <div className="grid min-w-0 grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-center">
         <form
           onSubmit={handleSearchSubmit}
-          className="flex min-w-0 flex-1 items-center gap-2"
+          className="flex min-w-0 items-center gap-2"
           role="search"
         >
           <div className="relative min-w-0 flex-1">
             <FiSearch
               aria-hidden="true"
-              className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
+              className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
             />
 
+            <label className="sr-only" htmlFor={searchId}>
+              Search alert code, title, message or reference
+            </label>
+
             <input
+              id={searchId}
               type="search"
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="Search alert code, title, or message..."
-              aria-label="Search alerts"
+              placeholder="Search alert code, title, message..."
               disabled={isDisabled}
               className={`${CONTROL_CLASS} min-h-11 pl-10 pr-10`}
             />
@@ -236,20 +337,10 @@ export default function AlertToolbar({
             {searchInput && (
               <button
                 type="button"
-                onClick={() => {
-                  setSearchInput("");
-
-                  const nextFilters = {
-                    ...appliedFilters,
-                    search: "",
-                  };
-
-                  emitFilters(nextFilters);
-                  onSearchChange?.("");
-                }}
+                onClick={handleClearSearch}
                 aria-label="Clear search"
                 disabled={isDisabled}
-                className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-1 text-slate-500 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-slate-400 transition-colors hover:bg-white/[0.05] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60"
               >
                 <FiX aria-hidden="true" className="h-4 w-4" />
               </button>
@@ -259,28 +350,34 @@ export default function AlertToolbar({
           <button
             type="submit"
             disabled={isDisabled}
-            className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg border border-cyan-300/20 bg-cyan-300/[0.08] px-3.5 text-sm font-semibold text-cyan-100 transition-colors hover:bg-cyan-300/[0.14] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg border border-cyan-300/25 bg-cyan-300/[0.09] px-3.5 text-sm font-semibold text-cyan-100 transition-colors hover:bg-cyan-300/[0.15] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <FiSearch aria-hidden="true" className="h-4 w-4" />
-            <span className="hidden sm:inline">Search</span>
+            <span>Search</span>
           </button>
         </form>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 sm:flex sm:flex-wrap xl:justify-end">
           <button
             type="button"
-            onClick={() => setShowAdvancedFilters((previous) => !previous)}
+            onClick={() =>
+              setShowAdvancedFilters((previous) => !previous)
+            }
             aria-expanded={showAdvancedFilters}
-            aria-controls="alert-advanced-filters"
+            aria-controls={filtersId}
             disabled={isDisabled}
-            className={`inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg border px-3 text-sm transition-colors sm:flex-none ${
+            className={`inline-flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-lg border px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60 disabled:cursor-not-allowed disabled:opacity-50 ${
               showAdvancedFilters || activeFilterCount > 0
-                ? "border-cyan-300/25 bg-cyan-300/[0.07] text-cyan-100"
-                : "border-white/[0.09] bg-white/[0.02] text-slate-300 hover:border-white/[0.16]"
-            } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60 disabled:cursor-not-allowed disabled:opacity-50`}
+                ? "border-cyan-300/30 bg-cyan-300/[0.08] text-cyan-100"
+                : "border-slate-700/80 bg-[#091525] text-slate-300 hover:border-slate-600"
+            }`}
           >
-            <FiSliders aria-hidden="true" className="h-4 w-4" />
-            Filters
+            <FiSliders
+              aria-hidden="true"
+              className="h-4 w-4 shrink-0"
+            />
+
+            <span>Filters</span>
 
             {activeFilterCount > 0 && (
               <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-cyan-300/15 px-1.5 text-[10px] font-bold text-cyan-200">
@@ -290,77 +387,92 @@ export default function AlertToolbar({
 
             <FiChevronDown
               aria-hidden="true"
-              className={`h-3.5 w-3.5 transition-transform duration-200 ${
+              className={`h-3.5 w-3.5 shrink-0 transition-transform ${
                 showAdvancedFilters ? "rotate-180" : ""
               }`}
             />
           </button>
 
-          <div className="flex min-w-0 flex-1 items-center gap-2 sm:flex-none">
-            <label className="sr-only" htmlFor="alert-sort-by">
-              Sort alerts by
+          <div className="relative min-w-0 sm:w-44">
+            <label className="sr-only" htmlFor={sortId}>
+              Sort alerts
             </label>
 
-            <div className="relative min-w-0 flex-1 sm:w-40 sm:flex-none">
-              <FiArrowUpDown
-                aria-hidden="true"
-                className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500"
-              />
+            <FiArrowDown
+              aria-hidden="true"
+              className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
+            />
 
-              <select
-                id="alert-sort-by"
-                value={appliedFilters.sortBy}
-                onChange={(event) =>
-                  updateFilter("sortBy", event.target.value)
-                }
-                disabled={isDisabled}
-                className={`${CONTROL_CLASS} appearance-none pl-9 pr-7 text-xs`}
-              >
-                {SORT_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-
-              <FiChevronDown
-                aria-hidden="true"
-                className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500"
-              />
-            </div>
-
-            <button
-              type="button"
-              onClick={handleSortDirection}
-              aria-label={`Sort ${appliedFilters.sortDirection === "asc" ? "descending" : "ascending"}`}
-              title={
-                appliedFilters.sortDirection === "asc"
-                  ? "Ascending"
-                  : "Descending"
+            <select
+              id={sortId}
+              value={appliedFilters.sortBy}
+              onChange={(event) =>
+                updateFilter("sortBy", event.target.value)
               }
               disabled={isDisabled}
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/[0.09] bg-white/[0.02] text-slate-300 transition-colors hover:border-white/[0.16] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60 disabled:cursor-not-allowed disabled:opacity-50"
+              className={`${SELECT_CLASS} pl-9 pr-8 text-xs`}
             >
-              {appliedFilters.sortDirection === "asc" ? (
-                <FiArrowDown aria-hidden="true" className="h-4 w-4" />
-              ) : (
-                <FiArrowUpDown aria-hidden="true" className="h-4 w-4" />
-              )}
-            </button>
+              {SORT_OPTIONS.map((option) => (
+                <option
+                  key={option.value}
+                  value={option.value}
+                  className="bg-[#091525] text-slate-100"
+                >
+                  {option.label}
+                </option>
+              ))}
+            </select>
+
+            <FiChevronDown
+              aria-hidden="true"
+              className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
+            />
           </div>
+
+          <button
+            type="button"
+            onClick={() =>
+              updateFilter(
+                "sortDirection",
+                appliedFilters.sortDirection === "asc" ? "desc" : "asc"
+              )
+            }
+            aria-label={
+              appliedFilters.sortDirection === "asc"
+                ? "Change to descending order"
+                : "Change to ascending order"
+            }
+            title={
+              appliedFilters.sortDirection === "asc"
+                ? "Ascending"
+                : "Descending"
+            }
+            disabled={isDisabled}
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-slate-700/80 bg-[#091525] text-slate-300 transition-colors hover:border-slate-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {appliedFilters.sortDirection === "asc" ? (
+              <FiArrowUp aria-hidden="true" className="h-4 w-4" />
+            ) : (
+              <FiArrowDown aria-hidden="true" className="h-4 w-4" />
+            )}
+          </button>
 
           {onRefresh && (
             <button
               type="button"
-              onClick={onRefresh}
+              onClick={handleRefresh}
               disabled={isDisabled || isRefreshing}
-              aria-label="Refresh alerts"
+              aria-label={
+                isRefreshing ? "Refreshing alerts" : "Refresh alerts"
+              }
               title="Refresh alerts"
-              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/[0.09] bg-white/[0.02] text-slate-300 transition-colors hover:border-cyan-300/25 hover:text-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-slate-700/80 bg-[#091525] text-slate-300 transition-colors hover:border-cyan-300/30 hover:text-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <FiRefreshCw
                 aria-hidden="true"
-                className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
+                className={`h-4 w-4 ${
+                  isRefreshing ? "animate-spin motion-reduce:animate-none" : ""
+                }`}
               />
             </button>
           )}
@@ -368,208 +480,157 @@ export default function AlertToolbar({
       </div>
 
       {/* Advanced filters */}
-      {showAdvancedFilters && (
-        <motion.div
-          id="alert-advanced-filters"
-          initial={shouldReduceMotion ? false : { opacity: 0, height: 0 }}
-          animate={{ opacity: 1, height: "auto" }}
-          exit={{ opacity: 0, height: 0 }}
-          transition={{
-            duration: shouldReduceMotion ? 0 : 0.2,
-          }}
-          className="mt-4 overflow-hidden border-t border-white/[0.07] pt-4"
-        >
-          <div className="mb-4 flex items-center gap-2">
-            <FiFilter
-              aria-hidden="true"
-              className="h-4 w-4 text-cyan-300"
-            />
+      <AnimatePresence initial={false}>
+        {showAdvancedFilters && (
+          <motion.div
+            key="advanced-alert-filters"
+            id={filtersId}
+            initial={
+              shouldReduceMotion
+                ? false
+                : { opacity: 0, height: 0, y: -4 }
+            }
+            animate={{ opacity: 1, height: "auto", y: 0 }}
+            exit={
+              shouldReduceMotion
+                ? undefined
+                : { opacity: 0, height: 0, y: -4 }
+            }
+            transition={{
+              duration: shouldReduceMotion ? 0 : 0.2,
+            }}
+            className="mt-4 overflow-visible border-t border-slate-800/80 pt-4"
+          >
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-cyan-300/15 bg-cyan-300/[0.06] text-cyan-200">
+                  <FiFilter aria-hidden="true" className="h-4 w-4" />
+                </span>
 
-            <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-300">
-              Refine alert results
-            </h3>
-          </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-200">
+                    Refine alert results
+                  </h3>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            <div>
-              <label className={LABEL_CLASS} htmlFor="alert-severity">
-                Severity
-              </label>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    Narrow the feed by classification and date.
+                  </p>
+                </div>
+              </div>
 
-              <select
-                id="alert-severity"
+              <span className="text-xs text-slate-500">
+                {activeFilterCount > 0
+                  ? getFilterCountLabel(activeFilterCount)
+                  : "No advanced filters applied"}
+              </span>
+            </div>
+
+            <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              <SelectField
+                id={`severity-${generatedId}`}
+                label="Severity"
                 value={appliedFilters.severity}
-                onChange={(event) =>
-                  updateFilter("severity", event.target.value)
-                }
+                options={SEVERITY_OPTIONS}
+                placeholder="All severities"
                 disabled={isDisabled}
-                className={CONTROL_CLASS}
-              >
-                <option value="">All severities</option>
+                onChange={(value) => updateFilter("severity", value)}
+              />
 
-                {SEVERITY_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className={LABEL_CLASS} htmlFor="alert-status">
-                Workflow status
-              </label>
-
-              <select
-                id="alert-status"
+              <SelectField
+                id={`status-${generatedId}`}
+                label="Workflow status"
                 value={appliedFilters.status}
-                onChange={(event) =>
-                  updateFilter("status", event.target.value)
-                }
+                options={STATUS_OPTIONS}
+                placeholder="All statuses"
                 disabled={isDisabled}
-                className={CONTROL_CLASS}
-              >
-                <option value="">All statuses</option>
+                onChange={(value) => updateFilter("status", value)}
+              />
 
-                {STATUS_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className={LABEL_CLASS} htmlFor="alert-source">
-                Source
-              </label>
-
-              <select
-                id="alert-source"
+              <SelectField
+                id={`source-${generatedId}`}
+                label="Source"
                 value={appliedFilters.source}
-                onChange={(event) =>
-                  updateFilter("source", event.target.value)
-                }
+                options={SOURCE_OPTIONS}
+                placeholder="All sources"
                 disabled={isDisabled}
-                className={CONTROL_CLASS}
-              >
-                <option value="">All sources</option>
+                onChange={(value) => updateFilter("source", value)}
+              />
 
-                {SOURCE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className={LABEL_CLASS} htmlFor="alert-type">
-                Alert type
-              </label>
-
-              <select
-                id="alert-type"
+              <SelectField
+                id={`type-${generatedId}`}
+                label="Alert type"
                 value={appliedFilters.type}
-                onChange={(event) =>
-                  updateFilter("type", event.target.value)
-                }
+                options={TYPE_OPTIONS}
+                placeholder="All types"
                 disabled={isDisabled}
-                className={CONTROL_CLASS}
-              >
-                <option value="">All types</option>
+                onChange={(value) => updateFilter("type", value)}
+              />
 
-                {TYPE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+              <DateField
+                id={`from-date-${generatedId}`}
+                label="From date"
+                value={appliedFilters.fromDate}
+                max={appliedFilters.toDate}
+                onChange={(value) => handleDateChange("fromDate", value)}
+                disabled={isDisabled}
+                invalid={
+                  !isValidDate(appliedFilters.fromDate) ||
+                  Boolean(
+                    appliedFilters.fromDate &&
+                      appliedFilters.toDate &&
+                      appliedFilters.fromDate > appliedFilters.toDate
+                  )
+                }
+              />
+
+              <DateField
+                id={`to-date-${generatedId}`}
+                label="To date"
+                value={appliedFilters.toDate}
+                min={appliedFilters.fromDate}
+                onChange={(value) => handleDateChange("toDate", value)}
+                disabled={isDisabled}
+                invalid={
+                  !isValidDate(appliedFilters.toDate) ||
+                  Boolean(
+                    appliedFilters.fromDate &&
+                      appliedFilters.toDate &&
+                      appliedFilters.fromDate > appliedFilters.toDate
+                  )
+                }
+              />
             </div>
 
-            <div>
-              <label className={LABEL_CLASS} htmlFor="alert-from-date">
-                From date
-              </label>
+            <div className="mt-5 flex flex-col gap-3 border-t border-slate-800/80 pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs leading-5 text-slate-500">
+                Filters update the alert feed. Clear them to restore the
+                complete collection.
+              </p>
 
-              <div className="relative">
-                <FiCalendar
-                  aria-hidden="true"
-                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
-                />
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0">
+                <button
+                  type="button"
+                  onClick={handleClearFilters}
+                  disabled={isDisabled || !hasAnyFilters}
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-700/80 px-3 text-xs font-medium text-slate-300 transition-colors hover:bg-white/[0.04] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <FiX aria-hidden="true" className="h-3.5 w-3.5" />
+                  Clear all
+                </button>
 
-                <input
-                  id="alert-from-date"
-                  type="date"
-                  value={appliedFilters.fromDate}
-                  max={appliedFilters.toDate || undefined}
-                  onChange={(event) =>
-                    handleDateChange("fromDate", event.target.value)
-                  }
-                  disabled={isDisabled}
-                  aria-invalid={!isValidDate(appliedFilters.fromDate)}
-                  className={`${CONTROL_CLASS} pl-9 [color-scheme:dark]`}
-                />
+                <button
+                  type="button"
+                  onClick={() => setShowAdvancedFilters(false)}
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-cyan-300/25 bg-cyan-300/[0.08] px-4 text-xs font-semibold text-cyan-100 transition-colors hover:bg-cyan-300/[0.14] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60"
+                >
+                  <FiCheck aria-hidden="true" className="h-3.5 w-3.5" />
+                  Done
+                </button>
               </div>
             </div>
-
-            <div>
-              <label className={LABEL_CLASS} htmlFor="alert-to-date">
-                To date
-              </label>
-
-              <div className="relative">
-                <FiCalendar
-                  aria-hidden="true"
-                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
-                />
-
-                <input
-                  id="alert-to-date"
-                  type="date"
-                  value={appliedFilters.toDate}
-                  min={appliedFilters.fromDate || undefined}
-                  onChange={(event) =>
-                    handleDateChange("toDate", event.target.value)
-                  }
-                  disabled={isDisabled}
-                  aria-invalid={!isValidDate(appliedFilters.toDate)}
-                  className={`${CONTROL_CLASS} pl-9 [color-scheme:dark]`}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-4 flex flex-col gap-3 border-t border-white/[0.06] pt-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-xs text-slate-500">
-              {activeFilterCount > 0
-                ? `${activeFilterCount} filter${activeFilterCount === 1 ? "" : "s"} applied`
-                : "No advanced filters applied"}
-            </p>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleClearFilters}
-                disabled={isDisabled || !hasAnyFilters}
-                className="inline-flex min-h-9 flex-1 items-center justify-center gap-2 rounded-lg px-3 text-xs font-medium text-slate-400 transition-colors hover:bg-white/[0.04] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60 disabled:cursor-not-allowed disabled:opacity-40 sm:flex-none"
-              >
-                <FiX aria-hidden="true" className="h-3.5 w-3.5" />
-                Clear all
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setShowAdvancedFilters(false)}
-                className="inline-flex min-h-9 flex-1 items-center justify-center gap-2 rounded-lg border border-cyan-300/20 bg-cyan-300/[0.07] px-3 text-xs font-semibold text-cyan-100 transition-colors hover:bg-cyan-300/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60 sm:flex-none"
-              >
-                <FiCheck aria-hidden="true" className="h-3.5 w-3.5" />
-                Done
-              </button>
-            </div>
-          </div>
-        </motion.div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.section>
   );
 }

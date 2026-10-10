@@ -1,11 +1,10 @@
 import { motion, useReducedMotion } from "framer-motion";
 import {
-  FiAlertCircle,
+  FiActivity,
   FiAlertTriangle,
+  FiArrowUpRight,
   FiCheckCircle,
   FiClock,
-  FiActivity,
-  FiArrowUpRight,
 } from "react-icons/fi";
 
 const SUMMARY_ITEMS = [
@@ -15,7 +14,6 @@ const SUMMARY_ITEMS = [
     description: "Awaiting review",
     icon: FiClock,
     accent: "amber",
-    statuses: ["PENDING"],
   },
   {
     key: "acknowledged",
@@ -23,7 +21,6 @@ const SUMMARY_ITEMS = [
     description: "Under investigation",
     icon: FiActivity,
     accent: "cyan",
-    statuses: ["ACKNOWLEDGED"],
   },
   {
     key: "resolved",
@@ -31,7 +28,6 @@ const SUMMARY_ITEMS = [
     description: "Issue addressed",
     icon: FiCheckCircle,
     accent: "emerald",
-    statuses: ["RESOLVED"],
   },
   {
     key: "critical",
@@ -39,38 +35,41 @@ const SUMMARY_ITEMS = [
     description: "Requires attention",
     icon: FiAlertTriangle,
     accent: "rose",
-    severity: "CRITICAL",
   },
 ];
 
 const ACCENT_STYLES = {
   amber: {
-    icon: "border-amber-400/15 bg-amber-400/[0.08] text-amber-300",
-    indicator: "bg-amber-300",
+    icon: "border-amber-400/20 bg-amber-400/10 text-amber-300",
     value: "text-amber-200",
-    hover: "hover:border-amber-300/25",
+    glow: "bg-amber-300",
+    hover: "hover:border-amber-300/30",
     focus: "focus-visible:ring-amber-300/60",
+    active: "border-amber-300/40",
   },
   cyan: {
-    icon: "border-cyan-400/15 bg-cyan-400/[0.08] text-cyan-300",
-    indicator: "bg-cyan-300",
+    icon: "border-cyan-400/20 bg-cyan-400/10 text-cyan-300",
     value: "text-cyan-200",
-    hover: "hover:border-cyan-300/25",
+    glow: "bg-cyan-300",
+    hover: "hover:border-cyan-300/30",
     focus: "focus-visible:ring-cyan-300/60",
+    active: "border-cyan-300/40",
   },
   emerald: {
-    icon: "border-emerald-400/15 bg-emerald-400/[0.08] text-emerald-300",
-    indicator: "bg-emerald-300",
+    icon: "border-emerald-400/20 bg-emerald-400/10 text-emerald-300",
     value: "text-emerald-200",
-    hover: "hover:border-emerald-300/25",
+    glow: "bg-emerald-300",
+    hover: "hover:border-emerald-300/30",
     focus: "focus-visible:ring-emerald-300/60",
+    active: "border-emerald-300/40",
   },
   rose: {
-    icon: "border-rose-400/15 bg-rose-400/[0.08] text-rose-300",
-    indicator: "bg-rose-300",
+    icon: "border-rose-400/20 bg-rose-400/10 text-rose-300",
     value: "text-rose-200",
-    hover: "hover:border-rose-300/25",
+    glow: "bg-rose-300",
+    hover: "hover:border-rose-300/30",
     focus: "focus-visible:ring-rose-300/60",
+    active: "border-rose-300/40",
   },
 };
 
@@ -85,35 +84,25 @@ const formatCount = (value) =>
   }).format(value);
 
 function normalizeStatus(value) {
-  return typeof value === "string" ? value.trim().toUpperCase() : "";
+  return String(value ?? "").trim().toUpperCase();
 }
 
-function normalizeSeverity(value) {
-  return typeof value === "string" ? value.trim().toUpperCase() : "";
-}
-
-/**
- * Derive summary counts from a complete collection of alerts.
- *
- * Pass alerts only when they represent the complete collection.
- * Do not use the current page of a paginated response to calculate
- * global totals.
- */
 function deriveSummary(alerts) {
   return alerts.reduce(
-    (summary, alert) => {
+    (result, alert) => {
       const status = normalizeStatus(alert?.status);
-      const severity = normalizeSeverity(alert?.severity);
+      const severity = normalizeStatus(alert?.severity);
 
-      if (status === "PENDING") summary.pending += 1;
+      if (status === "PENDING") result.pending += 1;
+      if (status === "ACKNOWLEDGED") result.acknowledged += 1;
 
-      if (status === "ACKNOWLEDGED") summary.acknowledged += 1;
+      if (status === "RESOLVED" || status === "CLOSED") {
+        result.resolved += 1;
+      }
 
-      if (status === "RESOLVED") summary.resolved += 1;
+      if (severity === "CRITICAL") result.critical += 1;
 
-      if (severity === "CRITICAL") summary.critical += 1;
-
-      return summary;
+      return result;
     },
     {
       pending: 0,
@@ -124,22 +113,6 @@ function deriveSummary(alerts) {
   );
 }
 
-/**
- * OrbitGuard AI — Alert Summary
- *
- * @param {Object} props
- * @param {Array<Object>} [props.alerts] Complete alert collection.
- * @param {Object|null} [props.summary] Backend-derived summary counts.
- * @param {boolean} [props.isLoading=false] Loading state.
- * @param {string|null} [props.error=null] Summary error message.
- * @param {string|null} [props.activeFilter=null] Selected summary filter.
- * @param {Function} [props.onSelectFilter] Optional filter callback.
- *
- * Precedence:
- * 1. Backend-derived summary
- * 2. Complete alert collection
- * 3. Unavailable values
- */
 export default function AlertSummary({
   alerts,
   summary,
@@ -155,31 +128,50 @@ export default function AlertSummary({
     typeof summary === "object" &&
     !Array.isArray(summary);
 
-  const hasCompleteCollection = Array.isArray(alerts);
-
-  const derivedSummary = hasCompleteCollection
+  const derivedSummary = Array.isArray(alerts)
     ? deriveSummary(alerts)
     : null;
 
-  const values = hasBackendSummary
-    ? summary
-    : derivedSummary;
+  const values = hasBackendSummary ? summary : derivedSummary;
 
   const getCount = (key) => {
     if (!values || !isValidCount(values[key])) return null;
     return values[key];
   };
 
-  const unavailable = !values || Boolean(error);
+  const isInteractive = typeof onSelectFilter === "function";
+
+  const isActive = (key) => {
+    const current = normalizeStatus(activeFilter);
+
+    if (key === "critical") return false;
+
+    return current === normalizeStatus(key);
+  };
+
+  const handleSelect = (key) => {
+    if (!isInteractive) return;
+
+    // Critical is a severity filter, not a workflow status.
+    if (key === "critical") {
+      onSelectFilter("CRITICAL");
+      return;
+    }
+
+    onSelectFilter(
+      isActive(key) ? "ALL" : key.toUpperCase()
+    );
+  };
 
   return (
     <section
       aria-labelledby="alert-summary-heading"
       aria-busy={isLoading}
-      className="mb-6"
+      className="mb-5 min-w-0 sm:mb-6"
     >
-      <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
-        <div>
+      {/* Section heading */}
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-3 sm:mb-4">
+        <div className="min-w-0">
           <h2
             id="alert-summary-heading"
             className="font-[Orbitron] text-sm font-semibold tracking-wide text-slate-100 sm:text-base"
@@ -187,106 +179,113 @@ export default function AlertSummary({
             Operational Overview
           </h2>
 
-          <p className="mt-1 text-xs leading-5 text-slate-500 sm:text-sm">
+          <p className="mt-1 text-xs leading-5 text-slate-400 sm:text-sm">
             Current alert workload and priority signals.
           </p>
         </div>
 
-        <div className="inline-flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500 sm:text-[11px]">
-          <FiActivity aria-hidden="true" className="h-3.5 w-3.5" />
+        <div className="inline-flex shrink-0 items-center gap-2 pb-0.5 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500 sm:text-[11px]">
+          <FiActivity
+            aria-hidden="true"
+            className="h-3.5 w-3.5 text-cyan-300"
+          />
           Alert telemetry
         </div>
       </div>
 
       {error ? (
         <div
-          role="status"
-          className="rounded-xl border border-rose-400/15 bg-rose-400/[0.04] px-4 py-3 text-sm text-rose-200"
+          role="alert"
+          className="rounded-xl border border-rose-400/20 bg-rose-400/[0.05] px-4 py-4 text-sm text-rose-200"
         >
-          Unable to load the alert summary. {error}
+          Unable to load the alert summary.
+          <p className="mt-1 text-xs leading-5 text-rose-200/70">
+            {error}
+          </p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {SUMMARY_ITEMS.map((item, index) => {
             const Icon = item.icon;
             const accent = ACCENT_STYLES[item.accent];
             const count = getCount(item.key);
-            const isActive =
-              activeFilter?.toUpperCase() === item.key.toUpperCase();
+            const active = isActive(item.key);
 
-            const isInteractive = typeof onSelectFilter === "function";
-
-            const handleSelect = () => {
-              if (isInteractive) onSelectFilter(item.key);
-            };
-
-            const cardClasses = [
-              "group relative min-w-0 overflow-hidden rounded-xl border bg-[#07111f] p-3.5 text-left transition-colors duration-200 sm:p-4",
-              "border-white/[0.07]",
+            const cardClassName = [
+              "group relative flex h-full min-h-[158px] min-w-0 flex-col overflow-hidden rounded-xl border bg-[#07111f]/95 p-4 text-left",
+              "transition-[border-color,background-color,transform] duration-200",
+              "border-white/[0.08]",
               accent.hover,
-              isActive
-                ? "border-cyan-300/30 bg-cyan-300/[0.05]"
-                : "",
+              active
+                ? `${accent.active} bg-white/[0.035]`
+                : "hover:bg-[#0a1728]",
               isInteractive
                 ? `cursor-pointer focus-visible:outline-none focus-visible:ring-2 ${accent.focus} focus-visible:ring-offset-2 focus-visible:ring-offset-[#020914]`
                 : "",
+              isLoading ? "animate-pulse" : "",
             ]
               .filter(Boolean)
               .join(" ");
 
             const content = (
               <>
-                <div className="flex items-start justify-between gap-2">
+                {/* Card accent */}
+                <span
+                  aria-hidden="true"
+                  className={`absolute inset-x-0 top-0 h-px ${accent.glow} opacity-40`}
+                />
+
+                <div className="flex items-center justify-between gap-3">
                   <div
-                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border sm:h-10 sm:w-10 ${accent.icon}`}
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border ${accent.icon}`}
                   >
                     <Icon
                       aria-hidden="true"
-                      className="h-[18px] w-[18px]"
+                      className="h-[19px] w-[19px]"
                     />
                   </div>
 
                   {isInteractive ? (
                     <FiArrowUpRight
                       aria-hidden="true"
-                      className={`h-4 w-4 shrink-0 text-slate-600 transition-colors group-hover:text-slate-300 ${
-                        isActive ? "text-cyan-300" : ""
+                      className={`h-4 w-4 shrink-0 transition-colors ${
+                        active
+                          ? "text-cyan-200"
+                          : "text-slate-600 group-hover:text-slate-300"
                       }`}
                     />
                   ) : (
                     <span
                       aria-hidden="true"
-                      className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${accent.indicator}`}
+                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${accent.glow}`}
                     />
                   )}
                 </div>
 
-                <div className="mt-4">
-                  <p className="text-xs font-medium text-slate-400 sm:text-sm">
+                <div className="mt-4 min-w-0">
+                  <p className="truncate text-sm font-medium text-slate-300">
                     {item.label}
                   </p>
 
-                  <div className="mt-1 flex items-baseline gap-2">
-                    <span
-                      className={`font-[Orbitron] text-2xl font-semibold tabular-nums tracking-tight sm:text-3xl ${
-                        count === null ? "text-slate-500" : accent.value
-                      }`}
-                    >
-                      {isLoading || count === null
-                        ? "—"
-                        : formatCount(count)}
-                    </span>
-                  </div>
+                  <p
+                    className={`mt-1 font-[Orbitron] text-3xl font-semibold leading-tight tracking-tight tabular-nums ${
+                      count === null ? "text-slate-500" : accent.value
+                    }`}
+                  >
+                    {isLoading || count === null
+                      ? "—"
+                      : formatCount(count)}
+                  </p>
 
-                  <p className="mt-1.5 text-[10px] leading-4 text-slate-500 sm:text-xs">
+                  <p className="mt-2 text-xs leading-5 text-slate-500">
                     {item.description}
                   </p>
                 </div>
 
-                {isActive && (
-                  <div
+                {active && (
+                  <span
                     aria-hidden="true"
-                    className="absolute inset-x-0 bottom-0 h-0.5 bg-cyan-300/70"
+                    className={`absolute inset-x-0 bottom-0 h-0.5 ${accent.glow}`}
                   />
                 )}
               </>
@@ -296,40 +295,37 @@ export default function AlertSummary({
               <motion.div
                 key={item.key}
                 initial={
-                  shouldReduceMotion
-                    ? false
-                    : { opacity: 0, y: 8 }
+                  shouldReduceMotion ? false : { opacity: 0, y: 8 }
                 }
                 animate={{ opacity: 1, y: 0 }}
                 transition={{
                   duration: shouldReduceMotion ? 0 : 0.25,
-                  delay: shouldReduceMotion ? 0 : index * 0.045,
+                  delay: shouldReduceMotion ? 0 : index * 0.04,
                 }}
+                className="min-w-0"
               >
                 {isInteractive ? (
                   <button
                     type="button"
-                    className={cardClasses}
-                    onClick={handleSelect}
-                    aria-pressed={isActive}
-                    aria-label={`Filter alerts by ${item.label.toLowerCase()}`}
-                    disabled={isLoading || unavailable}
+                    className={`${cardClassName} w-full disabled:cursor-wait disabled:opacity-60`}
+                    onClick={() => handleSelect(item.key)}
+                    aria-pressed={active}
+                    aria-label={
+                      item.key === "critical"
+                        ? "Filter alerts by critical severity"
+                        : `Filter alerts by ${item.label.toLowerCase()} status`
+                    }
+                    disabled={isLoading || count === null}
                   >
                     {content}
                   </button>
                 ) : (
-                  <div className={cardClasses}>{content}</div>
+                  <div className={cardClassName}>{content}</div>
                 )}
               </motion.div>
             );
           })}
         </div>
-      )}
-
-      {!error && !isLoading && unavailable && (
-        <p className="mt-2 text-xs text-slate-500">
-          Summary values will appear when alert data is available.
-        </p>
       )}
     </section>
   );

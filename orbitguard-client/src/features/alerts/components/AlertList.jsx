@@ -440,22 +440,6 @@ export default function AlertList({
     >
       {/* Feed heading */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] px-4 py-4 sm:px-5">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2.5">
-            <span className="h-4 w-1 rounded-full bg-cyan-300" />
-
-            <h2
-              id="alert-list-heading"
-              className="font-[Orbitron] text-sm font-semibold tracking-wide text-slate-100 sm:text-base"
-            >
-              Alert Feed
-            </h2>
-          </div>
-
-          <p className="mt-1.5 pl-3.5 text-xs text-slate-500">
-            Review incidents and inspect orbital risk signals.
-          </p>
-        </div>
 
         <div className="flex items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.02] px-2.5 py-1.5">
           <span
