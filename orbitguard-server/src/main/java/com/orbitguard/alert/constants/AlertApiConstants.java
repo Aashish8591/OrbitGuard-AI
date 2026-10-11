@@ -5,15 +5,15 @@ package com.orbitguard.alert.constants;
  * ==============================================================
  * Alert API Constants
  * ==============================================================
- *
+ * <p>
  * Contains all REST API endpoint constants used by the
  * Alert Module.
- *
+ * <p>
  * Keeping API paths in one place improves:
  * • Maintainability
  * • Readability
  * • Consistency across controllers
- *
+ * <p>
  * Module : Alert Management
  *
  * @author OrbitGuard AI Team

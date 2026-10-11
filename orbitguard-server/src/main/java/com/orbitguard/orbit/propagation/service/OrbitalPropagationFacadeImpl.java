@@ -32,31 +32,6 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
-/**
- * ================================================================
- * OrbitGuard AI - Orbital Propagation Facade
- * ================================================================
- *
- * Application-level facade responsible for coordinating:
- *
- * 1. CelesTrak data retrieval for single-object propagation.
- * 2. Mapping external orbital data into propagation input.
- * 3. SGP4/Orekit propagation through OrbitalPropagationService.
- * 4. Coordinate conversion through CoordinateConversionService.
- * 5. Bulk propagation for 3D visualization.
- *
- * IMPORTANT:
- *
- * - Single-object propagation may use CelesTrak.
- * - Bulk visualization propagation uses synchronized MongoDB data.
- * - This class does not implement SGP4 itself.
- * - This class does not perform orbital mathematics.
- * - This class does not calculate collision risk.
- *
- * Bulk propagation is intentionally bounded so that a dataset
- * containing tens of thousands of orbital objects does not create
- * tens of thousands of simultaneously queued tasks.
- */
 @Service
 public class OrbitalPropagationFacadeImpl
         implements OrbitalPropagationFacade {
@@ -66,9 +41,6 @@ public class OrbitalPropagationFacadeImpl
                     OrbitalPropagationFacadeImpl.class
             );
 
-    /**
-     * Maximum number of worker threads used for bulk propagation.
-     */
     private static final int BULK_PROPAGATION_THREADS =
             Math.max(
                     1,
@@ -78,15 +50,9 @@ public class OrbitalPropagationFacadeImpl
                     )
             );
 
-    /**
-     * Maximum number of tasks allowed to be in-flight.
-     */
     private static final int MAX_IN_FLIGHT_TASKS =
             BULK_PROPAGATION_THREADS * 2;
 
-    /**
-     * Shared executor for bulk propagation.
-     */
     private final ExecutorService bulkPropagationExecutor;
 
     private final CelesTrakService celesTrakService;
@@ -99,35 +65,18 @@ public class OrbitalPropagationFacadeImpl
     private final DebrisOrbitalPropagationMapper
             debrisOrbitalPropagationMapper;
 
-    private final OrbitalPropagationService
-            orbitalPropagationService;
+    private final OrbitalPropagationService orbitalPropagationService;
 
-    private final CoordinateConversionService
-            coordinateConversionService;
+    private final CoordinateConversionService coordinateConversionService;
 
     private final SatelliteRepository satelliteRepository;
 
     private final DebrisRepository debrisRepository;
 
-    /**
-     * ================================================================
-     * INTERNAL BULK PROPAGATION CONTEXT
-     * ================================================================
-     *
-     * Keeps the propagated state together with the metadata that was
-     * already available from MongoDB.
-     *
-     * This is intentionally private to this facade.
-     *
-     * It prevents VisualizationServiceImpl from loading all satellite
-     * and debris documents again just to recover object name/type.
-     */
     private static final class BulkPropagationContext {
 
         private final PropagatedOrbitalState orbitalState;
-
         private final String objectName;
-
         private final String objectType;
 
         private BulkPropagationContext(
@@ -135,15 +84,9 @@ public class OrbitalPropagationFacadeImpl
                 String objectName,
                 String objectType
         ) {
-
-            this.orbitalState =
-                    orbitalState;
-
-            this.objectName =
-                    objectName;
-
-            this.objectType =
-                    objectType;
+            this.orbitalState = orbitalState;
+            this.objectName = objectName;
+            this.objectType = objectType;
         }
 
         private PropagatedOrbitalState getOrbitalState() {
@@ -159,50 +102,28 @@ public class OrbitalPropagationFacadeImpl
         }
     }
 
-    /**
-     * ================================================================
-     * SPRING CONSTRUCTOR
-     * ================================================================
-     */
     @Autowired
     public OrbitalPropagationFacadeImpl(
             CelesTrakService celesTrakService,
             CelesTrakDebrisService celesTrakDebrisService,
-            SatelliteOrbitalPropagationMapper
-                    satelliteOrbitalPropagationMapper,
-            DebrisOrbitalPropagationMapper
-                    debrisOrbitalPropagationMapper,
-            OrbitalPropagationService
-                    orbitalPropagationService,
-            CoordinateConversionService
-                    coordinateConversionService,
+            SatelliteOrbitalPropagationMapper satelliteOrbitalPropagationMapper,
+            DebrisOrbitalPropagationMapper debrisOrbitalPropagationMapper,
+            OrbitalPropagationService orbitalPropagationService,
+            CoordinateConversionService coordinateConversionService,
             SatelliteRepository satelliteRepository,
             DebrisRepository debrisRepository
     ) {
 
-        this.celesTrakService =
-                celesTrakService;
-
-        this.celesTrakDebrisService =
-                celesTrakDebrisService;
-
+        this.celesTrakService = celesTrakService;
+        this.celesTrakDebrisService = celesTrakDebrisService;
         this.satelliteOrbitalPropagationMapper =
                 satelliteOrbitalPropagationMapper;
-
         this.debrisOrbitalPropagationMapper =
                 debrisOrbitalPropagationMapper;
-
-        this.orbitalPropagationService =
-                orbitalPropagationService;
-
-        this.coordinateConversionService =
-                coordinateConversionService;
-
-        this.satelliteRepository =
-                satelliteRepository;
-
-        this.debrisRepository =
-                debrisRepository;
+        this.orbitalPropagationService = orbitalPropagationService;
+        this.coordinateConversionService = coordinateConversionService;
+        this.satelliteRepository = satelliteRepository;
+        this.debrisRepository = debrisRepository;
 
         this.bulkPropagationExecutor =
                 Executors.newFixedThreadPool(
@@ -217,10 +138,18 @@ public class OrbitalPropagationFacadeImpl
         );
     }
 
-    /**
+    /*
      * ================================================================
      * SINGLE SATELLITE PROPAGATION
      * ================================================================
+     *
+     * Data-source order:
+     *
+     * 1. Try CelesTrak for the latest orbital elements.
+     * 2. If retrieval fails or returns no usable record, look up MongoDB.
+     * 3. Validate cached orbital elements before propagation.
+     *
+     * No other propagation flow is changed.
      */
     @Override
     public PropagatedOrbitalState propagateSatellite(
@@ -228,64 +157,291 @@ public class OrbitalPropagationFacadeImpl
             LocalDateTime targetTime
     ) {
 
-        validateSatelliteNoradId(
-                noradCatalogId
-        );
+        validateSatelliteNoradId(noradCatalogId);
+        validateTargetTime(targetTime);
 
-        validateTargetTime(
-                targetTime
-        );
+        RuntimeException liveDataFailure = null;
 
-        List<
-                com.orbitguard.satellite.integration.celestrak.dto.CelesTrakOrbitalData
-                > orbitalDataList =
-                celesTrakService.fetchSatelliteOrbitalData(
-                        noradCatalogId
+        /*
+         * ------------------------------------------------------------
+         * STEP 1: TRY LIVE CELESTRAK DATA
+         * ------------------------------------------------------------
+         */
+        try {
+
+            List<
+                    com.orbitguard.satellite.integration.celestrak.dto
+                            .CelesTrakOrbitalData
+                    > orbitalDataList =
+                    celesTrakService.fetchSatelliteOrbitalData(
+                            noradCatalogId
+                    );
+
+            if (orbitalDataList == null
+                    || orbitalDataList.isEmpty()
+                    || orbitalDataList.get(0) == null) {
+
+                liveDataFailure = new IllegalStateException(
+                        "CelesTrak returned no usable orbital data " +
+                                "for satellite NORAD ID: " +
+                                noradCatalogId
                 );
 
-        if (orbitalDataList == null
-                || orbitalDataList.isEmpty()) {
+            } else {
 
-            throw new IllegalArgumentException(
-                    "No orbital data found for satellite NORAD ID: "
-                            + noradCatalogId
+                com.orbitguard.satellite.integration.celestrak.dto
+                        .CelesTrakOrbitalData orbitalData =
+                        orbitalDataList.get(0);
+
+                OrbitalPropagationInput input =
+                        satelliteOrbitalPropagationMapper
+                                .toPropagationInput(
+                                        orbitalData,
+                                        targetTime
+                                );
+
+                if (input == null) {
+
+                    liveDataFailure = new IllegalStateException(
+                            "Failed to map CelesTrak orbital data " +
+                                    "for satellite NORAD ID: " +
+                                    noradCatalogId
+                    );
+
+                } else {
+
+                    log.debug(
+                            "Using live CelesTrak orbital data " +
+                                    "for satellite NORAD ID={}",
+                            noradCatalogId
+                    );
+
+                    return orbitalPropagationService.propagate(
+                            input
+                    );
+                }
+            }
+
+        } catch (RuntimeException exception) {
+
+            /*
+             * Catch only the live-data/mapping/propagation path here
+             * so a failed live attempt can fall back to cached data.
+             */
+            liveDataFailure = exception;
+
+            log.warn(
+                    "Live satellite propagation failed for NORAD ID={}. " +
+                            "Checking MongoDB fallback. Reason: {}",
+                    noradCatalogId,
+                    exception.getMessage()
             );
         }
 
-        com.orbitguard.satellite.integration.celestrak.dto.CelesTrakOrbitalData
-                orbitalData =
-                orbitalDataList.get(0);
+        /*
+         * ------------------------------------------------------------
+         * STEP 2: LOOK UP THE SATELLITE IN MONGODB
+         * ------------------------------------------------------------
+         */
+        Satellite cachedSatellite;
 
-        if (orbitalData == null) {
+        try {
 
-            throw new IllegalArgumentException(
-                    "Satellite orbital data is null for NORAD ID: "
-                            + noradCatalogId
+            cachedSatellite =
+                    satelliteRepository
+                            .findByNoradCatalogId(noradCatalogId)
+                            .orElse(null);
+
+        } catch (RuntimeException databaseException) {
+
+            log.error(
+                    "MongoDB lookup failed for satellite NORAD ID={}",
+                    noradCatalogId,
+                    databaseException
             );
+
+            IllegalStateException exception =
+                    new IllegalStateException(
+                            "Unable to retrieve cached satellite data " +
+                                    "from MongoDB for NORAD ID: " +
+                                    noradCatalogId,
+                            databaseException
+                    );
+
+            if (liveDataFailure != null) {
+                exception.addSuppressed(liveDataFailure);
+            }
+
+            throw exception;
         }
 
-        OrbitalPropagationInput input =
-                satelliteOrbitalPropagationMapper
-                        .toPropagationInput(
-                                orbitalData,
-                                targetTime
-                        );
+        if (cachedSatellite == null) {
 
-        if (input == null) {
+            IllegalStateException exception =
+                    new IllegalStateException(
+                            "Satellite NORAD ID " + noradCatalogId +
+                                    " could not be propagated. " +
+                                    "CelesTrak failed and no matching " +
+                                    "satellite exists in MongoDB."
+                    );
 
-            throw new IllegalStateException(
-                    "Failed to create orbital propagation input "
-                            + "for satellite NORAD ID: "
-                            + noradCatalogId
-            );
+            if (liveDataFailure != null) {
+                exception.initCause(liveDataFailure);
+            }
+
+            throw exception;
         }
 
+        /*
+         * ------------------------------------------------------------
+         * STEP 3: VALIDATE CACHED ORBITAL ELEMENTS
+         * ------------------------------------------------------------
+         */
+        if (!hasCompleteCachedOrbitalElements(cachedSatellite)) {
+
+            IllegalStateException exception =
+                    new IllegalStateException(
+                            "Cached orbital elements are incomplete " +
+                                    "for satellite NORAD ID: " +
+                                    noradCatalogId +
+                                    ". Synchronize complete orbital " +
+                                    "elements before retrying."
+                    );
+
+            if (liveDataFailure != null) {
+                exception.initCause(liveDataFailure);
+            }
+
+            throw exception;
+        }
+
+        /*
+         * ------------------------------------------------------------
+         * STEP 4: BUILD INPUT FROM MONGODB
+         * ------------------------------------------------------------
+         */
+        OrbitalPropagationInput cachedInput =
+                buildCachedSatellitePropagationInput(
+                        cachedSatellite,
+                        targetTime
+                );
+
+        log.warn(
+                "Using cached MongoDB orbital elements for satellite " +
+                        "NORAD ID={}. Verify the stored epoch and data " +
+                        "freshness. Live-data failure: {}",
+                noradCatalogId,
+                liveDataFailure != null
+                        ? liveDataFailure.getMessage()
+                        : "No usable live data returned"
+        );
+
+        /*
+         * ------------------------------------------------------------
+         * STEP 5: PROPAGATE USING EXISTING PROPAGATION SERVICE
+         * ------------------------------------------------------------
+         */
         return orbitalPropagationService.propagate(
-                input
+                cachedInput
         );
     }
 
-    /**
+    /*
+     * ================================================================
+     * CACHED SATELLITE DATA VALIDATION
+     * ================================================================
+     */
+    private boolean hasCompleteCachedOrbitalElements(
+            Satellite satellite
+    ) {
+
+        if (satellite == null
+                || satellite.getNoradCatalogId() == null
+                || satellite.getNoradCatalogId() <= 0) {
+
+            return false;
+        }
+
+        return satellite.getEpoch() != null
+                && satellite.getMeanMotion() != null
+                && satellite.getEccentricity() != null
+                && satellite.getInclination() != null
+                && satellite.getRightAscensionOfAscendingNode() != null
+                && satellite.getArgumentOfPericenter() != null
+                && satellite.getMeanAnomaly() != null;
+    }
+
+    /*
+     * ================================================================
+     * BUILD CACHED SATELLITE PROPAGATION INPUT
+     * ================================================================
+     *
+     * Uses the same orbital fields already used by bulk propagation.
+     * Does not introduce a new propagation implementation.
+     */
+    private OrbitalPropagationInput buildCachedSatellitePropagationInput(
+            Satellite satellite,
+            LocalDateTime targetTime
+    ) {
+
+        return OrbitalPropagationInput.builder()
+                .noradCatalogId(
+                        satellite.getNoradCatalogId().longValue()
+                )
+                .objectId(
+                        satellite.getObjectId()
+                )
+                .classificationType(
+                        satellite.getClassificationType()
+                )
+                .ephemerisType(
+                        satellite.getEphemerisType()
+                )
+                .epoch(
+                        satellite.getEpoch()
+                )
+                .meanMotion(
+                        satellite.getMeanMotion()
+                )
+                .meanMotionDot(
+                        satellite.getMeanMotionDot()
+                )
+                .meanMotionDdot(
+                        satellite.getMeanMotionDdot()
+                )
+                .eccentricity(
+                        satellite.getEccentricity()
+                )
+                .inclination(
+                        satellite.getInclination()
+                )
+                .rightAscensionOfAscendingNode(
+                        satellite.getRightAscensionOfAscendingNode()
+                )
+                .argumentOfPericenter(
+                        satellite.getArgumentOfPericenter()
+                )
+                .meanAnomaly(
+                        satellite.getMeanAnomaly()
+                )
+                .bstar(
+                        satellite.getBstar()
+                )
+                .elementSetNumber(
+                        satellite.getElementSetNumber()
+                )
+                .revolutionAtEpoch(
+                        satellite.getRevolutionAtEpoch() == null
+                                ? null
+                                : satellite.getRevolutionAtEpoch().longValue()
+                )
+                .targetTime(
+                        targetTime
+                )
+                .build();
+    }
+
+    /*
      * ================================================================
      * SINGLE DEBRIS PROPAGATION
      * ================================================================
@@ -296,13 +452,8 @@ public class OrbitalPropagationFacadeImpl
             LocalDateTime targetTime
     ) {
 
-        validateDebrisNoradId(
-                noradId
-        );
-
-        validateTargetTime(
-                targetTime
-        );
+        validateDebrisNoradId(noradId);
+        validateTargetTime(targetTime);
 
         CelesTrakOrbitalData orbitalData =
                 celesTrakDebrisService.fetchOrbitalData(
@@ -312,24 +463,23 @@ public class OrbitalPropagationFacadeImpl
         if (orbitalData == null) {
 
             throw new IllegalArgumentException(
-                    "No orbital data found for debris NORAD ID: "
-                            + noradId
+                    "No orbital data found for debris NORAD ID: " +
+                            noradId
             );
         }
 
         OrbitalPropagationInput input =
-                debrisOrbitalPropagationMapper
-                        .toPropagationInput(
-                                orbitalData,
-                                targetTime
-                        );
+                debrisOrbitalPropagationMapper.toPropagationInput(
+                        orbitalData,
+                        targetTime
+                );
 
         if (input == null) {
 
             throw new IllegalStateException(
-                    "Failed to create orbital propagation input "
-                            + "for debris NORAD ID: "
-                            + noradId
+                    "Failed to create orbital propagation input " +
+                            "for debris NORAD ID: " +
+                            noradId
             );
         }
 
@@ -338,7 +488,7 @@ public class OrbitalPropagationFacadeImpl
         );
     }
 
-    /**
+    /*
      * ================================================================
      * SINGLE SATELLITE WITH POSITION
      * ================================================================
@@ -362,7 +512,7 @@ public class OrbitalPropagationFacadeImpl
         );
     }
 
-    /**
+    /*
      * ================================================================
      * SINGLE DEBRIS WITH POSITION
      * ================================================================
@@ -386,46 +536,21 @@ public class OrbitalPropagationFacadeImpl
         );
     }
 
-    /**
+    /*
      * ================================================================
      * BULK PROPAGATION FOR 3D VISUALIZATION
      * ================================================================
-     *
-     * MongoDB
-     *    ↓
-     * active satellites/debris
-     *    ↓
-     * validation
-     *    ↓
-     * OrbitalPropagationInput
-     *    ↓
-     * bounded parallel SGP4/Orekit
-     *    ↓
-     * propagated state + source metadata
-     *    ↓
-     * coordinate conversion
-     *    ↓
-     * PropagatedOrbitalData
      */
     @Override
     public List<PropagatedOrbitalData> propagateAllWithPosition(
             LocalDateTime targetTime
     ) {
 
-        validateTargetTime(
-                targetTime
-        );
+        validateTargetTime(targetTime);
 
-        long totalStartNanos =
-                System.nanoTime();
+        long totalStartNanos = System.nanoTime();
 
-        /*
-         * ============================================================
-         * LOAD DATABASE DATA
-         * ============================================================
-         */
-        long databaseStartNanos =
-                System.nanoTime();
+        long databaseStartNanos = System.nanoTime();
 
         List<Satellite> satellites =
                 satelliteRepository.findByActiveTrue();
@@ -434,19 +559,15 @@ public class OrbitalPropagationFacadeImpl
                 debrisRepository.findByIsActiveTrue();
 
         if (satellites == null) {
-            satellites =
-                    Collections.emptyList();
+            satellites = Collections.emptyList();
         }
 
         if (debrisObjects == null) {
-            debrisObjects =
-                    Collections.emptyList();
+            debrisObjects = Collections.emptyList();
         }
 
         long databaseElapsedMillis =
-                elapsedMillis(
-                        databaseStartNanos
-                );
+                elapsedMillis(databaseStartNanos);
 
         log.info(
                 "Bulk orbital data loaded from MongoDB. " +
@@ -469,39 +590,28 @@ public class OrbitalPropagationFacadeImpl
         );
 
         /*
-         * ============================================================
-         * FILTER INVALID RECORDS
-         * ============================================================
+         * Filter invalid records.
          */
-        long filteringStartNanos =
-                System.nanoTime();
+        long filteringStartNanos = System.nanoTime();
 
         List<Satellite> validSatellites =
                 satellites.stream()
-                        .filter(
-                                this::hasRequiredSatellitePropagationData
-                        )
+                        .filter(this::hasRequiredSatellitePropagationData)
                         .toList();
 
         List<SpaceDebris> validDebris =
                 debrisObjects.stream()
-                        .filter(
-                                this::hasRequiredDebrisPropagationData
-                        )
+                        .filter(this::hasRequiredDebrisPropagationData)
                         .toList();
 
         int skippedSatellites =
-                satellites.size()
-                        - validSatellites.size();
+                satellites.size() - validSatellites.size();
 
         int skippedDebris =
-                debrisObjects.size()
-                        - validDebris.size();
+                debrisObjects.size() - validDebris.size();
 
         long filteringElapsedMillis =
-                elapsedMillis(
-                        filteringStartNanos
-                );
+                elapsedMillis(filteringStartNanos);
 
         log.info(
                 "Bulk propagation input filtering completed. " +
@@ -516,31 +626,23 @@ public class OrbitalPropagationFacadeImpl
         );
 
         /*
-         * ============================================================
-         * SATELLITE PROPAGATION
-         * ============================================================
+         * Satellite propagation.
          */
-        long satelliteStartNanos =
-                System.nanoTime();
+        long satelliteStartNanos = System.nanoTime();
 
         List<BulkPropagationContext> satelliteContexts =
                 propagateInParallel(
                         validSatellites,
-                        satellite ->
-                                propagateSatelliteWithMetadata(
-                                        satellite,
-                                        targetTime
-                                ),
-                        satellite ->
-                                "satellite NORAD "
-                                        + satellite
-                                        .getNoradCatalogId()
+                        satellite -> propagateSatelliteWithMetadata(
+                                satellite,
+                                targetTime
+                        ),
+                        satellite -> "satellite NORAD " +
+                                satellite.getNoradCatalogId()
                 );
 
         long satelliteElapsedMillis =
-                elapsedMillis(
-                        satelliteStartNanos
-                );
+                elapsedMillis(satelliteStartNanos);
 
         log.info(
                 "Bulk satellite propagation completed. " +
@@ -551,30 +653,22 @@ public class OrbitalPropagationFacadeImpl
         );
 
         /*
-         * ============================================================
-         * DEBRIS PROPAGATION
-         * ============================================================
+         * Debris propagation.
          */
-        long debrisStartNanos =
-                System.nanoTime();
+        long debrisStartNanos = System.nanoTime();
 
         List<BulkPropagationContext> debrisContexts =
                 propagateInParallel(
                         validDebris,
-                        debris ->
-                                propagateDebrisWithMetadata(
-                                        debris,
-                                        targetTime
-                                ),
-                        debris ->
-                                "debris NORAD "
-                                        + debris.getNoradId()
+                        debris -> propagateDebrisWithMetadata(
+                                debris,
+                                targetTime
+                        ),
+                        debris -> "debris NORAD " + debris.getNoradId()
                 );
 
         long debrisElapsedMillis =
-                elapsedMillis(
-                        debrisStartNanos
-                );
+                elapsedMillis(debrisStartNanos);
 
         log.info(
                 "Bulk debris propagation completed. " +
@@ -585,61 +679,35 @@ public class OrbitalPropagationFacadeImpl
         );
 
         /*
-         * ============================================================
-         * COMBINE PROPAGATED STATES + METADATA
-         * ============================================================
+         * Combine propagated states and metadata.
          */
-        long combineStartNanos =
-                System.nanoTime();
+        long combineStartNanos = System.nanoTime();
 
         List<BulkPropagationContext> propagatedContexts =
                 new ArrayList<>(
-                        satelliteContexts.size()
-                                + debrisContexts.size()
+                        satelliteContexts.size() + debrisContexts.size()
                 );
 
-        propagatedContexts.addAll(
-                satelliteContexts
-        );
-
-        propagatedContexts.addAll(
-                debrisContexts
-        );
+        propagatedContexts.addAll(satelliteContexts);
+        propagatedContexts.addAll(debrisContexts);
 
         long combineElapsedMillis =
-                elapsedMillis(
-                        combineStartNanos
-                );
+                elapsedMillis(combineStartNanos);
 
         /*
-         * ============================================================
-         * COORDINATE CONVERSION
-         * ============================================================
-         *
-         * Coordinate conversion remains outside the propagation
-         * executor, exactly as in the existing architecture.
-         *
-         * One convert() call produces:
-         *
-         * 1. Geodetic position
-         * 2. Earth-fixed position
+         * Coordinate conversion.
          */
-        long conversionStartNanos =
-                System.nanoTime();
+        long conversionStartNanos = System.nanoTime();
 
         List<PropagatedOrbitalData> results =
-                new ArrayList<>(
-                        propagatedContexts.size()
-                );
+                new ArrayList<>(propagatedContexts.size());
 
         int conversionFailures = 0;
 
-        for (BulkPropagationContext context
-                : propagatedContexts) {
+        for (BulkPropagationContext context : propagatedContexts) {
 
             if (context == null
                     || context.getOrbitalState() == null) {
-
                 continue;
             }
 
@@ -658,30 +726,21 @@ public class OrbitalPropagationFacadeImpl
                 conversionFailures++;
 
                 log.debug(
-                        "Skipping coordinate conversion for " +
-                                "NORAD ID={}: {}",
-                        context
-                                .getOrbitalState()
-                                .getNoradCatalogId(),
+                        "Skipping coordinate conversion for NORAD ID={}: {}",
+                        context.getOrbitalState().getNoradCatalogId(),
                         exception.getMessage()
                 );
             }
         }
 
         long conversionElapsedMillis =
-                elapsedMillis(
-                        conversionStartNanos
-                );
+                elapsedMillis(conversionStartNanos);
 
         /*
-         * ============================================================
-         * FINAL TIMING
-         * ============================================================
+         * Final timing.
          */
         long totalElapsedMillis =
-                elapsedMillis(
-                        totalStartNanos
-                );
+                elapsedMillis(totalStartNanos);
 
         long measuredPhaseMillis =
                 databaseElapsedMillis
@@ -694,8 +753,7 @@ public class OrbitalPropagationFacadeImpl
         long unaccountedElapsedMillis =
                 Math.max(
                         0,
-                        totalElapsedMillis
-                                - measuredPhaseMillis
+                        totalElapsedMillis - measuredPhaseMillis
                 );
 
         log.info(
@@ -727,7 +785,7 @@ public class OrbitalPropagationFacadeImpl
         return results;
     }
 
-    /**
+    /*
      * ================================================================
      * BUILD PROPAGATED ORBITAL DATA
      * ================================================================
@@ -753,37 +811,26 @@ public class OrbitalPropagationFacadeImpl
         if (conversion == null) {
 
             throw new IllegalStateException(
-                    "Coordinate conversion returned null for NORAD ID: "
-                            + orbitalState.getNoradCatalogId()
+                    "Coordinate conversion returned null for NORAD ID: " +
+                            orbitalState.getNoradCatalogId()
             );
         }
 
         return PropagatedOrbitalData.builder()
-                .orbitalState(
-                        orbitalState
-                )
-                .geodeticPosition(
-                        conversion.getGeodeticPosition()
-                )
-                .earthFixedPosition(
-                        conversion.getEarthFixedPosition()
-                )
-                .objectName(
-                        objectName
-                )
-                .objectType(
-                        objectType
-                )
+                .orbitalState(orbitalState)
+                .geodeticPosition(conversion.getGeodeticPosition())
+                .earthFixedPosition(conversion.getEarthFixedPosition())
+                .objectName(objectName)
+                .objectType(objectType)
                 .build();
     }
 
-    /**
+    /*
      * ================================================================
      * SATELLITE BULK PROPAGATION WITH METADATA
      * ================================================================
      */
-    private BulkPropagationContext
-    propagateSatelliteWithMetadata(
+    private BulkPropagationContext propagateSatelliteWithMetadata(
             Satellite satellite,
             LocalDateTime targetTime
     ) {
@@ -801,12 +848,9 @@ public class OrbitalPropagationFacadeImpl
                         targetTime
                 );
 
-        String objectName =
-                satellite.getSatelliteName();
+        String objectName = satellite.getSatelliteName();
 
-        if (objectName == null
-                || objectName.isBlank()) {
-
+        if (objectName == null || objectName.isBlank()) {
             objectName = "Satellite";
         }
 
@@ -817,13 +861,12 @@ public class OrbitalPropagationFacadeImpl
         );
     }
 
-    /**
+    /*
      * ================================================================
      * DEBRIS BULK PROPAGATION WITH METADATA
      * ================================================================
      */
-    private BulkPropagationContext
-    propagateDebrisWithMetadata(
+    private BulkPropagationContext propagateDebrisWithMetadata(
             SpaceDebris debris,
             LocalDateTime targetTime
     ) {
@@ -841,12 +884,9 @@ public class OrbitalPropagationFacadeImpl
                         targetTime
                 );
 
-        String objectName =
-                debris.getDebrisName();
+        String objectName = debris.getDebrisName();
 
-        if (objectName == null
-                || objectName.isBlank()) {
-
+        if (objectName == null || objectName.isBlank()) {
             objectName = "Debris";
         }
 
@@ -857,15 +897,12 @@ public class OrbitalPropagationFacadeImpl
         );
     }
 
-    /**
+    /*
      * ================================================================
      * SATELLITE BULK PROPAGATION
      * ================================================================
      *
-     * The MongoDB Satellite entity already contains all GP/TLE
-     * orbital elements required to build OrbitalPropagationInput.
-     *
-     * We therefore do NOT call CelesTrak here.
+     * Uses MongoDB orbital elements. Does not call CelesTrak.
      */
     private PropagatedOrbitalState propagateSatelliteStateForBulk(
             Satellite satellite,
@@ -882,69 +919,36 @@ public class OrbitalPropagationFacadeImpl
         OrbitalPropagationInput input =
                 OrbitalPropagationInput.builder()
                         .noradCatalogId(
-                                satellite
-                                        .getNoradCatalogId()
-                                        .longValue()
+                                satellite.getNoradCatalogId().longValue()
                         )
-                        .objectId(
-                                satellite.getObjectId()
-                        )
-                        .classificationType(
-                                satellite.getClassificationType()
-                        )
-                        .ephemerisType(
-                                satellite.getEphemerisType()
-                        )
-                        .epoch(
-                                satellite.getEpoch()
-                        )
-                        .meanMotion(
-                                satellite.getMeanMotion()
-                        )
-                        .meanMotionDot(
-                                satellite.getMeanMotionDot()
-                        )
-                        .meanMotionDdot(
-                                satellite.getMeanMotionDdot()
-                        )
-                        .eccentricity(
-                                satellite.getEccentricity()
-                        )
-                        .inclination(
-                                satellite.getInclination()
-                        )
+                        .objectId(satellite.getObjectId())
+                        .classificationType(satellite.getClassificationType())
+                        .ephemerisType(satellite.getEphemerisType())
+                        .epoch(satellite.getEpoch())
+                        .meanMotion(satellite.getMeanMotion())
+                        .meanMotionDot(satellite.getMeanMotionDot())
+                        .meanMotionDdot(satellite.getMeanMotionDdot())
+                        .eccentricity(satellite.getEccentricity())
+                        .inclination(satellite.getInclination())
                         .rightAscensionOfAscendingNode(
-                                satellite
-                                        .getRightAscensionOfAscendingNode()
+                                satellite.getRightAscensionOfAscendingNode()
                         )
                         .argumentOfPericenter(
                                 satellite.getArgumentOfPericenter()
                         )
-                        .meanAnomaly(
-                                satellite.getMeanAnomaly()
-                        )
-                        .bstar(
-                                satellite.getBstar()
-                        )
-                        .elementSetNumber(
-                                satellite.getElementSetNumber()
-                        )
+                        .meanAnomaly(satellite.getMeanAnomaly())
+                        .bstar(satellite.getBstar())
+                        .elementSetNumber(satellite.getElementSetNumber())
                         .revolutionAtEpoch(
-                                satellite
-                                        .getRevolutionAtEpoch()
-                                        .longValue()
+                                satellite.getRevolutionAtEpoch().longValue()
                         )
-                        .targetTime(
-                                targetTime
-                        )
+                        .targetTime(targetTime)
                         .build();
 
-        return orbitalPropagationService.propagate(
-                input
-        );
+        return orbitalPropagationService.propagate(input);
     }
 
-    /**
+    /*
      * ================================================================
      * DEBRIS BULK PROPAGATION
      * ================================================================
@@ -963,66 +967,31 @@ public class OrbitalPropagationFacadeImpl
 
         OrbitalPropagationInput input =
                 OrbitalPropagationInput.builder()
-                        .noradCatalogId(
-                                debris.getNoradId()
-                        )
-                        .objectId(
-                                debris.getObjectId()
-                        )
-                        .classificationType(
-                                debris.getClassificationType()
-                        )
-                        .ephemerisType(
-                                debris.getEphemerisType()
-                        )
-                        .epoch(
-                                debris.getEpoch()
-                        )
-                        .meanMotion(
-                                debris.getMeanMotion()
-                        )
-                        .meanMotionDot(
-                                debris.getMeanMotionDot()
-                        )
-                        .meanMotionDdot(
-                                debris.getMeanMotionDdot()
-                        )
-                        .eccentricity(
-                                debris.getEccentricity()
-                        )
-                        .inclination(
-                                debris.getInclination()
-                        )
+                        .noradCatalogId(debris.getNoradId())
+                        .objectId(debris.getObjectId())
+                        .classificationType(debris.getClassificationType())
+                        .ephemerisType(debris.getEphemerisType())
+                        .epoch(debris.getEpoch())
+                        .meanMotion(debris.getMeanMotion())
+                        .meanMotionDot(debris.getMeanMotionDot())
+                        .meanMotionDdot(debris.getMeanMotionDdot())
+                        .eccentricity(debris.getEccentricity())
+                        .inclination(debris.getInclination())
                         .rightAscensionOfAscendingNode(
-                                debris
-                                        .getRightAscensionOfAscendingNode()
+                                debris.getRightAscensionOfAscendingNode()
                         )
-                        .argumentOfPericenter(
-                                debris.getArgumentOfPericenter()
-                        )
-                        .meanAnomaly(
-                                debris.getMeanAnomaly()
-                        )
-                        .bstar(
-                                debris.getBstar()
-                        )
-                        .elementSetNumber(
-                                debris.getElementSetNumber()
-                        )
-                        .revolutionAtEpoch(
-                                debris.getRevolutionAtEpoch()
-                        )
-                        .targetTime(
-                                targetTime
-                        )
+                        .argumentOfPericenter(debris.getArgumentOfPericenter())
+                        .meanAnomaly(debris.getMeanAnomaly())
+                        .bstar(debris.getBstar())
+                        .elementSetNumber(debris.getElementSetNumber())
+                        .revolutionAtEpoch(debris.getRevolutionAtEpoch())
+                        .targetTime(targetTime)
                         .build();
 
-        return orbitalPropagationService.propagate(
-                input
-        );
+        return orbitalPropagationService.propagate(input);
     }
 
-    /**
+    /*
      * ================================================================
      * BOUNDED PARALLEL PROPAGATION
      * ================================================================
@@ -1034,17 +1003,12 @@ public class OrbitalPropagationFacadeImpl
     ) {
 
         if (items == null || items.isEmpty()) {
-
             return Collections.emptyList();
         }
 
-        List<R> results =
-                new ArrayList<>(
-                        items.size()
-                );
+        List<R> results = new ArrayList<>(items.size());
 
-        CompletionService<R>
-                completionService =
+        CompletionService<R> completionService =
                 new ExecutorCompletionService<>(
                         bulkPropagationExecutor
                 );
@@ -1054,17 +1018,12 @@ public class OrbitalPropagationFacadeImpl
         int failures = 0;
 
         /*
-         * ------------------------------------------------------------
-         * INITIAL BOUNDED SUBMISSION
-         * ------------------------------------------------------------
+         * Initial bounded submission.
          */
         while (nextIndex < items.size()
                 && inFlight < MAX_IN_FLIGHT_TASKS) {
 
-            T item =
-                    items.get(
-                            nextIndex++
-                    );
+            T item = items.get(nextIndex++);
 
             submitPropagationTask(
                     completionService,
@@ -1077,27 +1036,20 @@ public class OrbitalPropagationFacadeImpl
         }
 
         /*
-         * ------------------------------------------------------------
-         * CONSUME COMPLETED TASKS
-         * ------------------------------------------------------------
+         * Consume completed tasks and submit replacements.
          */
         while (inFlight > 0) {
 
             try {
 
-                Future<R> future =
-                        completionService.take();
+                Future<R> future = completionService.take();
 
                 inFlight--;
 
-                R result =
-                        future.get();
+                R result = future.get();
 
                 if (result != null) {
-
-                    results.add(
-                            result
-                    );
+                    results.add(result);
                 }
 
             } catch (InterruptedException exception) {
@@ -1113,8 +1065,7 @@ public class OrbitalPropagationFacadeImpl
 
                 failures++;
 
-                Throwable cause =
-                        exception.getCause();
+                Throwable cause = exception.getCause();
 
                 log.debug(
                         "Bulk orbital propagation task failed: {}",
@@ -1124,17 +1075,9 @@ public class OrbitalPropagationFacadeImpl
                 );
             }
 
-            /*
-             * --------------------------------------------------------
-             * SUBMIT NEXT TASK
-             * --------------------------------------------------------
-             */
             if (nextIndex < items.size()) {
 
-                T item =
-                        items.get(
-                                nextIndex++
-                        );
+                T item = items.get(nextIndex++);
 
                 submitPropagationTask(
                         completionService,
@@ -1161,19 +1104,16 @@ public class OrbitalPropagationFacadeImpl
         return results;
     }
 
-    /**
+    /*
      * ================================================================
      * SUBMIT PROPAGATION TASK
      * ================================================================
      */
     private <T, R> void submitPropagationTask(
-            CompletionService<R>
-                    completionService,
+            CompletionService<R> completionService,
             T item,
-            Function<T, R>
-                    propagationFunction,
-            Function<T, String>
-                    itemDescriptionFunction
+            Function<T, R> propagationFunction,
+            Function<T, String> itemDescriptionFunction
     ) {
 
         completionService.submit(
@@ -1181,9 +1121,7 @@ public class OrbitalPropagationFacadeImpl
 
                     try {
 
-                        return propagationFunction.apply(
-                                item
-                        );
+                        return propagationFunction.apply(item);
 
                     } catch (RuntimeException exception) {
 
@@ -1199,7 +1137,7 @@ public class OrbitalPropagationFacadeImpl
         );
     }
 
-    /**
+    /*
      * ================================================================
      * SATELLITE PROPAGATION DATA VALIDATION
      * ================================================================
@@ -1216,7 +1154,7 @@ public class OrbitalPropagationFacadeImpl
                 && satellite.getNoradCatalogId() > 0;
     }
 
-    /**
+    /*
      * ================================================================
      * DEBRIS PROPAGATION DATA VALIDATION
      * ================================================================
@@ -1233,7 +1171,7 @@ public class OrbitalPropagationFacadeImpl
                 && debris.getNoradId() > 0;
     }
 
-    /**
+    /*
      * ================================================================
      * SATELLITE NORAD VALIDATION
      * ================================================================
@@ -1242,8 +1180,7 @@ public class OrbitalPropagationFacadeImpl
             Integer noradCatalogId
     ) {
 
-        if (noradCatalogId == null
-                || noradCatalogId <= 0) {
+        if (noradCatalogId == null || noradCatalogId <= 0) {
 
             throw new IllegalArgumentException(
                     "Satellite NORAD catalog ID must be greater than zero."
@@ -1251,7 +1188,7 @@ public class OrbitalPropagationFacadeImpl
         }
     }
 
-    /**
+    /*
      * ================================================================
      * DEBRIS NORAD VALIDATION
      * ================================================================
@@ -1260,8 +1197,7 @@ public class OrbitalPropagationFacadeImpl
             Long noradId
     ) {
 
-        if (noradId == null
-                || noradId <= 0) {
+        if (noradId == null || noradId <= 0) {
 
             throw new IllegalArgumentException(
                     "Debris NORAD ID must be greater than zero."
@@ -1269,7 +1205,7 @@ public class OrbitalPropagationFacadeImpl
         }
     }
 
-    /**
+    /*
      * ================================================================
      * TARGET TIME VALIDATION
      * ================================================================
@@ -1286,7 +1222,7 @@ public class OrbitalPropagationFacadeImpl
         }
     }
 
-    /**
+    /*
      * ================================================================
      * ELAPSED TIME HELPER
      * ================================================================
@@ -1296,12 +1232,11 @@ public class OrbitalPropagationFacadeImpl
     ) {
 
         return TimeUnit.NANOSECONDS.toMillis(
-                System.nanoTime()
-                        - startNanos
+                System.nanoTime() - startNanos
         );
     }
 
-    /**
+    /*
      * ================================================================
      * EXECUTOR SHUTDOWN
      * ================================================================
@@ -1323,9 +1258,9 @@ public class OrbitalPropagationFacadeImpl
             )) {
 
                 log.warn(
-                        "Orbital propagation executor did not "
-                                + "terminate within 10 seconds. "
-                                + "Forcing shutdown."
+                        "Orbital propagation executor did not " +
+                                "terminate within 10 seconds. " +
+                                "Forcing shutdown."
                 );
 
                 bulkPropagationExecutor.shutdownNow();
@@ -1334,8 +1269,8 @@ public class OrbitalPropagationFacadeImpl
         } catch (InterruptedException exception) {
 
             log.warn(
-                    "Interrupted while shutting down orbital "
-                            + "propagation executor.",
+                    "Interrupted while shutting down orbital " +
+                            "propagation executor.",
                     exception
             );
 

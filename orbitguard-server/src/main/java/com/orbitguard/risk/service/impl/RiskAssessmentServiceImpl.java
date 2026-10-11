@@ -1,5 +1,6 @@
 package com.orbitguard.risk.service.impl;
-
+import com.orbitguard.alert.dto.request.CreateAlertRequest;
+import com.orbitguard.alert.service.AlertService;
 import com.orbitguard.common.exception.BadRequestException;
 import com.orbitguard.common.exception.ResourceNotFoundException;
 import com.orbitguard.common.response.ApiResponse;
@@ -35,10 +36,9 @@ import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import com.orbitguard.alert.dto.request.CreateAlertRequest;
-import com.orbitguard.alert.service.AlertService;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 
 @Service
@@ -46,72 +46,37 @@ import java.util.List;
 public class RiskAssessmentServiceImpl implements RiskAssessmentService {
 
     private final CollisionRiskRepository collisionRiskRepository;
-
     private final SatelliteRepository satelliteRepository;
-
     private final DebrisRepository spaceDebrisRepository;
-
     private final RiskAssessmentMapper riskAssessmentMapper;
-
     private final ProbabilityCalculator probabilityCalculator;
-
     private final RiskCalculator riskCalculator;
-
     private final RiskQueryBuilder riskQueryBuilder;
-
     private final MongoTemplate mongoTemplate;
-
     private final BusinessCodeGenerator businessCodeGenerator;
-
     private final AlertService alertService;
-
     private final SequenceGeneratorService sequenceGeneratorService;
-
     private final OrbitalPropagationFacade orbitalPropagationFacade;
 
-    /**
-     * ------------------------------------------------------------------
-     * Analyze Risk
-     * ------------------------------------------------------------------
+    /*
+     * ================================================================
+     * ANALYZE RISK
+     * ================================================================
      */
     @Override
     @Transactional
     public ApiResponse<RiskAssessmentResponse> analyzeRisk(
-            AnalyzeRiskRequest request) {
+            AnalyzeRiskRequest request
+    ) {
 
-        /*
-         * --------------------------------------------------------------
-         * Validate Request
-         * --------------------------------------------------------------
-         */
         validateAnalyzeRiskRequest(request);
 
-        /*
-         * --------------------------------------------------------------
-         * Fetch Active Satellite
-         * --------------------------------------------------------------
-         */
         Satellite satellite =
                 getActiveSatellite(request.getSatelliteId());
 
-        /*
-         * --------------------------------------------------------------
-         * Fetch Active Space Debris
-         * --------------------------------------------------------------
-         */
         SpaceDebris debris =
                 getActiveDebris(request.getDebrisId());
 
-        /*
-         * --------------------------------------------------------------
-         * Validate NORAD identifiers
-         *
-         * Propagation layer contracts:
-         *
-         * Satellite -> Integer NORAD catalog ID
-         * Debris    -> Long NORAD ID
-         * --------------------------------------------------------------
-         */
         validateSatelliteNoradId(
                 satellite.getNoradCatalogId()
         );
@@ -121,21 +86,19 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
         );
 
         /*
-         * --------------------------------------------------------------
-         * Common Assessment Time
+         * Use UTC consistently for both orbital propagation calls.
          *
-         * Both orbital states MUST be propagated at the same
-         * target timestamp before relative distance and velocity
-         * are calculated.
-         * --------------------------------------------------------------
+         * Both objects must be propagated to the same target time
+         * before their relative position and velocity are compared.
          */
         LocalDateTime assessmentTime =
-                LocalDateTime.now();
+                LocalDateTime.now(ZoneOffset.UTC);
 
         /*
-         * --------------------------------------------------------------
-         * Propagate Satellite
-         * --------------------------------------------------------------
+         * Propagate satellite.
+         *
+         * The facade is responsible for choosing live CelesTrak data
+         * or its configured MongoDB fallback.
          */
         PropagatedOrbitalState satelliteState =
                 orbitalPropagationFacade.propagateSatellite(
@@ -150,9 +113,10 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
         );
 
         /*
-         * --------------------------------------------------------------
-         * Propagate Debris
-         * --------------------------------------------------------------
+         * Propagate debris.
+         *
+         * This call still follows the existing debris propagation
+         * implementation in OrbitalPropagationFacadeImpl.
          */
         PropagatedOrbitalState debrisState =
                 orbitalPropagationFacade.propagateDebris(
@@ -167,14 +131,9 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
         );
 
         /*
-         * --------------------------------------------------------------
-         * Calculate Instantaneous Separation Distance
+         * Calculate instantaneous separation distance.
          *
-         * This is the 3D distance between the propagated satellite
-         * and debris positions at assessmentTime.
-         *
-         * Unit: kilometers
-         * --------------------------------------------------------------
+         * Unit: kilometers.
          */
         double separationDistance =
                 calculateDistance(
@@ -183,11 +142,9 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
                 );
 
         /*
-         * --------------------------------------------------------------
-         * Calculate Relative Velocity
+         * Calculate relative velocity magnitude.
          *
-         * Unit: kilometers per second
-         * --------------------------------------------------------------
+         * Unit: kilometers per second.
          */
         double relativeVelocity =
                 calculateRelativeVelocity(
@@ -196,12 +153,8 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
                 );
 
         /*
-         * --------------------------------------------------------------
-         * Calculate Collision Probability
-         *
-         * Current implementation is the existing rule-based
+         * Calculate probability using the existing rule-based
          * ProbabilityCalculator.
-         * --------------------------------------------------------------
          */
         double collisionProbability =
                 probabilityCalculator.calculateProbability(
@@ -209,38 +162,45 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
                         relativeVelocity
                 );
 
+        if (!Double.isFinite(collisionProbability)
+                || collisionProbability < 0.0
+                || collisionProbability > 100.0) {
+            throw new IllegalStateException(
+                    "Collision risk score must be a finite value between 0 and 100."
+            );
+        }
+
         /*
-         * --------------------------------------------------------------
-         * Determine Risk Level
-         * --------------------------------------------------------------
+         * Determine risk level and recommendation using the
+         * existing RiskCalculator.
          */
         RiskLevel riskLevel =
                 riskCalculator.calculateRiskLevel(
                         collisionProbability
                 );
 
-        /*
-         * --------------------------------------------------------------
-         * Generate Recommendation
-         * --------------------------------------------------------------
-         */
+        if (riskLevel == null) {
+            throw new IllegalStateException(
+                    "RiskCalculator returned a null risk level."
+            );
+        }
+
         String recommendation =
                 riskCalculator.generateRecommendation(
                         riskLevel
                 );
 
         /*
-         * --------------------------------------------------------------
-         * Generate Business Code
-         * --------------------------------------------------------------
+         * Generate the business risk code.
          */
-        String riskCode =
-                generateRiskCode();
+        String riskCode = generateRiskCode();
 
         /*
-         * --------------------------------------------------------------
-         * Build Collision Risk Entity
-         * --------------------------------------------------------------
+         * Build the collision risk entity.
+         *
+         * Note: separationDistance is an instantaneous separation.
+         * The existing entity field name is retained to avoid
+         * changing the current persistence contract.
          */
         CollisionRisk collisionRisk =
                 CollisionRisk.builder()
@@ -262,16 +222,22 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
                         .build();
 
         /*
-         * --------------------------------------------------------------
-         * Save Assessment
-         * --------------------------------------------------------------
+         * Persist the assessment.
          */
         CollisionRisk savedRisk =
                 collisionRiskRepository.save(collisionRisk);
 
+        if (savedRisk.getId() == null
+                || savedRisk.getId().isBlank()) {
+
+            throw new IllegalStateException(
+                    "Saved collision risk does not contain a document ID."
+            );
+        }
+
         /*
-         * Automatically create an alert for the newly saved risk.
-         * Use the MongoDB document ID, not the business risk code.
+         * Create an alert using the MongoDB document ID.
+         * Do not use the business risk code as the document ID.
          */
         CreateAlertRequest alertRequest =
                 CreateAlertRequest.builder()
@@ -281,31 +247,25 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
         alertService.createAlert(alertRequest);
 
         /*
-         * --------------------------------------------------------------
-         * Convert Entity -> Response
-         * --------------------------------------------------------------
+         * Convert entity to response and return success.
          */
         RiskAssessmentResponse response =
                 riskAssessmentMapper.toResponse(savedRisk);
 
-        /*
-         * --------------------------------------------------------------
-         * Return Success Response
-         * --------------------------------------------------------------
-         */
         return ResponseBuilder.success(
                 "Collision risk analyzed successfully.",
                 response
         );
     }
 
-    /**
-     * ------------------------------------------------------------------
-     * Validate Analyze Risk Request
-     * ------------------------------------------------------------------
+    /*
+     * ================================================================
+     * VALIDATE ANALYZE RISK REQUEST
+     * ================================================================
      */
     private void validateAnalyzeRiskRequest(
-            AnalyzeRiskRequest request) {
+            AnalyzeRiskRequest request
+    ) {
 
         if (request == null) {
             throw new BadRequestException(
@@ -330,15 +290,14 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
         }
     }
 
-    /**
-     * ------------------------------------------------------------------
-     * Validate Satellite NORAD ID
-     * ------------------------------------------------------------------
-     *
-     * Satellite propagation contract uses Integer.
+    /*
+     * ================================================================
+     * VALIDATE SATELLITE NORAD ID
+     * ================================================================
      */
     private void validateSatelliteNoradId(
-            Integer noradCatalogId) {
+            Integer noradCatalogId
+    ) {
 
         if (noradCatalogId == null || noradCatalogId <= 0) {
             throw new BadRequestException(
@@ -347,15 +306,14 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
         }
     }
 
-    /**
-     * ------------------------------------------------------------------
-     * Validate Debris NORAD ID
-     * ------------------------------------------------------------------
-     *
-     * Debris propagation contract uses Long.
+    /*
+     * ================================================================
+     * VALIDATE DEBRIS NORAD ID
+     * ================================================================
      */
     private void validateDebrisNoradId(
-            Long noradId) {
+            Long noradId
+    ) {
 
         if (noradId == null || noradId <= 0) {
             throw new BadRequestException(
@@ -364,25 +322,23 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
         }
     }
 
-    /**
-     * ------------------------------------------------------------------
-     * Validate Propagated Orbital State
-     * ------------------------------------------------------------------
-     *
-     * Ensures the propagation layer returned a complete numerical
-     * state before risk calculations are performed.
+    /*
+     * ================================================================
+     * VALIDATE PROPAGATED ORBITAL STATE
+     * ================================================================
      */
     private void validatePropagatedState(
             PropagatedOrbitalState state,
             String objectType,
-            Number noradId) {
+            Number noradId
+    ) {
 
         if (state == null) {
             throw new IllegalStateException(
-                    "Propagated orbital state is null for "
-                            + objectType
-                            + " NORAD ID: "
-                            + noradId
+                    "Propagated orbital state is null for " +
+                            objectType +
+                            " NORAD ID: " +
+                            noradId
             );
         }
 
@@ -391,10 +347,10 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
                 || state.getPositionZ() == null) {
 
             throw new IllegalStateException(
-                    "Incomplete propagated position data for "
-                            + objectType
-                            + " NORAD ID: "
-                            + noradId
+                    "Incomplete propagated position data for " +
+                            objectType +
+                            " NORAD ID: " +
+                            noradId
             );
         }
 
@@ -403,10 +359,10 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
                 || state.getVelocityZ() == null) {
 
             throw new IllegalStateException(
-                    "Incomplete propagated velocity data for "
-                            + objectType
-                            + " NORAD ID: "
-                            + noradId
+                    "Incomplete propagated velocity data for " +
+                            objectType +
+                            " NORAD ID: " +
+                            noradId
             );
         }
 
@@ -420,19 +376,19 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
         )) {
 
             throw new IllegalStateException(
-                    "Invalid numerical values returned by orbital "
-                            + "propagation for "
-                            + objectType
-                            + " NORAD ID: "
-                            + noradId
+                    "Invalid numerical values returned by orbital " +
+                            "propagation for " +
+                            objectType +
+                            " NORAD ID: " +
+                            noradId
             );
         }
     }
 
-    /**
-     * ------------------------------------------------------------------
-     * Validate Numerical Values
-     * ------------------------------------------------------------------
+    /*
+     * ================================================================
+     * VALIDATE NUMERICAL VALUES
+     * ================================================================
      */
     private boolean isFinite(
             double positionX,
@@ -440,7 +396,8 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
             double positionZ,
             double velocityX,
             double velocityY,
-            double velocityZ) {
+            double velocityZ
+    ) {
 
         return Double.isFinite(positionX)
                 && Double.isFinite(positionY)
@@ -450,20 +407,19 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
                 && Double.isFinite(velocityZ);
     }
 
-    /**
-     * ------------------------------------------------------------------
-     * Calculate Distance Between Propagated Orbital States
-     * ------------------------------------------------------------------
+    /*
+     * ================================================================
+     * CALCULATE DISTANCE BETWEEN PROPAGATED STATES
+     * ================================================================
      *
-     * Calculates the instantaneous 3D separation between the
-     * satellite and debris positions.
+     * Assumes both states use the same coordinate frame and units.
      *
-     * Unit:
-     * Kilometers
+     * Unit: kilometers.
      */
     private double calculateDistance(
             PropagatedOrbitalState satelliteState,
-            PropagatedOrbitalState debrisState) {
+            PropagatedOrbitalState debrisState
+    ) {
 
         double deltaX =
                 satelliteState.getPositionX()
@@ -493,19 +449,20 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
         return distance;
     }
 
-    /**
-     * ------------------------------------------------------------------
-     * Calculate Relative Velocity Between Propagated States
-     * ------------------------------------------------------------------
+    /*
+     * ================================================================
+     * CALCULATE RELATIVE VELOCITY
+     * ================================================================
      *
-     * Calculates the magnitude of the relative velocity vector.
+     * Assumes both velocity vectors use the same coordinate frame
+     * and units.
      *
-     * Unit:
-     * Kilometers per second
+     * Unit: kilometers per second.
      */
     private double calculateRelativeVelocity(
             PropagatedOrbitalState satelliteState,
-            PropagatedOrbitalState debrisState) {
+            PropagatedOrbitalState debrisState
+    ) {
 
         double deltaVelocityX =
                 satelliteState.getVelocityX()
@@ -535,15 +492,16 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
         return relativeVelocity;
     }
 
-    /**
-     * ------------------------------------------------------------------
-     * Get Risk By ID
-     * ------------------------------------------------------------------
+    /*
+     * ================================================================
+     * GET RISK BY ID
+     * ================================================================
      */
     @Override
     @Transactional(readOnly = true)
     public ApiResponse<RiskAssessmentResponse> getRiskById(
-            String riskId) {
+            String riskId
+    ) {
 
         if (riskId == null || riskId.isBlank()) {
             throw new BadRequestException(
@@ -556,8 +514,8 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
                         .findByIdAndIsActiveTrue(riskId)
                         .orElseThrow(() ->
                                 new ResourceNotFoundException(
-                                        "Collision Risk not found with ID: "
-                                                + riskId
+                                        "Collision Risk not found with ID: " +
+                                                riskId
                                 ));
 
         RiskAssessmentResponse response =
@@ -569,10 +527,10 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
         );
     }
 
-    /**
-     * ------------------------------------------------------------------
-     * Get All Risks
-     * ------------------------------------------------------------------
+    /*
+     * ================================================================
+     * GET ALL RISKS
+     * ================================================================
      */
     @Override
     @Transactional(readOnly = true)
@@ -585,11 +543,21 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
             String debrisId,
             LocalDateTime fromDate,
             LocalDateTime toDate,
-            Pageable pageable) {
+            Pageable pageable
+    ) {
 
         if (pageable == null) {
             throw new BadRequestException(
                     "Pageable cannot be null."
+            );
+        }
+
+        if (fromDate != null
+                && toDate != null
+                && fromDate.isAfter(toDate)) {
+
+            throw new BadRequestException(
+                    "From date cannot be later than to date."
             );
         }
 
@@ -640,16 +608,17 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
         );
     }
 
-    /**
-     * ------------------------------------------------------------------
-     * Update Risk Status
-     * ------------------------------------------------------------------
+    /*
+     * ================================================================
+     * UPDATE RISK STATUS
+     * ================================================================
      */
     @Override
     @Transactional
     public ApiResponse<RiskAssessmentResponse> updateRiskStatus(
             String id,
-            UpdateRiskStatusRequest request) {
+            UpdateRiskStatusRequest request
+    ) {
 
         if (id == null || id.isBlank()) {
             throw new BadRequestException(
@@ -668,8 +637,8 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
                         .findByIdAndIsActiveTrue(id)
                         .orElseThrow(() ->
                                 new ResourceNotFoundException(
-                                        "Collision Risk not found with ID: "
-                                                + id
+                                        "Collision Risk not found with ID: " +
+                                                id
                                 ));
 
         if (request.getStatus() == null) {
@@ -678,13 +647,8 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
             );
         }
 
-        collisionRisk.setStatus(
-                request.getStatus()
-        );
-
-        collisionRisk.setRemarks(
-                request.getRemarks()
-        );
+        collisionRisk.setStatus(request.getStatus());
+        collisionRisk.setRemarks(request.getRemarks());
 
         updateAuditFields(collisionRisk);
 
@@ -700,14 +664,16 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
         );
     }
 
-    /**
-     * ------------------------------------------------------------------
-     * Delete Risk
-     * ------------------------------------------------------------------
+    /*
+     * ================================================================
+     * DELETE RISK (SOFT DELETE)
+     * ================================================================
      */
     @Override
     @Transactional
-    public ApiResponse<Void> deleteRisk(String id) {
+    public ApiResponse<Void> deleteRisk(
+            String id
+    ) {
 
         if (id == null || id.isBlank()) {
             throw new BadRequestException(
@@ -720,8 +686,8 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
                         .findByIdAndIsActiveTrue(id)
                         .orElseThrow(() ->
                                 new ResourceNotFoundException(
-                                        "Collision Risk not found with ID: "
-                                                + id
+                                        "Collision Risk not found with ID: " +
+                                                id
                                 ));
 
         collisionRisk.setIsActive(false);
@@ -735,13 +701,10 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
         );
     }
 
-    /**
-     * ------------------------------------------------------------------
-     * Generate Risk Business Code
-     * ------------------------------------------------------------------
-     *
-     * Example:
-     * RSK-000001
+    /*
+     * ================================================================
+     * GENERATE RISK BUSINESS CODE
+     * ================================================================
      */
     private String generateRiskCode() {
 
@@ -756,50 +719,53 @@ public class RiskAssessmentServiceImpl implements RiskAssessmentService {
         );
     }
 
-    /**
-     * ------------------------------------------------------------------
-     * Fetch Active Satellite
-     * ------------------------------------------------------------------
+    /*
+     * ================================================================
+     * FETCH ACTIVE SATELLITE
+     * ================================================================
      */
     private Satellite getActiveSatellite(
-            String satelliteId) {
+            String satelliteId
+    ) {
 
         return satelliteRepository
                 .findByIdAndActiveTrue(satelliteId)
                 .orElseThrow(() ->
                         new ResourceNotFoundException(
-                                "Satellite not found with ID: "
-                                        + satelliteId
+                                "Satellite not found with ID: " +
+                                        satelliteId
                         ));
     }
 
-    /**
-     * ------------------------------------------------------------------
-     * Fetch Active Space Debris
-     * ------------------------------------------------------------------
+    /*
+     * ================================================================
+     * FETCH ACTIVE SPACE DEBRIS
+     * ================================================================
      */
     private SpaceDebris getActiveDebris(
-            String debrisId) {
+            String debrisId
+    ) {
 
         return spaceDebrisRepository
                 .findByIdAndIsActiveTrue(debrisId)
                 .orElseThrow(() ->
                         new ResourceNotFoundException(
-                                "Space debris not found with ID: "
-                                        + debrisId
+                                "Space debris not found with ID: " +
+                                        debrisId
                         ));
     }
 
-    /**
-     * ------------------------------------------------------------------
-     * Update Audit Fields
-     * ------------------------------------------------------------------
+    /*
+     * ================================================================
+     * UPDATE AUDIT FIELDS
+     * ================================================================
      */
     private void updateAuditFields(
-            CollisionRisk collisionRisk) {
+            CollisionRisk collisionRisk
+    ) {
 
         collisionRisk.setUpdatedAt(
-                LocalDateTime.now()
+                LocalDateTime.now(ZoneOffset.UTC)
         );
     }
 }
