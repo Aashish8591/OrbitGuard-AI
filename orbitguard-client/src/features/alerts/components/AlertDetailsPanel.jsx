@@ -15,7 +15,6 @@ import {
   FiMessageSquare,
   FiRadio,
   FiShield,
-  FiX,
 } from "react-icons/fi";
 
 import AlertSeverityBadge from "./AlertSeverityBadge";
@@ -52,20 +51,16 @@ function displayValue(value) {
   return String(value);
 }
 
-function SectionHeading({ icon: Icon, children, trailing }) {
+function SectionHeading({ icon: Icon, children }) {
   return (
-    <div className="mb-4 flex min-w-0 items-center justify-between gap-3">
-      <div className="flex min-w-0 items-center gap-2.5">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-cyan-300/10 bg-cyan-300/[0.06] text-cyan-300">
-          <Icon aria-hidden="true" className="h-4 w-4" />
-        </span>
+    <div className="mb-4 flex min-w-0 items-center gap-2.5">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-cyan-300/10 bg-cyan-300/[0.06] text-cyan-300">
+        <Icon aria-hidden="true" className="h-4 w-4" />
+      </span>
 
-        <h3 className="min-w-0 text-xs font-semibold uppercase tracking-[0.13em] text-slate-300">
-          {children}
-        </h3>
-      </div>
-
-      {trailing}
+      <h3 className="min-w-0 text-xs font-semibold uppercase tracking-[0.13em] text-slate-300">
+        {children}
+      </h3>
     </div>
   );
 }
@@ -85,32 +80,27 @@ function DetailField({
     if (!copyable || !available) return;
 
     try {
-      if (!navigator?.clipboard?.writeText) {
-        return;
-      }
+      if (!navigator?.clipboard?.writeText) return;
 
       await navigator.clipboard.writeText(text);
       setCopied(true);
-
-      // Reset the visual feedback when the user next interacts.
-      // No timer is required.
     } catch {
       setCopied(false);
     }
   }, [copyable, available, text]);
 
   return (
-    <div className="group min-w-0 rounded-xl border border-white/[0.06] bg-[#07111e]/75 p-3 transition-colors hover:border-white/[0.11]">
+    <div className="group min-w-0 rounded-xl border border-white/[0.06] bg-[#07111e]/75 p-3 transition-colors hover:border-white/[0.12]">
       <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
         {label}
       </p>
 
       <div className="mt-2 flex min-w-0 items-start justify-between gap-2">
         <p
-          className={`min-w-0 break-words text-sm leading-5 ${
+          className={`min-w-0 break-all text-sm leading-5 ${
             mono
               ? "font-mono text-xs text-slate-300"
-              : "text-slate-200"
+              : "break-words text-slate-200"
           }`}
         >
           {text}
@@ -253,61 +243,27 @@ export default function AlertDetailsPanel({
   }, [alert]);
 
   const normalizedStatus = String(details?.status ?? "").toUpperCase();
+
   const isAcknowledged = [
     "ACKNOWLEDGED",
     "RESOLVED",
     "CLOSED",
   ].includes(normalizedStatus);
+
   const isResolved = ["RESOLVED", "CLOSED"].includes(normalizedStatus);
 
   return (
     <motion.aside
-      initial={shouldReduceMotion ? false : { opacity: 0, x: 12 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: shouldReduceMotion ? 0 : 0.22 }}
-      aria-label="Alert details"
+      initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: shouldReduceMotion ? 0 : 0.2 }}
+      aria-label="Selected alert information"
       aria-busy={isLoading}
-      className="flex min-w-0 flex-col overflow-hidden rounded-xl border border-white/[0.08] bg-[#050d19] text-slate-100 shadow-2xl shadow-black/20"
+      className="flex min-w-0 flex-col bg-[#030b16] text-slate-100"
     >
-      {/* Sticky panel header */}
-      <div className="sticky top-0 z-20 flex items-start justify-between gap-3 border-b border-white/[0.07] bg-[#050d19]/95 px-4 py-4 backdrop-blur-xl sm:px-5">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-cyan-300/15 bg-cyan-300/[0.07] text-cyan-300">
-            <FiRadio aria-hidden="true" className="h-5 w-5" />
-          </span>
-
-          <div className="min-w-0">
-            <h2 className="font-['Orbitron'] text-sm font-semibold tracking-wide text-slate-100 sm:text-base">
-              Alert Details
-            </h2>
-
-            <p className="mt-1 text-xs leading-5 text-slate-500">
-              Incident intelligence and traceability
-            </p>
-
-            {details?.code && (
-              <p className="mt-1 break-all font-mono text-[10px] text-cyan-300/80">
-                {details.code}
-              </p>
-            )}
-          </div>
-        </div>
-
-        {typeof onClose === "function" && (
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close alert details"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] text-slate-400 transition-colors hover:border-white/[0.16] hover:bg-white/[0.05] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60"
-          >
-            <FiX aria-hidden="true" className="h-4 w-4" />
-          </button>
-        )}
-      </div>
-
       {/* Loading state */}
       {isLoading && (
-        <div role="status" className="space-y-5 p-5">
+        <div role="status" className="space-y-5 p-4 sm:p-6">
           <span className="sr-only">Loading alert details…</span>
 
           <div className="animate-pulse space-y-3 motion-reduce:animate-none">
@@ -323,7 +279,7 @@ export default function AlertDetailsPanel({
               className="animate-pulse rounded-xl border border-white/[0.06] p-4 motion-reduce:animate-none"
             >
               <div className="h-3 w-32 rounded bg-white/[0.07]" />
-              <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="h-14 rounded-lg bg-white/[0.04]" />
                 <div className="h-14 rounded-lg bg-white/[0.04]" />
               </div>
@@ -380,11 +336,11 @@ export default function AlertDetailsPanel({
         </div>
       )}
 
-      {/* Selected alert */}
+      {/* Selected alert content */}
       {!isLoading && !error && details && (
         <div className="min-w-0 divide-y divide-white/[0.06]">
           {/* Incident overview */}
-          <section className="p-4 sm:p-5">
+          <section className="p-4 sm:p-6">
             <div className="flex flex-wrap items-center gap-2">
               <AlertSeverityBadge
                 severity={details.severity}
@@ -399,15 +355,15 @@ export default function AlertDetailsPanel({
               />
             </div>
 
-            <h3 className="mt-4 break-words text-base font-semibold leading-6 text-white sm:text-lg">
+            <h2 className="mt-4 break-words text-lg font-semibold leading-7 text-white sm:text-xl">
               {details.title}
-            </h3>
+            </h2>
 
-            <p className="mt-2 whitespace-pre-wrap break-words text-xs leading-6 text-slate-400 sm:text-sm">
+            <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-slate-400">
               {details.message || "No additional message provided."}
             </p>
 
-            <div className="mt-4 rounded-xl border border-cyan-300/10 bg-gradient-to-br from-cyan-300/[0.06] to-transparent p-3.5">
+            <div className="mt-5 rounded-xl border border-cyan-300/10 bg-gradient-to-br from-cyan-300/[0.06] to-transparent p-3.5 sm:p-4">
               <div className="flex items-start gap-3">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-cyan-300/10 bg-[#061322] text-cyan-300">
                   <FiHash aria-hidden="true" className="h-4 w-4" />
@@ -426,8 +382,8 @@ export default function AlertDetailsPanel({
             </div>
           </section>
 
-          {/* Linked orbital entities */}
-          <section className="p-4 sm:p-5">
+          {/* Orbital references */}
+          <section className="p-4 sm:p-6">
             <SectionHeading icon={FiActivity}>
               Orbital references
             </SectionHeading>
@@ -499,7 +455,7 @@ export default function AlertDetailsPanel({
           </section>
 
           {/* Classification */}
-          <section className="p-4 sm:p-5">
+          <section className="p-4 sm:p-6">
             <SectionHeading icon={FiShield}>
               Classification
             </SectionHeading>
@@ -511,7 +467,7 @@ export default function AlertDetailsPanel({
           </section>
 
           {/* Event timeline */}
-          <section className="p-4 sm:p-5">
+          <section className="p-4 sm:p-6">
             <SectionHeading icon={FiCalendar}>
               Event timeline
             </SectionHeading>
@@ -528,7 +484,9 @@ export default function AlertDetailsPanel({
                 label="Acknowledged"
                 value={details.acknowledgedAt}
                 icon={FiCheck}
-                completed={Boolean(details.acknowledgedAt) || isAcknowledged}
+                completed={
+                  Boolean(details.acknowledgedAt) || isAcknowledged
+                }
               />
 
               <TimelineItem
@@ -553,13 +511,13 @@ export default function AlertDetailsPanel({
 
             <p className="mt-3 text-[10px] leading-5 text-slate-500">
               Event times are displayed in UTC. Missing timestamps mean
-              that the corresponding event time was not recorded in the
+              the corresponding event time was not recorded in the
               available alert data.
             </p>
           </section>
 
           {/* Operator remarks */}
-          <section className="p-4 sm:p-5">
+          <section className="p-4 sm:p-6">
             <SectionHeading icon={FiMessageSquare}>
               Operator remarks
             </SectionHeading>
@@ -586,9 +544,9 @@ export default function AlertDetailsPanel({
             )}
           </section>
 
-          {/* Workflow controls supplied by the parent */}
+          {/* Workflow actions */}
           {actions && (
-            <section className="bg-white/[0.015] p-4 sm:p-5">
+            <section className="bg-white/[0.015] p-4 sm:p-6">
               <SectionHeading icon={FiCheckCircle}>
                 Workflow actions
               </SectionHeading>
@@ -598,7 +556,7 @@ export default function AlertDetailsPanel({
           )}
 
           {/* Footer */}
-          <footer className="flex items-start gap-2 px-4 py-3.5 sm:px-5">
+          <footer className="flex items-start gap-2 px-4 py-3.5 sm:px-6">
             <FiShield
               aria-hidden="true"
               className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-600"
@@ -606,8 +564,7 @@ export default function AlertDetailsPanel({
 
             <p className="text-[10px] leading-5 text-slate-500">
               Information is displayed from the selected alert record.
-              Missing fields are shown as unavailable rather than
-              inferred.
+              Missing fields are shown as unavailable rather than inferred.
             </p>
           </footer>
         </div>

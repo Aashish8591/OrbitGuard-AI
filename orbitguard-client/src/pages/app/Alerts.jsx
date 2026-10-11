@@ -1,17 +1,23 @@
-
 import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
 import {
   FiAlertCircle,
   FiRefreshCw,
+  FiShield,
 } from "react-icons/fi";
 
-import api from "../../services/api";
+import {
+  getAlerts,
+  getAlertById,
+  updateAlertStatus,
+  getAlertErrorMessage,
+} from "../../services/alertService";
 
 import AlertsHeader from "../../features/alerts/components/AlertsHeader";
 import AlertSummary from "../../features/alerts/components/AlertSummary";
@@ -22,7 +28,6 @@ import AlertDetailsPanel from "../../features/alerts/components/AlertDetailsPane
 import AlertStatusActions from "../../features/alerts/components/AlertStatusActions";
 import AlertEmptyState from "../../features/alerts/components/AlertEmptyState";
 
-const ALERTS_ENDPOINT = "/api/v1/alerts";
 const PAGE_SIZE = 8;
 
 const INITIAL_FILTERS = {
@@ -37,19 +42,20 @@ const INITIAL_FILTERS = {
   sortDirection: "desc",
 };
 
-function getErrorMessage(error) {
-  return (
-    error?.response?.data?.message ||
-    error?.response?.data?.error ||
-    error?.message ||
-    "An unexpected error occurred. Please try again."
-  );
-}
-
+/**
+ * Unwrap the existing API response without assuming a specific
+ * common-wrapper implementation.
+ *
+ * Supported examples:
+ * { data: [...] }
+ * { data: { content: [...] } }
+ * { content: [...] }
+ * [...]
+ */
 function unwrapResponse(response) {
-  let payload = response?.data;
+  let payload = response?.data ?? response;
 
-  // Support APIs returning { data: ... }.
+  // Support the project's ApiResponse-style wrapper.
   if (
     payload &&
     !Array.isArray(payload) &&
@@ -95,6 +101,31 @@ function normalizeAlertsResponse(response) {
   };
 }
 
+function normalizeAlertDetails(response) {
+  let payload = unwrapResponse(response);
+
+  if (
+    payload &&
+    !Array.isArray(payload) &&
+    typeof payload === "object" &&
+    payload.alert
+  ) {
+    payload = payload.alert;
+  }
+
+  if (
+    !payload ||
+    typeof payload !== "object" ||
+    Array.isArray(payload)
+  ) {
+    throw new Error(
+      "The server returned an invalid alert response."
+    );
+  }
+
+  return payload;
+}
+
 function getAlertId(alert) {
   return alert?.id ?? alert?.alertId ?? alert?._id ?? null;
 }
@@ -119,23 +150,34 @@ function getAlertDate(alert) {
 function matchesDateFilter(alert, filters) {
   const date = getAlertDate(alert);
 
-  if (!filters.fromDate && !filters.toDate) return true;
+  if (!filters.fromDate && !filters.toDate) {
+    return true;
+  }
+
   if (!date) return false;
 
-  // Compare calendar dates in local time, consistent with
-  // the dates entered in native date inputs.
   if (filters.fromDate) {
-    const start = new Date(`${filters.fromDate}T00:00:00`);
+    const start = new Date(
+      `${filters.fromDate}T00:00:00`
+    );
 
-    if (!Number.isNaN(start.getTime()) && date < start) {
+    if (
+      !Number.isNaN(start.getTime()) &&
+      date < start
+    ) {
       return false;
     }
   }
 
   if (filters.toDate) {
-    const end = new Date(`${filters.toDate}T23:59:59.999`);
+    const end = new Date(
+      `${filters.toDate}T23:59:59.999`
+    );
 
-    if (!Number.isNaN(end.getTime()) && date > end) {
+    if (
+      !Number.isNaN(end.getTime()) &&
+      date > end
+    ) {
       return false;
     }
   }
@@ -161,20 +203,26 @@ function matchesAlert(alert, filters) {
       alert?.status,
     ];
 
-    const matchesSearch = searchableFields.some((value) =>
+    const hasMatch = searchableFields.some((value) =>
       normalizeText(value).includes(search)
     );
 
-    if (!matchesSearch) return false;
+    if (!hasMatch) return false;
   }
 
-  for (const key of ["severity", "status", "source", "type"]) {
+  for (const key of [
+    "severity",
+    "status",
+    "source",
+    "type",
+  ]) {
     const selected = filters[key];
 
     if (
       selected &&
       selected !== "ALL" &&
-      normalizeText(alert?.[key]) !== normalizeText(selected)
+      normalizeText(alert?.[key]) !==
+        normalizeText(selected)
     ) {
       return false;
     }
@@ -197,8 +245,12 @@ function getSeverityRank(severity) {
 function getSortTimestamp(alert, sortBy) {
   const value =
     sortBy === "updatedAt"
-      ? alert?.updatedAt ?? alert?.generatedAt ?? alert?.createdAt
-      : alert?.generatedAt ?? alert?.createdAt ?? alert?.updatedAt;
+      ? alert?.updatedAt ??
+        alert?.generatedAt ??
+        alert?.createdAt
+      : alert?.generatedAt ??
+        alert?.createdAt ??
+        alert?.updatedAt;
 
   if (!value) return 0;
 
@@ -230,10 +282,17 @@ function sortAlerts(alerts, sortBy, sortDirection) {
 function normalizeSummary(alerts) {
   return alerts.reduce(
     (summary, alert) => {
-      const status = String(alert?.status ?? "").toUpperCase();
-      const severity = String(alert?.severity ?? "").toUpperCase();
+      const status = String(
+        alert?.status ?? ""
+      ).toUpperCase();
 
-      if (status === "PENDING") summary.pending += 1;
+      const severity = String(
+        alert?.severity ?? ""
+      ).toUpperCase();
+
+      if (status === "PENDING") {
+        summary.pending += 1;
+      }
 
       if (status === "ACKNOWLEDGED") {
         summary.acknowledged += 1;
@@ -243,7 +302,9 @@ function normalizeSummary(alerts) {
         summary.resolved += 1;
       }
 
-      if (severity === "CRITICAL") summary.critical += 1;
+      if (severity === "CRITICAL") {
+        summary.critical += 1;
+      }
 
       return summary;
     },
@@ -275,79 +336,111 @@ function AlertsPage() {
   const [currentPage, setCurrentPage] = useState(0);
   const [lastUpdated, setLastUpdated] = useState(null);
 
-  const fetchAlerts = useCallback(async ({ refresh = false } = {}) => {
-    if (refresh) {
-      setIsRefreshing(true);
-    } else {
-      setIsLoading(true);
-    }
+  // Request sequence prevents older responses overwriting newer ones.
+  const alertsRequestId = useRef(0);
+  const detailRequestId = useRef(0);
+  const statusRequestId = useRef(0);
 
-    setError("");
+  const selectedAlertIdRef = useRef(null);
+  const modalRef = useRef(null);
+  const closeButtonRef = useRef(null);
 
-    try {
-      const response = await api.get(ALERTS_ENDPOINT);
-      const result = normalizeAlertsResponse(response);
+  /**
+   * Fetch alerts through alertService.
+   *
+   * This deliberately preserves the existing client-side
+   * filtering, sorting and pagination behavior.
+   */
+  const fetchAlerts = useCallback(
+    async ({ refresh = false } = {}) => {
+      const requestId = ++alertsRequestId.current;
 
-      setAlerts(result.alerts);
-      setLastUpdated(new Date());
+      if (refresh) {
+        setIsRefreshing(true);
+      } else {
+        setIsLoading(true);
+      }
 
-      // Keep the selected alert synchronized with the latest list.
-      setSelectedAlert((currentSelected) => {
-        if (!currentSelected) return currentSelected;
+      setError("");
 
-        const selectedId = getAlertId(currentSelected);
+      try {
+        const response = await getAlerts();
+        const result = normalizeAlertsResponse(response);
 
-        const latest = result.alerts.find(
-          (item) =>
-            String(getAlertId(item)) === String(selectedId)
-        );
+        // Ignore an outdated list response.
+        if (requestId !== alertsRequestId.current) {
+          return;
+        }
 
-        return latest ?? currentSelected;
-      });
-    } catch (requestError) {
-      setError(getErrorMessage(requestError));
-    } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
-    }
-  }, []);
+        setAlerts(result.alerts);
+        setLastUpdated(new Date());
 
+        // Keep the selected alert synchronized with the list.
+        setSelectedAlert((currentSelected) => {
+          if (!currentSelected) return currentSelected;
+
+          const selectedId = getAlertId(currentSelected);
+
+          const latest = result.alerts.find(
+            (item) =>
+              String(getAlertId(item)) === String(selectedId)
+          );
+
+          return latest ?? currentSelected;
+        });
+      } catch (requestError) {
+        if (requestId === alertsRequestId.current) {
+          setError(getAlertErrorMessage(requestError));
+        }
+      } finally {
+        if (requestId === alertsRequestId.current) {
+          setIsLoading(false);
+          setIsRefreshing(false);
+        }
+      }
+    },
+    []
+  );
+
+  /**
+   * Fetch a single alert using the dedicated service.
+   */
   const fetchAlertDetails = useCallback(async (alertId) => {
-    if (alertId === null || alertId === undefined || alertId === "") {
+    if (
+      alertId === null ||
+      alertId === undefined ||
+      alertId === ""
+    ) {
       return;
     }
+
+    const requestId = ++detailRequestId.current;
 
     setIsDetailLoading(true);
     setDetailError("");
 
     try {
-      const response = await api.get(
-        `${ALERTS_ENDPOINT}/${encodeURIComponent(alertId)}`
-      );
+      const response = await getAlertById(alertId);
+      const detail = normalizeAlertDetails(response);
 
-      const payload = unwrapResponse(response);
-      const detail = payload?.alert ?? payload;
-
+      // Only apply the response to the still-selected alert.
       if (
-        !detail ||
-        typeof detail !== "object" ||
-        Array.isArray(detail)
+        requestId === detailRequestId.current &&
+        String(selectedAlertIdRef.current) === String(alertId)
       ) {
-        throw new Error("The server returned an invalid alert response.");
+        setSelectedAlert(detail);
       }
-
-      // Avoid showing details for an alert that has since been closed.
-      setSelectedAlertId((currentId) => {
-        if (String(currentId) === String(alertId)) {
-          setSelectedAlert(detail);
-        }
-
-        return currentId;
-      });
     } catch (requestError) {
-      setDetailError(getErrorMessage(requestError));
+      if (
+        requestId === detailRequestId.current &&
+        String(selectedAlertIdRef.current) === String(alertId)
+      ) {
+        setDetailError(getAlertErrorMessage(requestError));
+      }
     } finally {
-      setIsDetailLoading(false);
+      if (requestId === detailRequestId.current) {
+        setIsDetailLoading(false);
+      }
     }
   }, []);
 
@@ -356,15 +449,90 @@ function AlertsPage() {
   }, [fetchAlerts]);
 
   useEffect(() => {
-    if (selectedAlertId === null || selectedAlertId === "") {
+    selectedAlertIdRef.current = selectedAlertId;
+
+    if (
+      selectedAlertId === null ||
+      selectedAlertId === ""
+    ) {
+      detailRequestId.current += 1;
       setSelectedAlert(null);
       setDetailError("");
       setStatusError("");
+      setIsDetailLoading(false);
       return;
     }
 
     fetchAlertDetails(selectedAlertId);
   }, [selectedAlertId, fetchAlertDetails]);
+
+  // Lock background scrolling while the modal is open.
+  useEffect(() => {
+    if (selectedAlertId === null) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const frame = requestAnimationFrame(() => {
+      closeButtonRef.current?.focus();
+    });
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      cancelAnimationFrame(frame);
+    };
+  }, [selectedAlertId]);
+
+  // Escape closes the modal; Tab remains within the dialog.
+  useEffect(() => {
+    if (selectedAlertId === null) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape" && !isUpdatingStatus) {
+        handleCloseDetails();
+      }
+
+      if (event.key !== "Tab") return;
+
+      const modal = modalRef.current;
+      if (!modal) return;
+
+      const focusable = modal.querySelectorAll(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+      );
+
+      const items = Array.from(focusable).filter(
+        (element) =>
+          !element.hasAttribute("aria-hidden") &&
+          element.getAttribute("aria-disabled") !== "true"
+      );
+
+      if (!items.length) return;
+
+      const first = items[0];
+      const last = items[items.length - 1];
+
+      if (
+        event.shiftKey &&
+        document.activeElement === first
+      ) {
+        event.preventDefault();
+        last.focus();
+      } else if (
+        !event.shiftKey &&
+        document.activeElement === last
+      ) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [selectedAlertId, isUpdatingStatus]);
 
   const filteredAlerts = useMemo(() => {
     const matching = alerts.filter((alert) =>
@@ -383,7 +551,10 @@ function AlertsPage() {
     Math.ceil(filteredAlerts.length / PAGE_SIZE)
   );
 
-  const safeCurrentPage = Math.min(currentPage, totalPages - 1);
+  const safeCurrentPage = Math.min(
+    currentPage,
+    totalPages - 1
+  );
 
   const visibleAlerts = useMemo(() => {
     const start = safeCurrentPage * PAGE_SIZE;
@@ -433,7 +604,9 @@ function AlertsPage() {
     const id = getAlertId(alert);
 
     if (id === null || id === undefined || id === "") {
-      setDetailError("This alert does not contain a usable identifier.");
+      setDetailError(
+        "This alert does not contain a usable identifier."
+      );
       return;
     }
 
@@ -444,45 +617,75 @@ function AlertsPage() {
   }, []);
 
   const handleCloseDetails = useCallback(() => {
+    if (isUpdatingStatus) return;
+
+    // Invalidate any outstanding detail request.
+    detailRequestId.current += 1;
+    selectedAlertIdRef.current = null;
+
     setSelectedAlertId(null);
     setSelectedAlert(null);
     setDetailError("");
     setStatusError("");
     setIsDetailLoading(false);
-  }, []);
+  }, [isUpdatingStatus]);
 
+  /**
+   * Backend transition validation remains authoritative.
+   * The service sends { status, remarks } to the existing endpoint.
+   */
   const handleStatusChange = useCallback(
     async (nextStatus, remarks) => {
       const alertId = getAlertId(selectedAlert);
 
-      if (alertId === null || alertId === undefined || alertId === "") {
-        throw new Error("Unable to identify the selected alert.");
+      if (
+        alertId === null ||
+        alertId === undefined ||
+        alertId === ""
+      ) {
+        throw new Error(
+          "Unable to identify the selected alert."
+        );
       }
+
+      if (isUpdatingStatus) return;
+
+      const requestId = ++statusRequestId.current;
 
       setIsUpdatingStatus(true);
       setStatusError("");
 
       try {
-        // Preserve the existing status endpoint and request DTO shape.
-        await api.put(
-          `${ALERTS_ENDPOINT}/${encodeURIComponent(alertId)}/status`,
-          {
-            status: nextStatus,
-            remarks: remarks || "",
-          }
-        );
+        await updateAlertStatus(alertId, {
+          status: nextStatus,
+          remarks: remarks || "",
+        });
 
+        // Refresh the list and selected details after a successful update.
         await fetchAlerts({ refresh: true });
-        await fetchAlertDetails(alertId);
+
+        if (
+          String(selectedAlertIdRef.current) === String(alertId)
+        ) {
+          await fetchAlertDetails(alertId);
+        }
       } catch (requestError) {
-        const message = getErrorMessage(requestError);
+        const message = getAlertErrorMessage(requestError);
+
         setStatusError(message);
         throw new Error(message);
       } finally {
-        setIsUpdatingStatus(false);
+        if (requestId === statusRequestId.current) {
+          setIsUpdatingStatus(false);
+        }
       }
     },
-    [selectedAlert, fetchAlerts, fetchAlertDetails]
+    [
+      selectedAlert,
+      isUpdatingStatus,
+      fetchAlerts,
+      fetchAlertDetails,
+    ]
   );
 
   const handlePageChange = useCallback(
@@ -492,14 +695,17 @@ function AlertsPage() {
       if (!Number.isFinite(page)) return;
 
       setCurrentPage(
-        Math.max(0, Math.min(Math.floor(page), totalPages - 1))
+        Math.max(
+          0,
+          Math.min(Math.floor(page), totalPages - 1)
+        )
       );
     },
     [totalPages]
   );
 
-  // These callbacks intentionally do not navigate until the real
-  // application route paths are confirmed.
+  // Keep these callbacks until the real application route paths
+  // are confirmed. No routes are invented here.
   const handleViewRisk = useCallback((riskId) => {
     if (!riskId) return;
   }, []);
@@ -526,7 +732,10 @@ function AlertsPage() {
         </section>
 
         {/* Summary cards */}
-        <section className="min-w-0" aria-label="Alert summary">
+        <section
+          className="min-w-0"
+          aria-label="Alert summary"
+        >
           <AlertSummary
             alerts={alerts}
             summary={summary}
@@ -556,7 +765,7 @@ function AlertsPage() {
           />
         </section>
 
-        {/* The single visible Alert Feed heading belongs here. */}
+        {/* Alert feed */}
         <section
           className="min-w-0"
           aria-label="Alert feed"
@@ -648,54 +857,96 @@ function AlertsPage() {
         )}
       </div>
 
-      {/* Selected alert details drawer */}
+      {/* Centered responsive incident modal */}
       {selectedAlertId !== null && (
-        <div className="fixed inset-0 z-50 flex justify-end">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-0 backdrop-blur-md sm:p-4 lg:p-6">
+          {/* Backdrop */}
           <button
             type="button"
-            className="absolute inset-0 cursor-default bg-black/65 backdrop-blur-sm"
+            className="absolute inset-0 cursor-default"
             aria-label="Close alert details"
             onClick={handleCloseDetails}
+            disabled={isUpdatingStatus}
           />
 
-          <aside
-            className="relative z-10 flex h-full w-full max-w-2xl flex-col overflow-y-auto overscroll-contain border-l border-white/[0.08] bg-[#030b16] shadow-2xl"
-            aria-label="Alert details panel"
-            aria-busy={isDetailLoading || isUpdatingStatus}
+          {/* Modal */}
+          <section
+            ref={modalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Alert investigation console"
+            className="relative z-10 flex h-[100dvh] w-full min-h-0 flex-col overflow-hidden border border-white/[0.08] bg-[#030b16] shadow-2xl shadow-black/60 sm:h-[92dvh] sm:max-h-[900px] sm:max-w-5xl sm:rounded-2xl lg:max-w-6xl"
           >
-            <AlertDetailsPanel
-              alert={selectedAlert}
-              onClose={handleCloseDetails}
-              onViewRisk={handleViewRisk}
-              onViewSatellite={handleViewSatellite}
-              onViewDebris={handleViewDebris}
-              isLoading={isDetailLoading}
-              error={detailError}
-              onRetry={() => fetchAlertDetails(selectedAlertId)}
-              actions={
-                selectedAlert ? (
-                  <div className="space-y-3">
-                    {statusError && (
-                      <div
-                        className="flex items-start gap-2 break-words rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300"
-                        role="alert"
-                      >
-                        <FiAlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                        <span>{statusError}</span>
-                      </div>
-                    )}
+            {/* Persistent modal header */}
+            <header className="flex shrink-0 items-center justify-between gap-3 border-b border-white/[0.08] bg-[#06101e] px-4 py-3 sm:px-6">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-cyan-300/15 bg-cyan-300/[0.07] text-cyan-300">
+                  <FiShield
+                    className="h-4 w-4"
+                    aria-hidden="true"
+                  />
+                </span>
 
-                    <AlertStatusActions
-                      alert={selectedAlert}
-                      onStatusChange={handleStatusChange}
-                      isUpdating={isUpdatingStatus}
-                      error={statusError}
-                    />
-                  </div>
-                ) : null
-              }
-            />
-          </aside>
+                <div className="min-w-0">
+                  <p className="font-['Orbitron'] text-xs font-semibold tracking-wide text-slate-100 sm:text-sm">
+                    INCIDENT CONSOLE
+                  </p>
+                  <p className="mt-1 truncate text-[10px] text-slate-500 sm:text-xs">
+                    OrbitGuard AI / Alert investigation
+                  </p>
+                </div>
+              </div>
+
+              <button
+                ref={closeButtonRef}
+                type="button"
+                onClick={handleCloseDetails}
+                disabled={isUpdatingStatus}
+                aria-label="Close incident console"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 text-slate-400 transition-colors hover:bg-white/[0.06] hover:text-white disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60"
+              >
+                <span className="text-xl leading-none" aria-hidden="true">
+                  ×
+                </span>
+              </button>
+            </header>
+
+            {/* Only modal content scrolls */}
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+              <AlertDetailsPanel
+                alert={selectedAlert}
+                onClose={handleCloseDetails}
+                onViewRisk={handleViewRisk}
+                onViewSatellite={handleViewSatellite}
+                onViewDebris={handleViewDebris}
+                isLoading={isDetailLoading}
+                error={detailError}
+                onRetry={() => fetchAlertDetails(selectedAlertId)}
+                actions={
+                  selectedAlert ? (
+                    <div className="space-y-3">
+                      {statusError && (
+                        <div
+                          className="flex items-start gap-2 break-words rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300"
+                          role="alert"
+                        >
+                          <FiAlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                          <span>{statusError}</span>
+                        </div>
+                      )}
+
+                      <AlertStatusActions
+                        alert={selectedAlert}
+                        onStatusChange={handleStatusChange}
+                        isUpdating={isUpdatingStatus}
+                        error={statusError}
+                      />
+                    </div>
+                  ) : null
+                }
+              />
+            </div>
+          </section>
         </div>
       )}
     </main>

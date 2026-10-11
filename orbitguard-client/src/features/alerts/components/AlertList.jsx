@@ -1,12 +1,19 @@
+
 import { useMemo } from "react";
 import { motion, useReducedMotion } from "framer-motion";
+
 import {
   FiAlertCircle,
   FiAlertTriangle,
+  FiArrowDownRight,
+  FiArrowRight,
   FiArrowUpRight,
   FiCheckCircle,
+  FiChevronLeft,
+  FiChevronRight,
   FiClock,
   FiInbox,
+  FiRadio,
   FiRefreshCw,
   FiShield,
 } from "react-icons/fi";
@@ -16,34 +23,42 @@ const SEVERITY_CONFIG = {
     label: "Critical",
     icon: FiAlertTriangle,
     badge:
-      "border-rose-400/25 bg-rose-400/[0.09] text-rose-300",
+      "border-rose-400/20 bg-rose-400/[0.08] text-rose-300",
     indicator: "bg-rose-400",
-    glow: "shadow-[inset_2px_0_0_rgba(251,113,133,0.85)]",
+    accent: "before:bg-rose-400",
   },
   HIGH: {
     label: "High",
     icon: FiAlertTriangle,
     badge:
-      "border-orange-400/25 bg-orange-400/[0.08] text-orange-300",
+      "border-orange-400/20 bg-orange-400/[0.08] text-orange-300",
     indicator: "bg-orange-400",
-    glow: "shadow-[inset_2px_0_0_rgba(251,146,60,0.85)]",
+    accent: "before:bg-orange-400",
   },
   MEDIUM: {
     label: "Medium",
     icon: FiAlertCircle,
     badge:
-      "border-amber-400/25 bg-amber-400/[0.08] text-amber-300",
+      "border-amber-400/20 bg-amber-400/[0.08] text-amber-300",
     indicator: "bg-amber-400",
-    glow: "shadow-[inset_2px_0_0_rgba(251,191,36,0.85)]",
+    accent: "before:bg-amber-400",
   },
   LOW: {
     label: "Low",
     icon: FiShield,
     badge:
-      "border-sky-400/25 bg-sky-400/[0.08] text-sky-300",
+      "border-sky-400/20 bg-sky-400/[0.08] text-sky-300",
     indicator: "bg-sky-400",
-    glow: "shadow-[inset_2px_0_0_rgba(56,189,248,0.85)]",
+    accent: "before:bg-sky-400",
   },
+};
+
+const DEFAULT_SEVERITY = {
+  label: "Unspecified",
+  icon: FiAlertCircle,
+  badge: "border-white/[0.09] bg-white/[0.035] text-slate-400",
+  indicator: "bg-slate-500",
+  accent: "before:bg-slate-600",
 };
 
 const STATUS_CONFIG = {
@@ -69,14 +84,6 @@ const STATUS_CONFIG = {
   },
 };
 
-const DEFAULT_SEVERITY = {
-  label: "Unspecified",
-  icon: FiAlertCircle,
-  badge: "border-white/10 bg-white/[0.04] text-slate-400",
-  indicator: "bg-slate-500",
-  glow: "",
-};
-
 const DEFAULT_STATUS = {
   label: "Unknown status",
   className: "text-slate-400",
@@ -87,14 +94,32 @@ function normalizeEnum(value) {
   return typeof value === "string" ? value.trim().toUpperCase() : "";
 }
 
+function getAlertId(alert) {
+  return alert?.id ?? alert?.alertId ?? alert?._id ?? null;
+}
+
+function getDisplayCode(alert) {
+  return alert?.alertCode || "Reference unavailable";
+}
+
+function getDisplayTitle(alert) {
+  return alert?.title?.trim() || "Untitled alert";
+}
+
+function getDisplayMessage(alert) {
+  return alert?.message?.trim() || "No additional message provided.";
+}
+
+function getTimestamp(alert) {
+  return alert?.generatedAt ?? alert?.createdAt ?? alert?.updatedAt ?? null;
+}
+
 function formatDateTime(value) {
   if (!value) return "Time unavailable";
 
   const date = new Date(value);
 
-  if (Number.isNaN(date.getTime())) {
-    return "Time unavailable";
-  }
+  if (Number.isNaN(date.getTime())) return "Time unavailable";
 
   return new Intl.DateTimeFormat("en-IN", {
     day: "2-digit",
@@ -104,26 +129,6 @@ function formatDateTime(value) {
     minute: "2-digit",
     hour12: false,
   }).format(date);
-}
-
-function getAlertTimestamp(alert) {
-  return alert?.generatedAt ?? alert?.createdAt ?? null;
-}
-
-function getAlertId(alert) {
-  return alert?.id ?? alert?._id ?? null;
-}
-
-function getDisplayCode(alert) {
-  return alert?.alertCode || "Alert reference unavailable";
-}
-
-function getDisplayTitle(alert) {
-  return alert?.title?.trim() || "Untitled alert";
-}
-
-function getDisplayMessage(alert) {
-  return alert?.message?.trim() || "No additional message provided.";
 }
 
 function isValidAlert(alert) {
@@ -138,18 +143,18 @@ function SkeletonRow() {
   return (
     <div
       aria-hidden="true"
-      className="flex animate-pulse gap-3 border-b border-white/[0.06] px-4 py-5 last:border-b-0 sm:px-5"
+      className="flex gap-3 border-b border-white/[0.045] p-4 last:border-b-0 sm:gap-4 sm:p-5"
     >
-      <div className="h-10 w-1 shrink-0 rounded-full bg-white/[0.08]" />
+      <div className="h-10 w-10 shrink-0 animate-pulse rounded-xl bg-white/[0.06] motion-reduce:animate-none" />
 
-      <div className="min-w-0 flex-1">
-        <div className="mb-3 h-3 w-24 rounded bg-white/[0.08]" />
-        <div className="mb-2 h-4 w-3/4 max-w-64 rounded bg-white/[0.08]" />
-        <div className="h-3 w-full max-w-80 rounded bg-white/[0.05]" />
+      <div className="min-w-0 flex-1 space-y-3">
+        <div className="h-3 w-28 animate-pulse rounded bg-white/[0.06] motion-reduce:animate-none" />
+        <div className="h-4 w-3/4 max-w-72 animate-pulse rounded bg-white/[0.07] motion-reduce:animate-none" />
+        <div className="h-3 w-full max-w-lg animate-pulse rounded bg-white/[0.04] motion-reduce:animate-none" />
 
-        <div className="mt-4 flex gap-2">
-          <div className="h-5 w-16 rounded-full bg-white/[0.06]" />
-          <div className="h-5 w-20 rounded-full bg-white/[0.06]" />
+        <div className="flex gap-2">
+          <div className="h-5 w-16 animate-pulse rounded-md bg-white/[0.05] motion-reduce:animate-none" />
+          <div className="h-5 w-24 animate-pulse rounded-md bg-white/[0.05] motion-reduce:animate-none" />
         </div>
       </div>
     </div>
@@ -163,7 +168,6 @@ function AlertRow({
   onSelect,
   shouldReduceMotion,
 }) {
-  const alertId = getAlertId(alert);
   const severityKey = normalizeEnum(alert.severity);
   const statusKey = normalizeEnum(alert.status);
 
@@ -171,60 +175,64 @@ function AlertRow({
   const status = STATUS_CONFIG[statusKey] ?? DEFAULT_STATUS;
   const SeverityIcon = severity.icon;
 
-  const timestamp = formatDateTime(getAlertTimestamp(alert));
-  const title = getDisplayTitle(alert);
   const code = getDisplayCode(alert);
+  const title = getDisplayTitle(alert);
   const message = getDisplayMessage(alert);
+  const timestamp = getTimestamp(alert);
+  const parsedDate = timestamp ? new Date(timestamp) : null;
+
+  const validTimestamp =
+    parsedDate && !Number.isNaN(parsedDate.getTime());
 
   const satelliteId = alert.satelliteId;
   const debrisId = alert.debrisId;
+  const riskId = alert.riskId;
 
-  const isInteractive = typeof onSelect === "function";
+  const interactive = typeof onSelect === "function";
 
   const content = (
     <div
       className={[
-        "group relative flex gap-3 px-3.5 py-4 transition-colors sm:gap-4 sm:px-5 sm:py-5",
-        "border-b border-white/[0.055] last:border-b-0",
-        severity.glow,
-        isSelected ? "bg-cyan-300/[0.055]" : "hover:bg-white/[0.025]",
+        "relative flex min-w-0 gap-3 p-4 text-left transition-colors duration-200 sm:gap-4 sm:px-5 sm:py-4",
+        "before:absolute before:inset-y-3 before:left-0 before:w-[2px] before:rounded-r",
+        severity.accent,
+        isSelected
+          ? "bg-cyan-300/[0.055]"
+          : "hover:bg-white/[0.025]",
       ].join(" ")}
     >
-      {/* Severity marker */}
-      <div className="flex w-9 shrink-0 flex-col items-center pt-1 sm:w-10">
-        <div
-          className={`flex h-9 w-9 items-center justify-center rounded-xl border sm:h-10 sm:w-10 ${severity.badge}`}
+      {/* Severity icon */}
+      <div className="shrink-0 pt-0.5">
+        <span
+          className={[
+            "flex h-10 w-10 items-center justify-center rounded-xl border",
+            severity.badge,
+          ].join(" ")}
         >
           <SeverityIcon
             aria-hidden="true"
             className="h-[18px] w-[18px]"
           />
-        </div>
-
-        <span
-          aria-hidden="true"
-          className={`mt-2 h-full min-h-5 w-px ${severity.indicator} opacity-20`}
-        />
+        </span>
       </div>
 
-      {/* Main alert information */}
+      {/* Main content */}
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-          <span className="font-mono text-[10px] font-medium tracking-wide text-slate-500 sm:text-[11px]">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="max-w-full break-all font-mono text-[10px] tracking-wide text-slate-500 sm:text-[11px]">
             {code}
           </span>
 
-          <span className="h-1 w-1 rounded-full bg-slate-700" />
+          <span
+            aria-hidden="true"
+            className="h-1 w-1 rounded-full bg-slate-700"
+          />
 
           <time
-            dateTime={
-              getAlertTimestamp(alert)
-                ? new Date(getAlertTimestamp(alert)).toISOString()
-                : undefined
-            }
-            className="text-[10px] text-slate-500 sm:text-xs"
+            dateTime={validTimestamp ? parsedDate.toISOString() : undefined}
+            className="text-[10px] text-slate-500 sm:text-[11px]"
           >
-            {timestamp}
+            {formatDateTime(timestamp)}
           </time>
         </div>
 
@@ -232,33 +240,50 @@ function AlertRow({
           {title}
         </h3>
 
-        <p className="mt-1.5 line-clamp-2 break-words text-xs leading-5 text-slate-400 sm:text-sm">
+        <p className="mt-1.5 line-clamp-2 break-words text-xs leading-5 text-slate-400 sm:text-[13px]">
           {message}
         </p>
 
-        {/* Linked orbital objects */}
-        {(satelliteId || debrisId) && (
-          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
+        {/* Associated orbital objects */}
+        {(satelliteId || debrisId || riskId) && (
+          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2">
             {satelliteId && (
-              <span className="max-w-full break-all text-[10px] text-slate-500 sm:text-xs">
-                <span className="text-slate-600">SAT</span>{" "}
+              <span className="max-w-full break-all text-[10px] text-slate-500 sm:text-[11px]">
+                <span className="mr-1 font-semibold tracking-wider text-slate-600">
+                  SAT
+                </span>
                 {satelliteId}
               </span>
             )}
 
             {debrisId && (
-              <span className="max-w-full break-all text-[10px] text-slate-500 sm:text-xs">
-                <span className="text-slate-600">DEBRIS</span>{" "}
+              <span className="max-w-full break-all text-[10px] text-slate-500 sm:text-[11px]">
+                <span className="mr-1 font-semibold tracking-wider text-slate-600">
+                  DEBRIS
+                </span>
                 {debrisId}
+              </span>
+            )}
+
+            {riskId && (
+              <span className="max-w-full break-all text-[10px] text-slate-500 sm:text-[11px]">
+                <span className="mr-1 font-semibold tracking-wider text-slate-600">
+                  RISK
+                </span>
+                {riskId}
               </span>
             )}
           </div>
         )}
 
-        {/* Severity and workflow state */}
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+        {/* Severity and status */}
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
           <span
-            className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${severity.badge}`}
+            className={[
+              "inline-flex items-center gap-1.5 rounded-md border px-2 py-1",
+              "text-[9px] font-semibold uppercase tracking-[0.08em]",
+              severity.badge,
+            ].join(" ")}
           >
             <span
               aria-hidden="true"
@@ -268,7 +293,7 @@ function AlertRow({
           </span>
 
           <span
-            className={`inline-flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide ${status.className}`}
+            className={`inline-flex items-center gap-1.5 text-[10px] font-medium ${status.className}`}
           >
             <span
               aria-hidden="true"
@@ -279,57 +304,50 @@ function AlertRow({
         </div>
       </div>
 
-      {/* Selection indicator */}
-      {isInteractive && (
+      {/* Selection affordance */}
+      {interactive && (
         <div className="flex shrink-0 items-start pt-1">
-          <FiArrowUpRight
-            aria-hidden="true"
-            className={`h-4 w-4 transition-colors ${
+          <span
+            className={[
+              "flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
               isSelected
-                ? "text-cyan-300"
-                : "text-slate-600 group-hover:text-slate-300"
-            }`}
-          />
+                ? "bg-cyan-300/10 text-cyan-300"
+                : "text-slate-600 group-hover:bg-white/[0.05] group-hover:text-slate-300",
+            ].join(" ")}
+          >
+            <FiArrowUpRight
+              aria-hidden="true"
+              className="h-4 w-4"
+            />
+          </span>
         </div>
       )}
     </div>
   );
-
-  if (!isInteractive) {
-    return (
-      <motion.li
-        initial={shouldReduceMotion ? false : { opacity: 0, y: 5 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{
-          duration: shouldReduceMotion ? 0 : 0.2,
-          delay: shouldReduceMotion ? 0 : Math.min(index * 0.025, 0.15),
-        }}
-        className="list-none"
-      >
-        {content}
-      </motion.li>
-    );
-  }
 
   return (
     <motion.li
       initial={shouldReduceMotion ? false : { opacity: 0, y: 5 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{
-        duration: shouldReduceMotion ? 0 : 0.2,
-        delay: shouldReduceMotion ? 0 : Math.min(index * 0.025, 0.15),
+        duration: shouldReduceMotion ? 0 : 0.18,
+        delay: shouldReduceMotion ? 0 : Math.min(index * 0.02, 0.12),
       }}
       className="list-none"
     >
-      <button
-        type="button"
-        onClick={() => onSelect(alert)}
-        aria-pressed={isSelected}
-        aria-label={`View alert ${code}: ${title}`}
-        className="block w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-300/60"
-      >
-        {content}
-      </button>
+      {interactive ? (
+        <button
+          type="button"
+          onClick={() => onSelect(alert)}
+          aria-pressed={isSelected}
+          aria-label={`View alert ${code}: ${title}`}
+          className="group block w-full text-left focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-cyan-300/60"
+        >
+          {content}
+        </button>
+      ) : (
+        content
+      )}
     </motion.li>
   );
 }
@@ -337,18 +355,15 @@ function AlertRow({
 function EmptyState({ hasFilters, onClearFilters }) {
   return (
     <div className="flex flex-col items-center justify-center px-5 py-14 text-center sm:py-16">
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.025]">
-        <FiInbox
-          aria-hidden="true"
-          className="h-6 w-6 text-slate-500"
-        />
-      </div>
+      <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.025] text-slate-500">
+        <FiInbox aria-hidden="true" className="h-6 w-6" />
+      </span>
 
       <h3 className="mt-4 text-sm font-semibold text-slate-200">
         {hasFilters ? "No matching alerts" : "No alerts to display"}
       </h3>
 
-      <p className="mt-2 max-w-sm text-xs leading-5 text-slate-500 sm:text-sm">
+      <p className="mt-2 max-w-sm text-xs leading-6 text-slate-500 sm:text-sm">
         {hasFilters
           ? "Try adjusting your search or filters to find the alert you need."
           : "Alerts generated by the system will appear here when available."}
@@ -367,27 +382,6 @@ function EmptyState({ hasFilters, onClearFilters }) {
   );
 }
 
-/**
- * OrbitGuard AI — Alert List
- *
- * This component renders the alerts it receives.
- * Fetching, filtering, pagination, and API error recovery belong
- * to the parent page or the alerts data hook.
- *
- * @param {Object} props
- * @param {Array<Object>} [props.alerts=[]]
- * @param {boolean} [props.isLoading=false]
- * @param {string|null} [props.error=null]
- * @param {Function} [props.onRetry]
- * @param {Function} [props.onSelectAlert]
- * @param {string|null} [props.selectedAlertId]
- * @param {boolean} [props.hasActiveFilters=false]
- * @param {Function} [props.onClearFilters]
- * @param {number|null} [props.totalElements]
- * @param {number|null} [props.currentPage]
- * @param {number|null} [props.totalPages]
- * @param {Function} [props.onPageChange]
- */
 export default function AlertList({
   alerts = [],
   isLoading = false,
@@ -434,28 +428,44 @@ export default function AlertList({
 
   return (
     <section
-      aria-labelledby="alert-list-heading"
+      aria-label="Alert records"
       aria-busy={isLoading}
-      className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#050d19]"
+      className="min-w-0 overflow-hidden rounded-xl border border-white/[0.075] bg-[#050d19] shadow-[0_12px_40px_rgba(0,0,0,0.12)]"
     >
-      {/* Feed heading */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] px-4 py-4 sm:px-5">
+      {/* Compact records toolbar; page heading remains in Alerts.jsx */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.06] bg-white/[0.012] px-4 py-3.5 sm:px-5">
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg border border-cyan-300/10 bg-cyan-300/[0.05] text-cyan-300">
+            <FiRadio aria-hidden="true" className="h-3.5 w-3.5" />
+          </span>
 
-        <div className="flex items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.02] px-2.5 py-1.5">
+          <div>
+            <p className="text-[11px] font-semibold text-slate-300">
+              Operational records
+            </p>
+            <p className="mt-0.5 text-[10px] text-slate-600">
+              Select a record to investigate
+            </p>
+          </div>
+        </div>
+
+        <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.07] bg-white/[0.02] px-2.5 py-1.5">
           <span
-            aria-hidden="true"
             className={`h-1.5 w-1.5 rounded-full ${
-              isLoading ? "animate-pulse bg-cyan-300" : "bg-slate-500"
+              isLoading
+                ? "animate-pulse bg-cyan-300"
+                : error
+                  ? "bg-rose-400"
+                  : "bg-emerald-400"
             }`}
           />
-
-          <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-slate-400">
-            {isLoading ? "Loading" : "Alert records"}
+          <span className="text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">
+            {isLoading ? "Syncing" : error ? "Unavailable" : "Feed"}
           </span>
         </div>
       </div>
 
-      {/* Error state */}
+      {/* Error */}
       {!isLoading && error && (
         <div
           role="alert"
@@ -467,11 +477,10 @@ export default function AlertList({
               className="mt-0.5 h-5 w-5 shrink-0 text-rose-300"
             />
 
-            <div>
+            <div className="min-w-0">
               <h3 className="text-sm font-semibold text-slate-200">
                 Unable to load alerts
               </h3>
-
               <p className="mt-1 break-words text-xs leading-5 text-slate-400">
                 {typeof error === "string"
                   ? error
@@ -493,7 +502,7 @@ export default function AlertList({
         </div>
       )}
 
-      {/* Loading state */}
+      {/* Loading */}
       {isLoading && (
         <div
           role="status"
@@ -503,12 +512,11 @@ export default function AlertList({
           {Array.from({ length: 5 }, (_, index) => (
             <SkeletonRow key={index} />
           ))}
-
           <span className="sr-only">Loading alert records...</span>
         </div>
       )}
 
-      {/* Empty state */}
+      {/* Empty */}
       {!isLoading && !error && validAlerts.length === 0 && (
         <EmptyState
           hasFilters={hasActiveFilters}
@@ -516,9 +524,9 @@ export default function AlertList({
         />
       )}
 
-      {/* Alert records */}
+      {/* Records */}
       {!isLoading && !error && validAlerts.length > 0 && (
-        <ul className="m-0 list-none p-0">
+        <ul className="m-0 divide-y divide-white/[0.045] p-0">
           {validAlerts.map((alert, index) => {
             const id = getAlertId(alert);
 
@@ -540,51 +548,55 @@ export default function AlertList({
         </ul>
       )}
 
-      {/* Server-driven pagination */}
+      {/* Pagination */}
       {!isLoading &&
         !error &&
         validAlerts.length > 0 &&
         validTotalElements !== null && (
-          <div className="flex flex-col gap-3 border-t border-white/[0.07] px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-            <p className="text-xs text-slate-500">
+          <footer className="flex flex-col gap-3 border-t border-white/[0.06] bg-white/[0.012] px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+            <p className="text-[11px] text-slate-500">
               Showing{" "}
-              <span className="font-medium text-slate-300">
+              <span className="font-semibold tabular-nums text-slate-300">
                 {startItem.toLocaleString("en-IN")}–
                 {endItem.toLocaleString("en-IN")}
               </span>{" "}
               of{" "}
-              <span className="font-medium text-slate-300">
+              <span className="font-semibold tabular-nums text-slate-300">
                 {validTotalElements.toLocaleString("en-IN")}
               </span>{" "}
               alerts
             </p>
 
             {hasPagination && (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center justify-between gap-2 sm:justify-end">
                 <button
                   type="button"
                   onClick={() => onPageChange(currentPage - 1)}
                   disabled={currentPage <= 0 || isLoading}
-                  className="min-h-9 rounded-lg border border-white/[0.09] px-3 text-xs font-medium text-slate-300 transition-colors hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-35"
+                  aria-label="Previous page"
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-white/[0.08] px-3 text-xs font-medium text-slate-300 transition-colors hover:border-white/[0.14] hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60"
                 >
+                  <FiChevronLeft aria-hidden="true" className="h-3.5 w-3.5" />
                   Previous
                 </button>
 
-                <span className="min-w-20 text-center text-xs tabular-nums text-slate-400">
-                  Page {currentPage + 1} of {totalPages}
+                <span className="min-w-20 text-center text-[11px] tabular-nums text-slate-400">
+                  {currentPage + 1} / {totalPages}
                 </span>
 
                 <button
                   type="button"
                   onClick={() => onPageChange(currentPage + 1)}
                   disabled={currentPage >= totalPages - 1 || isLoading}
-                  className="min-h-9 rounded-lg border border-white/[0.09] px-3 text-xs font-medium text-slate-300 transition-colors hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-35"
+                  aria-label="Next page"
+                  className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-white/[0.08] px-3 text-xs font-medium text-slate-300 transition-colors hover:border-white/[0.14] hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60"
                 >
                   Next
+                  <FiChevronRight aria-hidden="true" className="h-3.5 w-3.5" />
                 </button>
               </div>
             )}
-          </div>
+          </footer>
         )}
     </section>
   );

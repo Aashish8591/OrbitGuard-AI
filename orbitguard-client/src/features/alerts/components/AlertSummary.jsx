@@ -1,4 +1,6 @@
+
 import { motion, useReducedMotion } from "framer-motion";
+
 import {
   FiActivity,
   FiAlertTriangle,
@@ -6,6 +8,12 @@ import {
   FiCheckCircle,
   FiClock,
 } from "react-icons/fi";
+
+/* ================================================================
+   CONFIGURATION
+   ================================================================ */
+
+const CARD_BACKGROUND = "/images/background/appBackground2.jpg";
 
 const SUMMARY_ITEMS = [
   {
@@ -40,38 +48,42 @@ const SUMMARY_ITEMS = [
 
 const ACCENT_STYLES = {
   amber: {
-    icon: "border-amber-400/20 bg-amber-400/10 text-amber-300",
+    icon: "border-amber-400/30 bg-amber-400/15 text-amber-300",
     value: "text-amber-200",
     glow: "bg-amber-300",
-    hover: "hover:border-amber-300/30",
+    hover: "hover:border-amber-300/40",
     focus: "focus-visible:ring-amber-300/60",
-    active: "border-amber-300/40",
+    active: "border-amber-300/50",
   },
   cyan: {
-    icon: "border-cyan-400/20 bg-cyan-400/10 text-cyan-300",
+    icon: "border-cyan-400/30 bg-cyan-400/15 text-cyan-300",
     value: "text-cyan-200",
     glow: "bg-cyan-300",
-    hover: "hover:border-cyan-300/30",
+    hover: "hover:border-cyan-300/40",
     focus: "focus-visible:ring-cyan-300/60",
-    active: "border-cyan-300/40",
+    active: "border-cyan-300/50",
   },
   emerald: {
-    icon: "border-emerald-400/20 bg-emerald-400/10 text-emerald-300",
+    icon: "border-emerald-400/30 bg-emerald-400/15 text-emerald-300",
     value: "text-emerald-200",
     glow: "bg-emerald-300",
-    hover: "hover:border-emerald-300/30",
+    hover: "hover:border-emerald-300/40",
     focus: "focus-visible:ring-emerald-300/60",
-    active: "border-emerald-300/40",
+    active: "border-emerald-300/50",
   },
   rose: {
-    icon: "border-rose-400/20 bg-rose-400/10 text-rose-300",
+    icon: "border-rose-400/30 bg-rose-400/15 text-rose-300",
     value: "text-rose-200",
     glow: "bg-rose-300",
-    hover: "hover:border-rose-300/30",
+    hover: "hover:border-rose-300/40",
     focus: "focus-visible:ring-rose-300/60",
-    active: "border-rose-300/40",
+    active: "border-rose-300/50",
   },
 };
+
+/* ================================================================
+   HELPERS
+   ================================================================ */
 
 const isValidCount = (value) =>
   typeof value === "number" &&
@@ -94,7 +106,10 @@ function deriveSummary(alerts) {
       const severity = normalizeStatus(alert?.severity);
 
       if (status === "PENDING") result.pending += 1;
-      if (status === "ACKNOWLEDGED") result.acknowledged += 1;
+
+      if (status === "ACKNOWLEDGED") {
+        result.acknowledged += 1;
+      }
 
       if (status === "RESOLVED" || status === "CLOSED") {
         result.resolved += 1;
@@ -112,6 +127,10 @@ function deriveSummary(alerts) {
     }
   );
 }
+
+/* ================================================================
+   ALERT SUMMARY
+   ================================================================ */
 
 export default function AlertSummary({
   alerts,
@@ -132,7 +151,9 @@ export default function AlertSummary({
     ? deriveSummary(alerts)
     : null;
 
-  const values = hasBackendSummary ? summary : derivedSummary;
+  const values = hasBackendSummary
+    ? summary
+    : derivedSummary;
 
   const getCount = (key) => {
     if (!values || !isValidCount(values[key])) return null;
@@ -144,7 +165,9 @@ export default function AlertSummary({
   const isActive = (key) => {
     const current = normalizeStatus(activeFilter);
 
-    if (key === "critical") return false;
+    if (key === "critical") {
+      return current === "CRITICAL";
+    }
 
     return current === normalizeStatus(key);
   };
@@ -152,9 +175,11 @@ export default function AlertSummary({
   const handleSelect = (key) => {
     if (!isInteractive) return;
 
-    // Critical is a severity filter, not a workflow status.
+    // Critical filters by severity; the other cards filter by status.
     if (key === "critical") {
-      onSelectFilter("CRITICAL");
+      onSelectFilter(
+        isActive(key) ? "ALL" : "CRITICAL"
+      );
       return;
     }
 
@@ -174,7 +199,7 @@ export default function AlertSummary({
         <div className="min-w-0">
           <h2
             id="alert-summary-heading"
-            className="font-[Orbitron] text-sm font-semibold tracking-wide text-slate-100 sm:text-base"
+            className="font-['Orbitron'] text-sm font-semibold tracking-wide text-slate-100 sm:text-base"
           >
             Operational Overview
           </h2>
@@ -184,7 +209,7 @@ export default function AlertSummary({
           </p>
         </div>
 
-        <div className="inline-flex shrink-0 items-center gap-2 pb-0.5 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-500 sm:text-[11px]">
+        <div className="inline-flex shrink-0 items-center gap-2 pb-0.5 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-400 sm:text-[11px]">
           <FiActivity
             aria-hidden="true"
             className="h-3.5 w-3.5 text-cyan-300"
@@ -196,10 +221,11 @@ export default function AlertSummary({
       {error ? (
         <div
           role="alert"
-          className="rounded-xl border border-rose-400/20 bg-rose-400/[0.05] px-4 py-4 text-sm text-rose-200"
+          className="rounded-xl border border-rose-400/25 bg-rose-950/60 px-4 py-4 text-sm text-rose-200"
         >
           Unable to load the alert summary.
-          <p className="mt-1 text-xs leading-5 text-rose-200/70">
+
+          <p className="mt-1 break-words text-xs leading-5 text-rose-200/80">
             {error}
           </p>
         </div>
@@ -212,13 +238,14 @@ export default function AlertSummary({
             const active = isActive(item.key);
 
             const cardClassName = [
-              "group relative flex h-full min-h-[158px] min-w-0 flex-col overflow-hidden rounded-xl border bg-[#07111f]/95 p-4 text-left",
-              "transition-[border-color,background-color,transform] duration-200",
-              "border-white/[0.08]",
+              "group relative isolate flex h-full min-h-[158px] w-full min-w-0 flex-col",
+              "overflow-hidden rounded-xl border p-4 text-left",
+              "border-white/15 bg-[#07111f]",
+              "transition-[border-color,box-shadow] duration-200",
               accent.hover,
               active
-                ? `${accent.active} bg-white/[0.035]`
-                : "hover:bg-[#0a1728]",
+                ? `${accent.active} ring-1 ring-white/10`
+                : "",
               isInteractive
                 ? `cursor-pointer focus-visible:outline-none focus-visible:ring-2 ${accent.focus} focus-visible:ring-offset-2 focus-visible:ring-offset-[#020914]`
                 : "",
@@ -229,63 +256,94 @@ export default function AlertSummary({
 
             const content = (
               <>
-                {/* Card accent */}
-                <span
+                {/* Background image layer */}
+                <div
                   aria-hidden="true"
-                  className={`absolute inset-x-0 top-0 h-px ${accent.glow} opacity-40`}
+                  className="pointer-events-none absolute inset-0 z-0 overflow-hidden"
+                >
+                  <div
+                    className="absolute inset-0 bg-cover bg-center bg-no-repeat transition-transform duration-500 group-hover:scale-[1.035] motion-reduce:transform-none"
+                    style={{
+                      backgroundImage: `url("${CARD_BACKGROUND}")`,
+                    }}
+                  />
+                </div>
+
+                {/* Contrast overlay */}
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 z-0 bg-[#020916]/65 transition-colors duration-200 group-hover:bg-[#020916]/55"
                 />
 
-                <div className="flex items-center justify-between gap-3">
-                  <div
-                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border ${accent.icon}`}
-                  >
-                    <Icon
-                      aria-hidden="true"
-                      className="h-[19px] w-[19px]"
-                    />
+                {/* Atmospheric cyan glow */}
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 z-0 bg-[radial-gradient(ellipse_at_top_right,rgba(34,211,238,0.15),transparent_65%)]"
+                />
+
+                {/* Accent line */}
+                <span
+                  aria-hidden="true"
+                  className={`absolute inset-x-0 top-0 z-10 h-px ${accent.glow} opacity-70`}
+                />
+
+                {/* Card content */}
+                <div className="relative z-10 flex min-w-0 flex-1 flex-col">
+                  <div className="flex items-center justify-between gap-3">
+                    <div
+                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border backdrop-blur-md ${accent.icon}`}
+                    >
+                      <Icon
+                        aria-hidden="true"
+                        className="h-[19px] w-[19px]"
+                      />
+                    </div>
+
+                    {isInteractive ? (
+                      <FiArrowUpRight
+                        aria-hidden="true"
+                        className={`h-4 w-4 shrink-0 transition-colors ${
+                          active
+                            ? "text-cyan-200"
+                            : "text-slate-300 group-hover:text-white"
+                        }`}
+                      />
+                    ) : (
+                      <span
+                        aria-hidden="true"
+                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${accent.glow}`}
+                      />
+                    )}
                   </div>
 
-                  {isInteractive ? (
-                    <FiArrowUpRight
-                      aria-hidden="true"
-                      className={`h-4 w-4 shrink-0 transition-colors ${
-                        active
-                          ? "text-cyan-200"
-                          : "text-slate-600 group-hover:text-slate-300"
+                  <div className="mt-4 min-w-0">
+                    <p className="truncate text-sm font-medium text-slate-100">
+                      {item.label}
+                    </p>
+
+                    <p
+                      className={`mt-1 font-['Orbitron'] text-3xl font-semibold leading-tight tracking-tight tabular-nums ${
+                        count === null
+                          ? "text-slate-300"
+                          : accent.value
                       }`}
-                    />
-                  ) : (
-                    <span
-                      aria-hidden="true"
-                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${accent.glow}`}
-                    />
-                  )}
+                    >
+                      {isLoading || count === null
+                        ? "—"
+                        : formatCount(count)}
+                    </p>
+
+                    <p className="mt-2 text-xs leading-5 text-slate-200">
+                      {item.description}
+                    </p>
+                  </div>
                 </div>
 
-                <div className="mt-4 min-w-0">
-                  <p className="truncate text-sm font-medium text-slate-300">
-                    {item.label}
-                  </p>
-
-                  <p
-                    className={`mt-1 font-[Orbitron] text-3xl font-semibold leading-tight tracking-tight tabular-nums ${
-                      count === null ? "text-slate-500" : accent.value
-                    }`}
-                  >
-                    {isLoading || count === null
-                      ? "—"
-                      : formatCount(count)}
-                  </p>
-
-                  <p className="mt-2 text-xs leading-5 text-slate-500">
-                    {item.description}
-                  </p>
-                </div>
-
+                {/* Active filter indicator */}
                 {active && (
                   <span
                     aria-hidden="true"
-                    className={`absolute inset-x-0 bottom-0 h-0.5 ${accent.glow}`}
+                    className={`absolute inset-x-0 bottom-0 z-10 h-0.5 ${accent.glow}`}
                   />
                 )}
               </>
@@ -295,7 +353,9 @@ export default function AlertSummary({
               <motion.div
                 key={item.key}
                 initial={
-                  shouldReduceMotion ? false : { opacity: 0, y: 8 }
+                  shouldReduceMotion
+                    ? false
+                    : { opacity: 0, y: 8 }
                 }
                 animate={{ opacity: 1, y: 0 }}
                 transition={{
@@ -307,7 +367,7 @@ export default function AlertSummary({
                 {isInteractive ? (
                   <button
                     type="button"
-                    className={`${cardClassName} w-full disabled:cursor-wait disabled:opacity-60`}
+                    className={`${cardClassName} disabled:cursor-wait disabled:opacity-60`}
                     onClick={() => handleSelect(item.key)}
                     aria-pressed={active}
                     aria-label={
@@ -320,7 +380,9 @@ export default function AlertSummary({
                     {content}
                   </button>
                 ) : (
-                  <div className={cardClassName}>{content}</div>
+                  <div className={cardClassName}>
+                    {content}
+                  </div>
                 )}
               </motion.div>
             );
