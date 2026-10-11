@@ -12,8 +12,8 @@ if (!API_BASE_URL && import.meta.env.DEV) {
   );
 }
 
-// Standard requests: 30 seconds
-export const DEFAULT_API_TIMEOUT = 30_000;
+// Default API timeout: 3 minutes
+export const DEFAULT_API_TIMEOUT = 180_000;
 
 // Long-running synchronization requests: 12 minutes
 export const SYNC_API_TIMEOUT = 12 * 60 * 1000;
