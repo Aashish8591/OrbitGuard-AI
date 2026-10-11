@@ -1,20 +1,5 @@
-import axios from "axios";
 
-/**
- * ================================================================
- * OrbitGuard AI - Shared API Client
- * ================================================================
- *
- * Central Axios client for all frontend API services.
- *
- * Responsibilities:
- * - Configure backend URL
- * - Attach JWT
- * - Configure common headers
- * - Provide shared Axios instance
- * - Extract backend error messages
- * ================================================================
- */
+import axios from "axios";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL
@@ -27,37 +12,20 @@ if (!API_BASE_URL && import.meta.env.DEV) {
   );
 }
 
-/**
- * Shared Axios instance
- */
+// Standard requests: 30 seconds
+export const DEFAULT_API_TIMEOUT = 30_000;
+
+// Long-running synchronization requests: 12 minutes
+export const SYNC_API_TIMEOUT = 12 * 60 * 1000;
+
 const api = axios.create({
   baseURL: API_BASE_URL,
-
   headers: {
     Accept: "application/json",
     "Content-Type": "application/json",
   },
-
-  timeout: 195000,
+  timeout: DEFAULT_API_TIMEOUT,
 });
-
-/**
- * ================================================================
- * REQUEST INTERCEPTOR
- * ================================================================
- *
- * Reads:
- *
- * {
- *   token: "...",
- *   tokenType: "Bearer"
- * }
- *
- * from localStorage and attaches:
- *
- * Authorization: Bearer <token>
- * ================================================================
- */
 
 api.interceptors.request.use(
   (config) => {
@@ -65,20 +33,15 @@ api.interceptors.request.use(
       const storedAuth =
         localStorage.getItem("orbitguard_auth");
 
-      if (!storedAuth) {
-        return config;
-      }
+      if (!storedAuth) return config;
 
       const authData = JSON.parse(storedAuth);
-
       const token =
         typeof authData?.token === "string"
           ? authData.token.trim()
           : "";
 
-      if (!token) {
-        return config;
-      }
+      if (!token) return config;
 
       const tokenType =
         typeof authData?.tokenType === "string" &&
@@ -87,9 +50,7 @@ api.interceptors.request.use(
           : "Bearer";
 
       config.headers = config.headers ?? {};
-
-      config.headers.Authorization =
-        `${tokenType} ${token}`;
+      config.headers.Authorization = `${tokenType} ${token}`;
 
       return config;
     } catch {
@@ -105,50 +66,10 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-/**
- * ================================================================
- * RESPONSE INTERCEPTOR
- * ================================================================
- *
- * Do not modify successful responses.
- * Do not automatically logout or redirect.
- * ================================================================
- */
-
 api.interceptors.response.use(
   (response) => response,
   (error) => Promise.reject(error)
 );
-
-/**
- * ================================================================
- * ERROR MESSAGE HELPER
- * ================================================================
- *
- * Extracts the actual message returned by the backend.
- *
- * Supported responses:
- *
- * {
- *   success: false,
- *   message: "CelesTrak ACTIVE satellite data has not updated yet..."
- * }
- *
- * OR
- *
- * {
- *   error: "Some error"
- * }
- *
- * OR
- *
- * {
- *   errors: [...]
- * }
- *
- * OR plain-text response.
- * ================================================================
- */
 
 export const getApiErrorMessage = (
   error,
@@ -156,9 +77,6 @@ export const getApiErrorMessage = (
 ) => {
   const responseData = error?.response?.data;
 
-  /**
-   * Plain-text backend response
-   */
   if (
     typeof responseData === "string" &&
     responseData.trim()
@@ -166,11 +84,6 @@ export const getApiErrorMessage = (
     return responseData.trim();
   }
 
-  /**
-   * Backend message
-   *
-   * This is the important one for OrbitGuard.
-   */
   if (
     typeof responseData?.message === "string" &&
     responseData.message.trim()
@@ -178,9 +91,6 @@ export const getApiErrorMessage = (
     return responseData.message.trim();
   }
 
-  /**
-   * Backend error field
-   */
   if (
     typeof responseData?.error === "string" &&
     responseData.error.trim()
@@ -188,19 +98,13 @@ export const getApiErrorMessage = (
     return responseData.error.trim();
   }
 
-  /**
-   * Validation errors
-   */
   if (
     Array.isArray(responseData?.errors) &&
     responseData.errors.length > 0
   ) {
     const firstError = responseData.errors[0];
 
-    if (
-      typeof firstError === "string" &&
-      firstError.trim()
-    ) {
+    if (typeof firstError === "string" && firstError.trim()) {
       return firstError.trim();
     }
 
@@ -212,9 +116,6 @@ export const getApiErrorMessage = (
     }
   }
 
-  /**
-   * Backend details
-   */
   if (
     typeof responseData?.details === "string" &&
     responseData.details.trim()
@@ -222,19 +123,14 @@ export const getApiErrorMessage = (
     return responseData.details.trim();
   }
 
-  /**
-   * Axios error
-   */
-  if (
-    typeof error?.message === "string" &&
-    error.message.trim()
-  ) {
+  if (error?.code === "ECONNABORTED" || error?.code === "ETIMEDOUT") {
+    return "The request timed out. The server may still be processing it. Check the synchronization status before retrying.";
+  }
+
+  if (typeof error?.message === "string" && error.message.trim()) {
     return error.message.trim();
   }
 
-  /**
-   * Final fallback
-   */
   return fallback;
 };
 
