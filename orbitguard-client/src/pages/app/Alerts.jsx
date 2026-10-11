@@ -1,16 +1,6 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import {
-  FiAlertCircle,
-  FiRefreshCw,
-  FiShield,
-} from "react-icons/fi";
+import { FiAlertCircle, FiRefreshCw, FiShield } from "react-icons/fi";
 
 import {
   getAlerts,
@@ -27,6 +17,7 @@ import AlertListSkeleton from "../../features/alerts/components/AlertListSkeleto
 import AlertDetailsPanel from "../../features/alerts/components/AlertDetailsPanel";
 import AlertStatusActions from "../../features/alerts/components/AlertStatusActions";
 import AlertEmptyState from "../../features/alerts/components/AlertEmptyState";
+import ProtectedBackground from "../../components/common/ProtectedBackground";
 
 const PAGE_SIZE = 8;
 
@@ -79,10 +70,7 @@ function normalizeAlertsResponse(response) {
   }
 
   const content =
-    payload?.content ??
-    payload?.items ??
-    payload?.alerts ??
-    payload?.records;
+    payload?.content ?? payload?.items ?? payload?.alerts ?? payload?.records;
 
   if (Array.isArray(content)) {
     return {
@@ -113,14 +101,8 @@ function normalizeAlertDetails(response) {
     payload = payload.alert;
   }
 
-  if (
-    !payload ||
-    typeof payload !== "object" ||
-    Array.isArray(payload)
-  ) {
-    throw new Error(
-      "The server returned an invalid alert response."
-    );
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error("The server returned an invalid alert response.");
   }
 
   return payload;
@@ -131,14 +113,13 @@ function getAlertId(alert) {
 }
 
 function normalizeText(value) {
-  return String(value ?? "").trim().toLowerCase();
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
 }
 
 function getAlertDate(alert) {
-  const value =
-    alert?.generatedAt ??
-    alert?.createdAt ??
-    alert?.updatedAt;
+  const value = alert?.generatedAt ?? alert?.createdAt ?? alert?.updatedAt;
 
   if (!value) return null;
 
@@ -157,27 +138,17 @@ function matchesDateFilter(alert, filters) {
   if (!date) return false;
 
   if (filters.fromDate) {
-    const start = new Date(
-      `${filters.fromDate}T00:00:00`
-    );
+    const start = new Date(`${filters.fromDate}T00:00:00`);
 
-    if (
-      !Number.isNaN(start.getTime()) &&
-      date < start
-    ) {
+    if (!Number.isNaN(start.getTime()) && date < start) {
       return false;
     }
   }
 
   if (filters.toDate) {
-    const end = new Date(
-      `${filters.toDate}T23:59:59.999`
-    );
+    const end = new Date(`${filters.toDate}T23:59:59.999`);
 
-    if (
-      !Number.isNaN(end.getTime()) &&
-      date > end
-    ) {
+    if (!Number.isNaN(end.getTime()) && date > end) {
       return false;
     }
   }
@@ -204,25 +175,19 @@ function matchesAlert(alert, filters) {
     ];
 
     const hasMatch = searchableFields.some((value) =>
-      normalizeText(value).includes(search)
+      normalizeText(value).includes(search),
     );
 
     if (!hasMatch) return false;
   }
 
-  for (const key of [
-    "severity",
-    "status",
-    "source",
-    "type",
-  ]) {
+  for (const key of ["severity", "status", "source", "type"]) {
     const selected = filters[key];
 
     if (
       selected &&
       selected !== "ALL" &&
-      normalizeText(alert?.[key]) !==
-        normalizeText(selected)
+      normalizeText(alert?.[key]) !== normalizeText(selected)
     ) {
       return false;
     }
@@ -245,12 +210,8 @@ function getSeverityRank(severity) {
 function getSortTimestamp(alert, sortBy) {
   const value =
     sortBy === "updatedAt"
-      ? alert?.updatedAt ??
-        alert?.generatedAt ??
-        alert?.createdAt
-      : alert?.generatedAt ??
-        alert?.createdAt ??
-        alert?.updatedAt;
+      ? (alert?.updatedAt ?? alert?.generatedAt ?? alert?.createdAt)
+      : (alert?.generatedAt ?? alert?.createdAt ?? alert?.updatedAt);
 
   if (!value) return 0;
 
@@ -265,16 +226,13 @@ function sortAlerts(alerts, sortBy, sortDirection) {
   return [...alerts].sort((a, b) => {
     if (sortBy === "severity") {
       return (
-        (getSeverityRank(a?.severity) -
-          getSeverityRank(b?.severity)) *
+        (getSeverityRank(a?.severity) - getSeverityRank(b?.severity)) *
         direction
       );
     }
 
     return (
-      (getSortTimestamp(a, sortBy) -
-        getSortTimestamp(b, sortBy)) *
-      direction
+      (getSortTimestamp(a, sortBy) - getSortTimestamp(b, sortBy)) * direction
     );
   });
 }
@@ -282,13 +240,9 @@ function sortAlerts(alerts, sortBy, sortDirection) {
 function normalizeSummary(alerts) {
   return alerts.reduce(
     (summary, alert) => {
-      const status = String(
-        alert?.status ?? ""
-      ).toUpperCase();
+      const status = String(alert?.status ?? "").toUpperCase();
 
-      const severity = String(
-        alert?.severity ?? ""
-      ).toUpperCase();
+      const severity = String(alert?.severity ?? "").toUpperCase();
 
       if (status === "PENDING") {
         summary.pending += 1;
@@ -313,7 +267,7 @@ function normalizeSummary(alerts) {
       acknowledged: 0,
       resolved: 0,
       critical: 0,
-    }
+    },
   );
 }
 
@@ -351,66 +305,58 @@ function AlertsPage() {
    * This deliberately preserves the existing client-side
    * filtering, sorting and pagination behavior.
    */
-  const fetchAlerts = useCallback(
-    async ({ refresh = false } = {}) => {
-      const requestId = ++alertsRequestId.current;
+  const fetchAlerts = useCallback(async ({ refresh = false } = {}) => {
+    const requestId = ++alertsRequestId.current;
 
-      if (refresh) {
-        setIsRefreshing(true);
-      } else {
-        setIsLoading(true);
+    if (refresh) {
+      setIsRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
+
+    setError("");
+
+    try {
+      const response = await getAlerts();
+      const result = normalizeAlertsResponse(response);
+
+      // Ignore an outdated list response.
+      if (requestId !== alertsRequestId.current) {
+        return;
       }
 
-      setError("");
+      setAlerts(result.alerts);
+      setLastUpdated(new Date());
 
-      try {
-        const response = await getAlerts();
-        const result = normalizeAlertsResponse(response);
+      // Keep the selected alert synchronized with the list.
+      setSelectedAlert((currentSelected) => {
+        if (!currentSelected) return currentSelected;
 
-        // Ignore an outdated list response.
-        if (requestId !== alertsRequestId.current) {
-          return;
-        }
+        const selectedId = getAlertId(currentSelected);
 
-        setAlerts(result.alerts);
-        setLastUpdated(new Date());
+        const latest = result.alerts.find(
+          (item) => String(getAlertId(item)) === String(selectedId),
+        );
 
-        // Keep the selected alert synchronized with the list.
-        setSelectedAlert((currentSelected) => {
-          if (!currentSelected) return currentSelected;
-
-          const selectedId = getAlertId(currentSelected);
-
-          const latest = result.alerts.find(
-            (item) =>
-              String(getAlertId(item)) === String(selectedId)
-          );
-
-          return latest ?? currentSelected;
-        });
-      } catch (requestError) {
-        if (requestId === alertsRequestId.current) {
-          setError(getAlertErrorMessage(requestError));
-        }
-      } finally {
-        if (requestId === alertsRequestId.current) {
-          setIsLoading(false);
-          setIsRefreshing(false);
-        }
+        return latest ?? currentSelected;
+      });
+    } catch (requestError) {
+      if (requestId === alertsRequestId.current) {
+        setError(getAlertErrorMessage(requestError));
       }
-    },
-    []
-  );
+    } finally {
+      if (requestId === alertsRequestId.current) {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
+    }
+  }, []);
 
   /**
    * Fetch a single alert using the dedicated service.
    */
   const fetchAlertDetails = useCallback(async (alertId) => {
-    if (
-      alertId === null ||
-      alertId === undefined ||
-      alertId === ""
-    ) {
+    if (alertId === null || alertId === undefined || alertId === "") {
       return;
     }
 
@@ -451,10 +397,7 @@ function AlertsPage() {
   useEffect(() => {
     selectedAlertIdRef.current = selectedAlertId;
 
-    if (
-      selectedAlertId === null ||
-      selectedAlertId === ""
-    ) {
+    if (selectedAlertId === null || selectedAlertId === "") {
       detailRequestId.current += 1;
       setSelectedAlert(null);
       setDetailError("");
@@ -498,13 +441,13 @@ function AlertsPage() {
       if (!modal) return;
 
       const focusable = modal.querySelectorAll(
-        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
       );
 
       const items = Array.from(focusable).filter(
         (element) =>
           !element.hasAttribute("aria-hidden") &&
-          element.getAttribute("aria-disabled") !== "true"
+          element.getAttribute("aria-disabled") !== "true",
       );
 
       if (!items.length) return;
@@ -512,16 +455,10 @@ function AlertsPage() {
       const first = items[0];
       const last = items[items.length - 1];
 
-      if (
-        event.shiftKey &&
-        document.activeElement === first
-      ) {
+      if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
         last.focus();
-      } else if (
-        !event.shiftKey &&
-        document.activeElement === last
-      ) {
+      } else if (!event.shiftKey && document.activeElement === last) {
         event.preventDefault();
         first.focus();
       }
@@ -535,26 +472,14 @@ function AlertsPage() {
   }, [selectedAlertId, isUpdatingStatus]);
 
   const filteredAlerts = useMemo(() => {
-    const matching = alerts.filter((alert) =>
-      matchesAlert(alert, filters)
-    );
+    const matching = alerts.filter((alert) => matchesAlert(alert, filters));
 
-    return sortAlerts(
-      matching,
-      filters.sortBy,
-      filters.sortDirection
-    );
+    return sortAlerts(matching, filters.sortBy, filters.sortDirection);
   }, [alerts, filters]);
 
-  const totalPages = Math.max(
-    1,
-    Math.ceil(filteredAlerts.length / PAGE_SIZE)
-  );
+  const totalPages = Math.max(1, Math.ceil(filteredAlerts.length / PAGE_SIZE));
 
-  const safeCurrentPage = Math.min(
-    currentPage,
-    totalPages - 1
-  );
+  const safeCurrentPage = Math.min(currentPage, totalPages - 1);
 
   const visibleAlerts = useMemo(() => {
     const start = safeCurrentPage * PAGE_SIZE;
@@ -562,19 +487,16 @@ function AlertsPage() {
     return filteredAlerts.slice(start, start + PAGE_SIZE);
   }, [filteredAlerts, safeCurrentPage]);
 
-  const summary = useMemo(
-    () => normalizeSummary(alerts),
-    [alerts]
-  );
+  const summary = useMemo(() => normalizeSummary(alerts), [alerts]);
 
   const hasActiveFilters = Boolean(
     filters.search ||
-      filters.fromDate ||
-      filters.toDate ||
-      filters.severity ||
-      filters.status ||
-      filters.source ||
-      filters.type
+    filters.fromDate ||
+    filters.toDate ||
+    filters.severity ||
+    filters.status ||
+    filters.source ||
+    filters.type,
   );
 
   const handleFiltersChange = useCallback((nextFilters) => {
@@ -604,9 +526,7 @@ function AlertsPage() {
     const id = getAlertId(alert);
 
     if (id === null || id === undefined || id === "") {
-      setDetailError(
-        "This alert does not contain a usable identifier."
-      );
+      setDetailError("This alert does not contain a usable identifier.");
       return;
     }
 
@@ -638,14 +558,8 @@ function AlertsPage() {
     async (nextStatus, remarks) => {
       const alertId = getAlertId(selectedAlert);
 
-      if (
-        alertId === null ||
-        alertId === undefined ||
-        alertId === ""
-      ) {
-        throw new Error(
-          "Unable to identify the selected alert."
-        );
+      if (alertId === null || alertId === undefined || alertId === "") {
+        throw new Error("Unable to identify the selected alert.");
       }
 
       if (isUpdatingStatus) return;
@@ -664,9 +578,7 @@ function AlertsPage() {
         // Refresh the list and selected details after a successful update.
         await fetchAlerts({ refresh: true });
 
-        if (
-          String(selectedAlertIdRef.current) === String(alertId)
-        ) {
+        if (String(selectedAlertIdRef.current) === String(alertId)) {
           await fetchAlertDetails(alertId);
         }
       } catch (requestError) {
@@ -680,12 +592,7 @@ function AlertsPage() {
         }
       }
     },
-    [
-      selectedAlert,
-      isUpdatingStatus,
-      fetchAlerts,
-      fetchAlertDetails,
-    ]
+    [selectedAlert, isUpdatingStatus, fetchAlerts, fetchAlertDetails],
   );
 
   const handlePageChange = useCallback(
@@ -694,14 +601,9 @@ function AlertsPage() {
 
       if (!Number.isFinite(page)) return;
 
-      setCurrentPage(
-        Math.max(
-          0,
-          Math.min(Math.floor(page), totalPages - 1)
-        )
-      );
+      setCurrentPage(Math.max(0, Math.min(Math.floor(page), totalPages - 1)));
     },
-    [totalPages]
+    [totalPages],
   );
 
   // Keep these callbacks until the real application route paths
@@ -719,8 +621,12 @@ function AlertsPage() {
   }, []);
 
   return (
-    <main className="relative min-h-full min-w-0 overflow-x-clip bg-[#020914] text-slate-100">
-      <div className="mx-auto w-full max-w-[1800px] min-w-0 space-y-5 px-4 py-5 sm:space-y-6 sm:px-6 sm:py-6 xl:px-8 xl:py-7">
+    <main className="relative isolate min-h-full min-w-0 overflow-x-clip bg-transparent text-slate-100">
+      {/* Application background — added without changing alert logic */}
+      <ProtectedBackground />
+
+      {/* Existing Alerts page content */}
+      <div className="relative z-10 mx-auto w-full max-w-[1800px] min-w-0 space-y-5 px-4 py-5 sm:space-y-6 sm:px-6 sm:py-6 xl:px-8 xl:py-7">
         {/* Page header */}
         <section className="min-w-0">
           <AlertsHeader
@@ -732,10 +638,7 @@ function AlertsPage() {
         </section>
 
         {/* Summary cards */}
-        <section
-          className="min-w-0"
-          aria-label="Alert summary"
-        >
+        <section className="min-w-0" aria-label="Alert summary">
           <AlertSummary
             alerts={alerts}
             summary={summary}
@@ -751,10 +654,7 @@ function AlertsPage() {
         </section>
 
         {/* Search and filters */}
-        <section
-          className="min-w-0"
-          aria-label="Search and filter alerts"
-        >
+        <section className="min-w-0" aria-label="Search and filter alerts">
           <AlertToolbar
             filters={filters}
             onFiltersChange={handleFiltersChange}
@@ -766,11 +666,7 @@ function AlertsPage() {
         </section>
 
         {/* Alert feed */}
-        <section
-          className="min-w-0"
-          aria-label="Alert feed"
-          aria-live="polite"
-        >
+        <section className="min-w-0" aria-label="Alert feed" aria-live="polite">
           <div className="mb-3 flex flex-col gap-2 border-b border-white/[0.06] pb-4 sm:flex-row sm:items-end sm:justify-between">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
@@ -794,8 +690,7 @@ function AlertsPage() {
                 <span className="font-semibold text-slate-200">
                   {filteredAlerts.length}
                 </span>{" "}
-                matching{" "}
-                {filteredAlerts.length === 1 ? "alert" : "alerts"}
+                matching {filteredAlerts.length === 1 ? "alert" : "alerts"}
               </p>
             )}
           </div>
@@ -814,9 +709,7 @@ function AlertsPage() {
             <AlertEmptyState
               variant={hasActiveFilters ? "filtered" : "default"}
               title={
-                hasActiveFilters
-                  ? "No matching alerts"
-                  : "No alerts available"
+                hasActiveFilters ? "No matching alerts" : "No alerts available"
               }
               description={
                 hasActiveFilters
@@ -857,10 +750,9 @@ function AlertsPage() {
         )}
       </div>
 
-      {/* Centered responsive incident modal */}
+      {/* Existing incident modal — unchanged */}
       {selectedAlertId !== null && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-0 backdrop-blur-md sm:p-4 lg:p-6">
-          {/* Backdrop */}
+        <div className="fixed inset-0 z-[100] flex items-start justify-center bg-black/80 pt-[84px] backdrop-blur-md sm:items-center sm:p-40 lg:p-20">
           <button
             type="button"
             className="absolute inset-0 cursor-default"
@@ -869,22 +761,17 @@ function AlertsPage() {
             disabled={isUpdatingStatus}
           />
 
-          {/* Modal */}
           <section
             ref={modalRef}
             role="dialog"
             aria-modal="true"
             aria-label="Alert investigation console"
-            className="relative z-10 flex h-[100dvh] w-full min-h-0 flex-col overflow-hidden border border-white/[0.08] bg-[#030b16] shadow-2xl shadow-black/60 sm:h-[92dvh] sm:max-h-[900px] sm:max-w-5xl sm:rounded-2xl lg:max-w-6xl"
+            className="relative z-10 flex h-[calc(100dvh-84px)] w-full min-h-0 flex-col overflow-hidden border border-white/[0.08] bg-[#030b16] shadow-2xl shadow-black/60 sm:h-[92dvh] sm:max-h-[550px] sm:max-w-5xl sm:rounded-2xl lg:max-w-6xl"
           >
-            {/* Persistent modal header */}
             <header className="flex shrink-0 items-center justify-between gap-3 border-b border-white/[0.08] bg-[#06101e] px-4 py-3 sm:px-6">
               <div className="flex min-w-0 items-center gap-3">
                 <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-cyan-300/15 bg-cyan-300/[0.07] text-cyan-300">
-                  <FiShield
-                    className="h-4 w-4"
-                    aria-hidden="true"
-                  />
+                  <FiShield className="h-4 w-4" aria-hidden="true" />
                 </span>
 
                 <div className="min-w-0">
@@ -911,7 +798,6 @@ function AlertsPage() {
               </button>
             </header>
 
-            {/* Only modal content scrolls */}
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
               <AlertDetailsPanel
                 alert={selectedAlert}
