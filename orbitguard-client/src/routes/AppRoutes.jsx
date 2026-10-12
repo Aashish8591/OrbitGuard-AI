@@ -23,6 +23,8 @@ import Visualization from "../pages/app/Visualization";
 
 import Alerts from "../pages/app/Alerts";
 
+import Notifications from "../pages/app/Notifications";
+
 function AppRoutes() {
   return (
     <Routes>
@@ -91,7 +93,7 @@ function AppRoutes() {
               NOTIFICATIONS
               ===================================================== */}
 
-          <Route path="/notifications" element={<div>Notifications</div>} />
+          <Route path="/notifications" element={<Notifications />} />
 
           {/* =====================================================
               REPORTS
