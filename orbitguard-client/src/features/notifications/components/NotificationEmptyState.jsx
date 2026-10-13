@@ -6,21 +6,30 @@ import {
   FiRefreshCw,
   FiSearch,
   FiShield,
-  FiX,
 } from "react-icons/fi";
 
-/* ================================================================
-   ORBITGUARD AI — NOTIFICATION EMPTY STATE
-
-   Supported states:
-   - empty: No notifications exist.
-   - search: Search returned no matches.
-   - unread: No unread notifications.
-   - filtered: Active filters returned no matches.
-
-   This component is presentational. The parent page controls
-   actions and decides which state should be displayed.
-   ================================================================ */
+/**
+ * ================================================================
+ * OrbitGuard AI — Notification Empty State
+ * ================================================================
+ *
+ * Presentational component for the Notification Center.
+ *
+ * Supported states:
+ * - empty: No notifications exist.
+ * - search: Search returned no matches.
+ * - unread: No unread notifications.
+ * - filtered: Active filters returned no matches.
+ *
+ * The parent page owns:
+ * - API requests and data loading.
+ * - Search and filter state.
+ * - Refresh behavior.
+ * - Action callbacks and error handling.
+ *
+ * No API calls are performed in this component.
+ * ================================================================
+ */
 
 const EMPTY_STATE_CONFIG = {
   empty: {
@@ -31,6 +40,7 @@ const EMPTY_STATE_CONFIG = {
     icon: FiBell,
     accent: "cyan",
     primaryLabel: "Refresh notifications",
+    primaryAction: "refresh",
     showPrimary: true,
     secondaryLabel: "",
     showSecondary: false,
@@ -40,10 +50,11 @@ const EMPTY_STATE_CONFIG = {
     eyebrow: "SEARCH COMPLETE",
     title: "No matching signals found",
     description:
-      "We couldn't find notifications matching your search. Try a different keyword or search for a satellite, event, or user.",
+      "We couldn't find notifications matching your search. Try another keyword or search for a notification code, event, or related record.",
     icon: FiSearch,
     accent: "blue",
     primaryLabel: "Clear search",
+    primaryAction: "search",
     showPrimary: true,
     secondaryLabel: "Refresh notifications",
     showSecondary: true,
@@ -57,6 +68,7 @@ const EMPTY_STATE_CONFIG = {
     icon: FiCheckCircle,
     accent: "emerald",
     primaryLabel: "View all notifications",
+    primaryAction: "all",
     showPrimary: true,
     secondaryLabel: "",
     showSecondary: false,
@@ -70,6 +82,7 @@ const EMPTY_STATE_CONFIG = {
     icon: FiFilter,
     accent: "violet",
     primaryLabel: "Clear filters",
+    primaryAction: "filter",
     showPrimary: true,
     secondaryLabel: "Refresh notifications",
     showSecondary: true,
@@ -81,7 +94,7 @@ const ACCENT_STYLES = {
     icon:
       "border-cyan-300/25 bg-cyan-400/[0.09] text-cyan-200",
     glow: "bg-cyan-400/[0.12]",
-    line: "from-transparent via-cyan-300/60 to-transparent",
+    line: "via-cyan-300/60",
     badge:
       "border-cyan-300/20 bg-cyan-400/[0.06] text-cyan-200",
     button:
@@ -92,7 +105,7 @@ const ACCENT_STYLES = {
     icon:
       "border-blue-300/25 bg-blue-400/[0.09] text-blue-200",
     glow: "bg-blue-400/[0.12]",
-    line: "from-transparent via-blue-300/60 to-transparent",
+    line: "via-blue-300/60",
     badge:
       "border-blue-300/20 bg-blue-400/[0.06] text-blue-200",
     button:
@@ -103,8 +116,7 @@ const ACCENT_STYLES = {
     icon:
       "border-emerald-300/25 bg-emerald-400/[0.09] text-emerald-200",
     glow: "bg-emerald-400/[0.12]",
-    line:
-      "from-transparent via-emerald-300/60 to-transparent",
+    line: "via-emerald-300/60",
     badge:
       "border-emerald-300/20 bg-emerald-400/[0.06] text-emerald-200",
     button:
@@ -115,14 +127,36 @@ const ACCENT_STYLES = {
     icon:
       "border-violet-300/25 bg-violet-400/[0.09] text-violet-200",
     glow: "bg-violet-400/[0.12]",
-    line:
-      "from-transparent via-violet-300/60 to-transparent",
+    line: "via-violet-300/60",
     badge:
       "border-violet-300/20 bg-violet-400/[0.06] text-violet-200",
     button:
       "border-violet-300/30 bg-violet-400/[0.09] text-violet-100 hover:bg-violet-400/[0.16]",
   },
 };
+
+/**
+ * Select an action icon using the semantic action key.
+ * The icon does not depend on the displayed label text.
+ */
+function getActionIcon(action) {
+  switch (action) {
+    case "refresh":
+      return FiRefreshCw;
+
+    case "search":
+      return FiSearch;
+
+    case "all":
+      return FiCheckCircle;
+
+    case "filter":
+      return FiFilter;
+
+    default:
+      return FiBell;
+  }
+}
 
 function NotificationEmptyState({
   type = "empty",
@@ -142,6 +176,7 @@ function NotificationEmptyState({
     ACCENT_STYLES[config.accent] ?? ACCENT_STYLES.cyan;
 
   const Icon = config.icon;
+  const PrimaryActionIcon = getActionIcon(config.primaryAction);
 
   const resolvedTitle = title || config.title;
   const resolvedDescription =
@@ -161,10 +196,12 @@ function NotificationEmptyState({
     config.showSecondary &&
     typeof onSecondaryAction === "function";
 
+  const hasActions = showPrimary || showSecondary;
+
   return (
     <section
-      role="status"
-      aria-live="polite"
+      aria-labelledby="notification-empty-state-title"
+      aria-busy={loading}
       className={`
         relative isolate flex min-h-[320px]
         w-full flex-col items-center justify-center
@@ -176,17 +213,10 @@ function NotificationEmptyState({
         ${className}
       `}
     >
-      {/* ========================================================
-          BACKGROUND ORBITAL DETAIL
-          Decorative only — no external image required.
-          ======================================================== */}
-
+      {/* Decorative orbital background */}
       <div
         aria-hidden="true"
-        className="
-          pointer-events-none absolute inset-0 -z-10
-          overflow-hidden
-        "
+        className="pointer-events-none absolute inset-0 -z-10 overflow-hidden"
       >
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_42%,rgba(8,145,178,0.09),transparent_52%)]" />
 
@@ -224,17 +254,11 @@ function NotificationEmptyState({
         <span className="absolute bottom-[30%] right-[28%] h-1 w-1 rounded-full bg-blue-100/50" />
       </div>
 
-      {/* ========================================================
-          CENTRAL ICON
-          ======================================================== */}
-
+      {/* Central icon */}
       <div className="relative mb-6">
         <div
           aria-hidden="true"
-          className={`
-            absolute inset-[-13px] rounded-full
-            blur-2xl ${accent.glow}
-          `}
+          className={`absolute inset-[-13px] rounded-full blur-2xl ${accent.glow}`}
         />
 
         <div
@@ -249,7 +273,7 @@ function NotificationEmptyState({
           <Icon
             size={32}
             strokeWidth={1.6}
-            className={loading ? "animate-pulse" : ""}
+            aria-hidden="true"
           />
 
           <span
@@ -273,10 +297,7 @@ function NotificationEmptyState({
         </div>
       </div>
 
-      {/* ========================================================
-          STATUS LABEL
-          ======================================================== */}
-
+      {/* Status label */}
       <div
         className={`
           mb-3 inline-flex items-center gap-2
@@ -286,15 +307,13 @@ function NotificationEmptyState({
           ${accent.badge}
         `}
       >
-        <FiShield size={11} />
+        <FiShield size={11} aria-hidden="true" />
         {config.eyebrow}
       </div>
 
-      {/* ========================================================
-          TITLE AND DESCRIPTION
-          ======================================================== */}
-
+      {/* Title and description */}
       <h2
+        id="notification-empty-state-title"
         className="
           max-w-xl font-['Orbitron',sans-serif]
           text-lg font-semibold tracking-tight
@@ -304,20 +323,23 @@ function NotificationEmptyState({
         {resolvedTitle}
       </h2>
 
-      <p
-        className="
-          mt-3 max-w-lg text-xs leading-6
-          text-slate-400 sm:text-sm sm:leading-7
-        "
-      >
+      <p className="mt-3 max-w-lg text-xs leading-6 text-slate-400 sm:text-sm sm:leading-7">
         {resolvedDescription}
       </p>
 
-      {/* ========================================================
-          ACTIONS
-          ======================================================== */}
+      {/* Loading announcement for assistive technology */}
+      {loading && (
+        <p
+          role="status"
+          aria-live="polite"
+          className="mt-4 text-xs text-cyan-300"
+        >
+          Processing your request…
+        </p>
+      )}
 
-      {(showPrimary || showSecondary) && (
+      {/* Actions */}
+      {hasActions && (
         <div className="mt-6 flex w-full flex-col justify-center gap-2.5 sm:w-auto sm:flex-row">
           {showPrimary && (
             <button
@@ -325,7 +347,7 @@ function NotificationEmptyState({
               onClick={onPrimaryAction}
               disabled={loading}
               className={`
-                inline-flex min-h-10 items-center
+                inline-flex min-h-11 items-center
                 justify-center gap-2 rounded-lg
                 border px-4 py-2 text-xs
                 font-medium transition duration-200
@@ -341,19 +363,18 @@ function NotificationEmptyState({
                 <FiRefreshCw
                   size={14}
                   className="animate-spin"
+                  aria-hidden="true"
                 />
-              ) : type === "empty" ||
-                resolvedPrimaryLabel.toLowerCase().includes("refresh") ? (
-                <FiRefreshCw size={14} />
-              ) : type === "unread" ? (
-                <FiCheckCircle size={14} />
-              ) : type === "filtered" ? (
-                <FiFilter size={14} />
               ) : (
-                <FiSearch size={14} />
+                <PrimaryActionIcon
+                  size={14}
+                  aria-hidden="true"
+                />
               )}
 
-              {loading ? "Synchronizing..." : resolvedPrimaryLabel}
+              <span>
+                {loading ? "Please wait…" : resolvedPrimaryLabel}
+              </span>
             </button>
           )}
 
@@ -363,7 +384,7 @@ function NotificationEmptyState({
               onClick={onSecondaryAction}
               disabled={loading}
               className="
-                inline-flex min-h-10 items-center
+                inline-flex min-h-11 items-center
                 justify-center gap-2 rounded-lg
                 border border-white/[0.09]
                 bg-white/[0.025] px-4 py-2
@@ -377,23 +398,21 @@ function NotificationEmptyState({
                 disabled:opacity-50
               "
             >
-              <FiRefreshCw size={13} />
-              {resolvedSecondaryLabel}
+              <FiRefreshCw size={13} aria-hidden="true" />
+              {loading ? "Please wait…" : resolvedSecondaryLabel}
             </button>
           )}
         </div>
       )}
 
-      {/* ========================================================
-          BOTTOM TELEMETRY ACCENT
-          ======================================================== */}
-
+      {/* Decorative telemetry accents */}
       <div
         aria-hidden="true"
         className="
           absolute bottom-0 left-0 right-0 h-px
-          bg-gradient-to-r opacity-60
+          bg-gradient-to-r
           from-transparent via-cyan-400/50 to-transparent
+          opacity-60
         "
       />
 
@@ -402,7 +421,7 @@ function NotificationEmptyState({
         className={`
           absolute bottom-0 left-1/2 h-px
           w-20 -translate-x-1/2
-          bg-gradient-to-r ${accent.line}
+          bg-gradient-to-r from-transparent ${accent.line} to-transparent
         `}
       />
     </section>

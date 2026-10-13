@@ -1,22 +1,33 @@
 
 import { useMemo } from "react";
-import { FiBell, FiInbox, FiRadio } from "react-icons/fi";
+import {
+  FiBell,
+  FiInbox,
+  FiRadio,
+  FiRefreshCw,
+} from "react-icons/fi";
 
 import NotificationItem from "./NotificationItem";
 
-/* ================================================================
-   NOTIFICATION FEED
-   OrbitGuard AI — Notification Center
-
-   Responsibilities:
-   - Group notifications by date
-   - Render reusable NotificationItem components
-   - Preserve selected notification state from the parent
-   - Display loading, empty and error states
-   - Keep the feed independently scrollable
-
-   API calls and filtering state belong to the parent page.
-   ================================================================ */
+/**
+ * ================================================================
+ * OrbitGuard AI — Notification Feed
+ * ================================================================
+ *
+ * Responsibilities:
+ * - Group notifications by creation date.
+ * - Render reusable NotificationItem components.
+ * - Preserve selection managed by the parent.
+ * - Display loading, empty and error states.
+ * - Keep the feed independently scrollable.
+ *
+ * Backend integration:
+ * - NotificationResponse is the source of notification data.
+ * - NotificationService and the parent page own API operations.
+ * - Counts represent the currently loaded collection, not
+ *   necessarily all records in MongoDB.
+ * ================================================================
+ */
 
 const DATE_FORMATTER = new Intl.DateTimeFormat("en-IN", {
   day: "2-digit",
@@ -34,6 +45,10 @@ function getNotificationId(notification) {
   );
 }
 
+/**
+ * Prefer the backend's createdAt field.
+ * The other fields are compatibility fallbacks only.
+ */
 function getNotificationDate(notification) {
   const value =
     notification?.createdAt ??
@@ -42,28 +57,38 @@ function getNotificationDate(notification) {
     notification?.sentAt ??
     null;
 
-  if (!value) return null;
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
 
   const date = new Date(value);
 
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function getSortTimestamp(notification) {
+  return getNotificationDate(notification)?.getTime() ?? 0;
+}
+
 function getDateGroup(date) {
-  if (!date) return "DATE UNAVAILABLE";
+  if (!date) {
+    return "DATE UNAVAILABLE";
+  }
 
   const now = new Date();
 
   const todayStart = new Date(
     now.getFullYear(),
     now.getMonth(),
-    now.getDate(),
+    now.getDate()
   );
 
   const yesterdayStart = new Date(todayStart);
   yesterdayStart.setDate(todayStart.getDate() - 1);
 
-  if (date >= todayStart) return "TODAY";
+  if (date >= todayStart) {
+    return "TODAY";
+  }
 
   if (date >= yesterdayStart && date < todayStart) {
     return "YESTERDAY";
@@ -72,16 +97,9 @@ function getDateGroup(date) {
   return DATE_FORMATTER.format(date).toUpperCase();
 }
 
-function getSortTimestamp(notification) {
-  return (
-    getNotificationDate(notification)?.getTime() ??
-    0
-  );
-}
-
 function groupNotifications(notifications) {
   const sorted = [...notifications].sort(
-    (a, b) => getSortTimestamp(b) - getSortTimestamp(a),
+    (a, b) => getSortTimestamp(b) - getSortTimestamp(a)
   );
 
   const groups = new Map();
@@ -103,13 +121,13 @@ function groupNotifications(notifications) {
   }));
 }
 
-function isNotificationRead(notification) {
-  const status = String(notification?.status ?? "").toUpperCase();
-
+/**
+ * Backend notification statuses are READ and UNREAD.
+ * Treat only explicit UNREAD records as unread.
+ */
+function isNotificationUnread(notification) {
   return (
-    status === "READ" ||
-    status === "ARCHIVED" ||
-    Boolean(notification?.readAt)
+    String(notification?.status ?? "").toUpperCase() === "UNREAD"
   );
 }
 
@@ -117,12 +135,14 @@ function FeedSkeleton() {
   return (
     <div
       className="space-y-2.5"
+      role="status"
       aria-label="Loading notifications"
-      aria-busy="true"
+      aria-live="polite"
     >
       {Array.from({ length: 5 }, (_, index) => (
         <div
           key={index}
+          aria-hidden="true"
           className="
             flex animate-pulse items-center gap-3
             rounded-xl border border-white/[0.06]
@@ -141,6 +161,8 @@ function FeedSkeleton() {
           <div className="h-2.5 w-2.5 rounded-full bg-slate-700/50" />
         </div>
       ))}
+
+      <span className="sr-only">Fetching notification records.</span>
     </div>
   );
 }
@@ -150,9 +172,17 @@ function EmptyFeed({ hasFilters, onClearFilters }) {
     <div className="flex min-h-[280px] flex-col items-center justify-center px-5 py-12 text-center">
       <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-cyan-400/15 bg-cyan-400/[0.06]">
         {hasFilters ? (
-          <FiBell className="text-cyan-300" size={25} />
+          <FiBell
+            className="text-cyan-300"
+            size={25}
+            aria-hidden="true"
+          />
         ) : (
-          <FiInbox className="text-cyan-300" size={27} />
+          <FiInbox
+            className="text-cyan-300"
+            size={27}
+            aria-hidden="true"
+          />
         )}
       </div>
 
@@ -171,7 +201,7 @@ function EmptyFeed({ hasFilters, onClearFilters }) {
           type="button"
           onClick={onClearFilters}
           className="
-            mt-5 rounded-lg border border-cyan-400/25
+            mt-5 min-h-10 rounded-lg border border-cyan-400/25
             bg-cyan-400/[0.06] px-4 py-2
             text-xs font-medium text-cyan-200
             transition hover:bg-cyan-400/[0.12]
@@ -200,25 +230,35 @@ function NotificationFeed({
   maxHeight = "calc(100svh - 190px)",
 }) {
   const safeNotifications = Array.isArray(notifications)
-    ? notifications.filter(Boolean)
+    ? notifications.filter(
+        (notification) =>
+          notification !== null &&
+          typeof notification === "object"
+      )
     : [];
 
   const groups = useMemo(
     () => groupNotifications(safeNotifications),
-    [safeNotifications],
+    [safeNotifications]
   );
 
-  const selectedId = selectedNotification
-    ? getNotificationId(selectedNotification)
-    : null;
+  const selectedId = getNotificationId(selectedNotification);
 
   const unreadCount = safeNotifications.filter(
-    (notification) => !isNotificationRead(notification),
+    isNotificationUnread
   ).length;
+
+  const errorMessage =
+    typeof error === "string" && error.trim()
+      ? error.trim()
+      : typeof error?.message === "string" && error.message.trim()
+        ? error.message.trim()
+        : "The notification service could not return the inbox data.";
 
   return (
     <section
       aria-label="Notification inbox feed"
+      aria-busy={loading}
       className="
         flex min-h-0 min-w-0 flex-col overflow-hidden
         rounded-2xl border border-cyan-400/[0.13]
@@ -227,10 +267,12 @@ function NotificationFeed({
       "
     >
       {/* Feed status strip */}
-
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/[0.06] px-4 py-3">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="relative flex h-2 w-2 shrink-0">
+          <span
+            aria-hidden="true"
+            className="relative flex h-2 w-2 shrink-0"
+          >
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400/40" />
             <span className="relative inline-flex h-2 w-2 rounded-full bg-cyan-300" />
           </span>
@@ -242,7 +284,7 @@ function NotificationFeed({
 
         <div className="flex shrink-0 items-center gap-2">
           <span className="hidden text-[10px] text-slate-500 sm:inline">
-            {safeNotifications.length} total
+            {safeNotifications.length} loaded
           </span>
 
           <span className="rounded-md border border-rose-400/15 bg-rose-400/[0.07] px-2 py-1 text-[10px] font-semibold tabular-nums text-rose-300">
@@ -251,10 +293,9 @@ function NotificationFeed({
         </div>
       </div>
 
-      {/* Scrollable feed content */}
-
+      {/* Independently scrollable feed */}
       <div
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 sm:p-3.5"
+        className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain p-3 sm:p-3.5"
         style={{
           maxHeight,
           scrollbarWidth: "thin",
@@ -269,17 +310,19 @@ function NotificationFeed({
             className="flex min-h-[260px] flex-col items-center justify-center px-5 text-center"
           >
             <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl border border-rose-400/20 bg-rose-400/[0.07]">
-              <FiRadio size={21} className="text-rose-300" />
+              <FiRadio
+                size={21}
+                className="text-rose-300"
+                aria-hidden="true"
+              />
             </div>
 
             <h3 className="text-sm font-semibold text-slate-200">
               Unable to load notifications
             </h3>
 
-            <p className="mt-2 max-w-xs text-xs leading-5 text-slate-500">
-              {typeof error === "string"
-                ? error
-                : "The notification service could not return the inbox data."}
+            <p className="mt-2 max-w-xs break-words text-xs leading-5 text-slate-500">
+              {errorMessage}
             </p>
 
             {typeof onRetry === "function" && (
@@ -287,7 +330,8 @@ function NotificationFeed({
                 type="button"
                 onClick={onRetry}
                 className="
-                  mt-5 rounded-lg border border-cyan-400/25
+                  mt-5 inline-flex min-h-10 items-center justify-center gap-2
+                  rounded-lg border border-cyan-400/25
                   bg-cyan-400/[0.06] px-4 py-2
                   text-xs font-medium text-cyan-200
                   transition hover:bg-cyan-400/[0.12]
@@ -295,6 +339,7 @@ function NotificationFeed({
                   focus-visible:ring-cyan-400
                 "
               >
+                <FiRefreshCw size={13} aria-hidden="true" />
                 Retry loading
               </button>
             )}
@@ -313,13 +358,15 @@ function NotificationFeed({
                 className="space-y-2"
               >
                 {/* Date divider */}
-
                 <div className="flex items-center gap-2 px-1 pb-0.5 pt-1">
                   <h3 className="font-['Orbitron'] text-[9px] font-semibold tracking-[0.15em] text-slate-400">
                     {label}
                   </h3>
 
-                  <span className="h-1 w-1 rounded-full bg-cyan-300/80 shadow-[0_0_8px_rgba(34,211,238,0.5)]" />
+                  <span
+                    aria-hidden="true"
+                    className="h-1 w-1 rounded-full bg-cyan-300/80 shadow-[0_0_8px_rgba(34,211,238,0.5)]"
+                  />
 
                   <span className="ml-auto text-[9px] tabular-nums text-slate-600">
                     {items.length}
@@ -327,15 +374,15 @@ function NotificationFeed({
                 </div>
 
                 {/* Notification rows */}
-
                 <div className="space-y-1.5">
                   {items.map((notification, index) => {
                     const notificationId =
                       getNotificationId(notification);
 
                     const key =
-                      notificationId ??
-                      `${label}-${getSortTimestamp(notification)}-${index}`;
+                      notificationId != null
+                        ? String(notificationId)
+                        : `${label}-${getSortTimestamp(notification)}-${index}`;
 
                     const isSelected =
                       selectedId != null &&

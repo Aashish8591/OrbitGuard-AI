@@ -1,32 +1,34 @@
 
 import { useState } from "react";
 import {
-  FiAtSign,
-  FiBell,
+  FiActivity,
+  FiAlertTriangle,
   FiCalendar,
   FiChevronDown,
   FiChevronUp,
-  FiDatabase,
+  FiCircle,
   FiInbox,
+  FiInfo,
   FiSettings,
   FiShield,
   FiSliders,
-  FiCircle,
 } from "react-icons/fi";
 
-/* ================================================================
-   NOTIFICATION SIDEBAR
-   OrbitGuard AI — Notification Center
-
-   Responsibilities:
-   - Category navigation
-   - Category counts
-   - Priority filtering controls
-   - Date-range selection
-   - Optional settings action
-
-   The parent page owns notification data and filtering logic.
-   ================================================================ */
+/**
+ * NotificationSidebar
+ *
+ * OrbitGuard AI — Notification Center
+ *
+ * Responsibilities:
+ * - Notification category navigation
+ * - Display parent-provided category counts
+ * - Priority filter controls
+ * - Date-range selection
+ * - Optional notification settings action
+ *
+ * The parent component owns API requests, filtering, and counts.
+ * Category IDs for notification types match the backend enums.
+ */
 
 const CATEGORY_ITEMS = [
   {
@@ -43,10 +45,16 @@ const CATEGORY_ITEMS = [
     dot: "bg-rose-400",
   },
   {
-    id: "MENTIONS",
-    label: "Mentions",
-    Icon: FiAtSign,
-    countKey: "mentions",
+    id: "ALERT",
+    label: "Alerts",
+    Icon: FiAlertTriangle,
+    countKey: "alert",
+  },
+  {
+    id: "COLLISION",
+    label: "Collision Risks",
+    Icon: FiActivity,
+    countKey: "collision",
   },
   {
     id: "SYSTEM",
@@ -55,16 +63,16 @@ const CATEGORY_ITEMS = [
     countKey: "system",
   },
   {
-    id: "UPDATES",
-    label: "Updates",
-    Icon: FiDatabase,
-    countKey: "updates",
+    id: "WARNING",
+    label: "Warnings",
+    Icon: FiShield,
+    countKey: "warning",
   },
   {
-    id: "SECURITY",
-    label: "Security",
-    Icon: FiShield,
-    countKey: "security",
+    id: "INFO",
+    label: "Information",
+    Icon: FiInfo,
+    countKey: "info",
   },
 ];
 
@@ -102,17 +110,18 @@ const DATE_RANGES = [
 const DEFAULT_COUNTS = {
   all: 0,
   unread: 0,
-  mentions: 0,
+  alert: 0,
+  collision: 0,
   system: 0,
-  updates: 0,
-  security: 0,
+  warning: 0,
+  info: 0,
 };
 
 function normalizeCount(value) {
   const number = Number(value);
 
   return Number.isFinite(number) && number >= 0
-    ? number
+    ? Math.floor(number)
     : 0;
 }
 
@@ -136,6 +145,7 @@ function CountBadge({ count, active = false, unread = false }) {
               : "bg-[#132941] text-slate-400"
         }
       `}
+      aria-label={`${value} notifications`}
     >
       {value > 999 ? "999+" : value}
     </span>
@@ -162,8 +172,16 @@ function NotificationSidebar({
   };
 
   const normalizedPriorities = Array.isArray(selectedPriorities)
-    ? selectedPriorities
+    ? selectedPriorities.filter((priority) =>
+        PRIORITY_ITEMS.some((item) => item.id === priority)
+      )
     : [];
+
+  const handleCategoryChange = (category) => {
+    if (disabled || typeof onCategoryChange !== "function") return;
+
+    onCategoryChange(category);
+  };
 
   const handlePriorityToggle = (priority) => {
     if (disabled || typeof onPriorityChange !== "function") return;
@@ -177,6 +195,9 @@ function NotificationSidebar({
     onPriorityChange(nextPriorities);
   };
 
+  const hasActiveFilters =
+    normalizedPriorities.length > 0 || dateRange !== "ALL_TIME";
+
   return (
     <aside
       aria-label="Notification inbox filters"
@@ -189,7 +210,6 @@ function NotificationSidebar({
       "
     >
       {/* Sidebar heading */}
-
       <div className="shrink-0 border-b border-white/[0.06] p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -209,7 +229,9 @@ function NotificationSidebar({
           <button
             type="button"
             onClick={onSettingsClick}
-            disabled={disabled || typeof onSettingsClick !== "function"}
+            disabled={
+              disabled || typeof onSettingsClick !== "function"
+            }
             aria-label="Notification settings"
             title="Notification settings"
             className="
@@ -230,7 +252,6 @@ function NotificationSidebar({
       </div>
 
       {/* Scrollable sidebar controls */}
-
       <div
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3"
         style={{
@@ -239,81 +260,80 @@ function NotificationSidebar({
         }}
       >
         {/* Categories */}
-
         <nav aria-label="Notification categories">
           <div className="space-y-1">
-            {CATEGORY_ITEMS.map(({ id, label, Icon, countKey, dot }) => {
-              const active = activeCategory === id;
-              const count = categoryCounts[countKey];
+            {CATEGORY_ITEMS.map(
+              ({ id, label, Icon, countKey, dot }) => {
+                const active = activeCategory === id;
+                const count = categoryCounts[countKey];
 
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => {
-                    if (!disabled && onCategoryChange) {
-                      onCategoryChange(id);
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => handleCategoryChange(id)}
+                    disabled={
+                      disabled ||
+                      typeof onCategoryChange !== "function"
                     }
-                  }}
-                  disabled={disabled}
-                  aria-current={active ? "page" : undefined}
-                  className={`
-                    group relative flex min-h-9 w-full
-                    items-center gap-2.5 rounded-lg
-                    px-3 py-2 text-left
-                    transition duration-200
-                    focus-visible:outline-none
-                    focus-visible:ring-2 focus-visible:ring-cyan-400
-                    disabled:cursor-not-allowed disabled:opacity-50
-                    ${
-                      active
-                        ? "border border-cyan-400/15 bg-gradient-to-r from-cyan-400/[0.13] to-cyan-400/[0.035] text-cyan-200"
-                        : "border border-transparent text-slate-400 hover:border-white/[0.05] hover:bg-white/[0.035] hover:text-slate-200"
-                    }
-                  `}
-                >
-                  {active && (
-                    <span className="absolute bottom-2 left-0 top-2 w-[2px] rounded-r-full bg-cyan-300 shadow-[0_0_8px_rgba(34,211,238,0.7)]" />
-                  )}
+                    aria-current={active ? "page" : undefined}
+                    className={`
+                      group relative flex min-h-9 w-full
+                      items-center gap-2.5 rounded-lg
+                      border px-3 py-2 text-left
+                      transition duration-200
+                      focus-visible:outline-none
+                      focus-visible:ring-2 focus-visible:ring-cyan-400
+                      disabled:cursor-not-allowed disabled:opacity-50
+                      ${
+                        active
+                          ? "border-cyan-400/15 bg-gradient-to-r from-cyan-400/[0.13] to-cyan-400/[0.035] text-cyan-200"
+                          : "border-transparent text-slate-400 hover:border-white/[0.05] hover:bg-white/[0.035] hover:text-slate-200"
+                      }
+                    `}
+                  >
+                    {active && (
+                      <span className="absolute bottom-2 left-0 top-2 w-[2px] rounded-r-full bg-cyan-300 shadow-[0_0_8px_rgba(34,211,238,0.7)]" />
+                    )}
 
-                  {dot ? (
-                    <span className="flex h-4 w-4 shrink-0 items-center justify-center">
-                      <span className={`h-2.5 w-2.5 rounded-full ${dot}`} />
+                    {dot ? (
+                      <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+                        <span className={`h-2.5 w-2.5 rounded-full ${dot}`} />
+                      </span>
+                    ) : (
+                      <Icon
+                        size={15}
+                        strokeWidth={active ? 2 : 1.7}
+                        className="shrink-0"
+                        aria-hidden="true"
+                      />
+                    )}
+
+                    <span className="min-w-0 flex-1 truncate text-[11px] font-medium">
+                      {label}
                     </span>
-                  ) : (
-                    <Icon
-                      size={15}
-                      strokeWidth={active ? 2 : 1.7}
-                      className="shrink-0"
+
+                    <CountBadge
+                      count={count}
+                      active={active}
+                      unread={id === "UNREAD"}
                     />
-                  )}
-
-                  <span className="min-w-0 flex-1 truncate text-[11px] font-medium">
-                    {label}
-                  </span>
-
-                  <CountBadge
-                    count={count}
-                    active={active}
-                    unread={id === "UNREAD"}
-                  />
-                </button>
-              );
-            })}
+                  </button>
+                );
+              }
+            )}
           </div>
         </nav>
-
-        {/* Divider */}
 
         <div className="my-4 h-px bg-gradient-to-r from-transparent via-white/[0.09] to-transparent" />
 
         {/* Priority filters */}
-
         <section aria-label="Priority filters">
           <button
             type="button"
             onClick={() => setPriorityExpanded((value) => !value)}
             aria-expanded={priorityExpanded}
+            aria-controls="notification-priority-filters"
             className="
               flex w-full items-center justify-between
               gap-2 rounded-md px-1 py-1.5
@@ -336,7 +356,10 @@ function NotificationSidebar({
           </button>
 
           {priorityExpanded && (
-            <div className="mt-2 space-y-2.5 px-1 pb-1">
+            <div
+              id="notification-priority-filters"
+              className="mt-2 space-y-2.5 px-1 pb-1"
+            >
               {PRIORITY_ITEMS.map(({ id, label, color }) => {
                 const checked = normalizedPriorities.includes(id);
                 const priorityCount = counts?.priorities?.[id];
@@ -345,19 +368,21 @@ function NotificationSidebar({
                   <label
                     key={id}
                     className={`
-                      group flex cursor-pointer items-center
-                      gap-2.5 rounded-md py-0.5
+                      group flex items-center gap-2.5 rounded-md py-0.5
                       ${
                         disabled
                           ? "cursor-not-allowed opacity-50"
-                          : ""
+                          : "cursor-pointer"
                       }
                     `}
                   >
                     <input
                       type="checkbox"
                       checked={checked}
-                      disabled={disabled || typeof onPriorityChange !== "function"}
+                      disabled={
+                        disabled ||
+                        typeof onPriorityChange !== "function"
+                      }
                       onChange={() => handlePriorityToggle(id)}
                       className="
                         h-3.5 w-3.5 shrink-0 cursor-pointer
@@ -366,11 +391,13 @@ function NotificationSidebar({
                         focus-visible:outline-none
                         focus-visible:ring-2
                         focus-visible:ring-cyan-400
+                        disabled:cursor-not-allowed
                       "
                     />
 
                     <span
                       className={`h-2.5 w-2.5 shrink-0 rounded-full ${color}`}
+                      aria-hidden="true"
                     />
 
                     <span className="flex-1 text-[11px] text-slate-400 transition group-hover:text-slate-200">
@@ -389,17 +416,15 @@ function NotificationSidebar({
           )}
         </section>
 
-        {/* Divider */}
-
         <div className="my-4 h-px bg-gradient-to-r from-transparent via-white/[0.09] to-transparent" />
 
         {/* Date range */}
-
         <section aria-label="Date range filter">
           <button
             type="button"
             onClick={() => setDateExpanded((value) => !value)}
             aria-expanded={dateExpanded}
+            aria-controls="notification-date-filters"
             className="
               flex w-full items-center justify-between
               gap-2 rounded-md px-1 py-1.5
@@ -419,17 +444,23 @@ function NotificationSidebar({
           </button>
 
           {dateExpanded && (
-            <div className="mt-2 flex items-center gap-2">
+            <div
+              id="notification-date-filters"
+              className="mt-2 flex items-center gap-2"
+            >
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-[#081526] text-slate-400">
                 <FiCalendar size={15} />
               </div>
 
               <select
                 value={dateRange}
-                onChange={(event) => {
-                  onDateRangeChange?.(event.target.value);
-                }}
-                disabled={disabled || typeof onDateRangeChange !== "function"}
+                onChange={(event) =>
+                  onDateRangeChange?.(event.target.value)
+                }
+                disabled={
+                  disabled ||
+                  typeof onDateRangeChange !== "function"
+                }
                 aria-label="Filter notifications by date range"
                 className="
                   h-9 min-w-0 flex-1 rounded-lg
@@ -458,18 +489,20 @@ function NotificationSidebar({
         </section>
 
         {/* Active filter hint */}
-
-        {(normalizedPriorities.length > 0 ||
-          dateRange !== "ALL_TIME") && (
+        {hasActiveFilters && (
           <div className="mt-4 rounded-lg border border-cyan-400/10 bg-cyan-400/[0.035] p-2.5">
             <p className="text-[10px] leading-4 text-slate-400">
               <span className="font-medium text-cyan-200">
                 Filters active
               </span>
+
               <span className="mt-1 block">
-                {normalizedPriorities.length > 0
-                  ? `${normalizedPriorities.length} priority filter${normalizedPriorities.length === 1 ? "" : "s"} selected`
-                  : "Date range applied"}
+                {normalizedPriorities.length > 0 &&
+                dateRange !== "ALL_TIME"
+                  ? `${normalizedPriorities.length} priority filter${normalizedPriorities.length === 1 ? "" : "s"} selected · Date range applied`
+                  : normalizedPriorities.length > 0
+                    ? `${normalizedPriorities.length} priority filter${normalizedPriorities.length === 1 ? "" : "s"} selected`
+                    : "Date range applied"}
               </span>
             </p>
           </div>
@@ -477,10 +510,12 @@ function NotificationSidebar({
       </div>
 
       {/* Sidebar footer */}
-
       <div className="shrink-0 border-t border-white/[0.06] px-4 py-3">
         <div className="flex items-center gap-2">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.45)]" />
+          <span
+            className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.45)]"
+            aria-hidden="true"
+          />
 
           <span className="text-[9px] tracking-wide text-slate-500">
             Notification center
