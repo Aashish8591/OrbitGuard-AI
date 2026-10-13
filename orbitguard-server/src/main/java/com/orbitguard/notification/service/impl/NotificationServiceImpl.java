@@ -19,6 +19,7 @@ import com.orbitguard.notification.dto.response.NotificationResponse;
 import com.orbitguard.notification.entity.Notification;
 import com.orbitguard.notification.enums.NotificationAction;
 import com.orbitguard.notification.enums.NotificationStatus;
+import com.orbitguard.notification.enums.NotificationType;
 import com.orbitguard.notification.mapper.NotificationMapper;
 import com.orbitguard.notification.repository.NotificationRepository;
 import com.orbitguard.notification.service.NotificationService;
@@ -38,90 +39,40 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * ===============================================================
- * Notification Service Implementation
- * ===============================================================
- *
- * Implements business operations for the Notification module.
+ * Notification Service Implementation.
  *
  * Responsibilities:
- * <ul>
- *     <li>Create notifications</li>
- *     <li>Retrieve notifications</li>
- *     <li>Update notifications</li>
- *     <li>Soft delete notifications</li>
- *     <li>Search and filter notifications</li>
- *     <li>Manage read/unread status</li>
- *     <li>Generate notification business codes</li>
- * </ul>
- *
- * Business logic belongs in this class.
- * HTTP-specific concerns remain in the Controller.
- *
- * Module : Notification Management
- *
- * @author OrbitGuard AI Team
- * @version 1.0
+ * - Create and retrieve notifications.
+ * - Update notifications.
+ * - Soft-delete notifications.
+ * - Search and filter notifications.
+ * - Manage read/unread status.
+ * - Generate notification business codes.
  */
 @Service
 @RequiredArgsConstructor
 public class NotificationServiceImpl implements NotificationService {
 
-    /**
-     * Repository responsible for standard Notification
-     * persistence operations.
-     */
     private final NotificationRepository notificationRepository;
-
-    /**
-     * Repository used to validate referenced active alerts.
-     */
     private final AlertRepository alertRepository;
-
-    /**
-     * Repository used to validate referenced active collision risks.
-     */
     private final CollisionRiskRepository collisionRiskRepository;
-
-    /**
-     * MongoTemplate used for dynamic search and filtering.
-     */
     private final MongoTemplate mongoTemplate;
-
-    /**
-     * Builds dynamic MongoDB search queries.
-     */
     private final NotificationQueryBuilder notificationQueryBuilder;
-
-    /**
-     * Converts between request DTOs, entities and response DTOs.
-     */
     private final NotificationMapper notificationMapper;
-
-    /**
-     * Handles Notification-specific business validation.
-     */
     private final NotificationValidator notificationValidator;
-
-    /**
-     * Generates atomic MongoDB sequence numbers.
-     */
     private final SequenceGeneratorService sequenceGeneratorService;
-
-    /**
-     * Converts sequence numbers into business codes.
-     */
     private final BusinessCodeGenerator businessCodeGenerator;
 
     /**
      * Creates a new notification.
      *
      * @param request create notification request
-     * @return API response containing created notification
+     * @return API response containing the created notification
      */
     @Override
     public ApiResponse<NotificationResponse> createNotification(
-            CreateNotificationRequest request) {
+            CreateNotificationRequest request
+    ) {
 
         notificationValidator.validateCreateRequest(request);
 
@@ -130,6 +81,12 @@ public class NotificationServiceImpl implements NotificationService {
         try {
             Notification notification =
                     notificationMapper.toEntity(request);
+
+            if (notification == null) {
+                throw new BadRequestException(
+                        "Notification mapper returned an empty notification."
+                );
+            }
 
             long sequence =
                     sequenceGeneratorService.getNextSequence(
@@ -162,8 +119,7 @@ public class NotificationServiceImpl implements NotificationService {
                     response
             );
 
-        } catch (DuplicateKeyException ex) {
-
+        } catch (DuplicateKeyException exception) {
             throw new DuplicateResourceException(
                     "Notification could not be created because "
                             + "the generated notification code already exists."
@@ -173,13 +129,11 @@ public class NotificationServiceImpl implements NotificationService {
 
     /**
      * Retrieves an active notification by MongoDB ID.
-     *
-     * @param id notification identifier
-     * @return API response containing notification
      */
     @Override
     public ApiResponse<NotificationResponse> getNotificationById(
-            String id) {
+            String id
+    ) {
 
         validateIdentifier(id, "Notification ID");
 
@@ -192,29 +146,21 @@ public class NotificationServiceImpl implements NotificationService {
                                 )
                         );
 
-        NotificationResponse response =
-                notificationMapper.toResponse(notification);
-
         return ResponseBuilder.success(
                 NotificationConstants.NOTIFICATION_FETCHED,
-                response
+                notificationMapper.toResponse(notification)
         );
     }
 
     /**
      * Retrieves an active notification by business code.
-     *
-     * @param notificationCode notification business code
-     * @return API response containing notification
      */
     @Override
     public ApiResponse<NotificationResponse> getNotificationByCode(
-            String notificationCode) {
+            String notificationCode
+    ) {
 
-        validateIdentifier(
-                notificationCode,
-                "Notification code"
-        );
+        validateIdentifier(notificationCode, "Notification code");
 
         Notification notification =
                 notificationRepository
@@ -227,26 +173,20 @@ public class NotificationServiceImpl implements NotificationService {
                                 )
                         );
 
-        NotificationResponse response =
-                notificationMapper.toResponse(notification);
-
         return ResponseBuilder.success(
                 NotificationConstants.NOTIFICATION_FETCHED,
-                response
+                notificationMapper.toResponse(notification)
         );
     }
 
     /**
      * Updates an existing active notification.
-     *
-     * @param id notification identifier
-     * @param request update notification request
-     * @return API response containing updated notification
      */
     @Override
     public ApiResponse<NotificationResponse> updateNotification(
             String id,
-            UpdateNotificationRequest request) {
+            UpdateNotificationRequest request
+    ) {
 
         validateIdentifier(id, "Notification ID");
 
@@ -261,30 +201,21 @@ public class NotificationServiceImpl implements NotificationService {
                                 )
                         );
 
-        notificationMapper.updateEntity(
-                notification,
-                request
-        );
+        notificationMapper.updateEntity(notification, request);
 
         notification.setUpdatedAt(LocalDateTime.now());
 
         Notification updatedNotification =
                 notificationRepository.save(notification);
 
-        NotificationResponse response =
-                notificationMapper.toResponse(updatedNotification);
-
         return ResponseBuilder.success(
                 NotificationConstants.NOTIFICATION_UPDATED,
-                response
+                notificationMapper.toResponse(updatedNotification)
         );
     }
 
     /**
-     * Soft deletes an active notification.
-     *
-     * @param id notification identifier
-     * @return API response indicating successful deletion
+     * Soft-deletes an active notification.
      */
     @Override
     public ApiResponse<Void> deleteNotification(String id) {
@@ -311,24 +242,18 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     /**
-     * Searches and filters notifications using dynamic
-     * MongoDB criteria with pagination and sorting.
-     *
-     * @param searchRequest search parameters
-     * @param filterRequest filter parameters
-     * @param pageable pagination and sorting configuration
-     * @return paginated notification response
+     * Searches notifications using dynamic filters,
+     * pagination and sorting.
      */
     @Override
     public ApiResponse<PagedResponse<NotificationResponse>>
     searchNotifications(
             NotificationSearchRequest searchRequest,
             NotificationFilterRequest filterRequest,
-            Pageable pageable) {
+            Pageable pageable
+    ) {
 
-        notificationValidator.validateSearchRequest(
-                searchRequest
-        );
+        notificationValidator.validateSearchRequest(searchRequest);
 
         Query query =
                 notificationQueryBuilder.buildQuery(
@@ -337,18 +262,12 @@ public class NotificationServiceImpl implements NotificationService {
                 );
 
         long totalElements =
-                mongoTemplate.count(
-                        query,
-                        Notification.class
-                );
+                mongoTemplate.count(query, Notification.class);
 
         query.with(pageable);
 
         List<Notification> notifications =
-                mongoTemplate.find(
-                        query,
-                        Notification.class
-                );
+                mongoTemplate.find(query, Notification.class);
 
         List<NotificationResponse> responses =
                 notifications.stream()
@@ -372,31 +291,18 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     /**
-     * Updates the read/unread state of a notification.
-     *
-     * READ:
-     * - Status becomes READ.
-     * - readAt is populated.
-     *
-     * UNREAD:
-     * - Status becomes UNREAD.
-     * - readAt is cleared.
-     *
-     * @param id notification identifier
-     * @param request read/unread action request
-     * @return updated notification response
+     * Updates a notification's read/unread state.
      */
     @Override
     public ApiResponse<NotificationResponse>
     updateNotificationReadStatus(
             String id,
-            MarkNotificationReadRequest request) {
+            MarkNotificationReadRequest request
+    ) {
 
         validateIdentifier(id, "Notification ID");
 
-        notificationValidator.validateNotificationAction(
-                request
-        );
+        notificationValidator.validateNotificationAction(request);
 
         Notification notification =
                 notificationRepository
@@ -411,23 +317,15 @@ public class NotificationServiceImpl implements NotificationService {
 
         if (request.getAction() == NotificationAction.READ) {
 
-            notification.setStatus(
-                    NotificationStatus.READ
-            );
-
+            notification.setStatus(NotificationStatus.READ);
             notification.setReadAt(now);
 
-        } else if (
-                request.getAction() == NotificationAction.UNREAD) {
+        } else if (request.getAction() == NotificationAction.UNREAD) {
 
-            notification.setStatus(
-                    NotificationStatus.UNREAD
-            );
-
+            notification.setStatus(NotificationStatus.UNREAD);
             notification.setReadAt(null);
 
         } else {
-
             throw new BadRequestException(
                     "Unsupported notification action."
             );
@@ -438,11 +336,6 @@ public class NotificationServiceImpl implements NotificationService {
         Notification updatedNotification =
                 notificationRepository.save(notification);
 
-        NotificationResponse response =
-                notificationMapper.toResponse(
-                        updatedNotification
-                );
-
         String message =
                 request.getAction() == NotificationAction.READ
                         ? NotificationConstants.NOTIFICATION_MARKED_AS_READ
@@ -450,25 +343,19 @@ public class NotificationServiceImpl implements NotificationService {
 
         return ResponseBuilder.success(
                 message,
-                response
+                notificationMapper.toResponse(updatedNotification)
         );
     }
 
     /**
-     * Returns the number of unread active notifications
-     * belonging to a recipient.
-     *
-     * @param recipientId recipient identifier
-     * @return API response containing unread count
+     * Returns the unread active notification count for a recipient.
      */
     @Override
     public ApiResponse<Long> getUnreadNotificationCount(
-            String recipientId) {
+            String recipientId
+    ) {
 
-        validateIdentifier(
-                recipientId,
-                "Recipient ID"
-        );
+        validateIdentifier(recipientId, "Recipient ID");
 
         long count =
                 notificationRepository
@@ -484,22 +371,35 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     /**
-     * Validates referenced Alert and Collision Risk entities.
+     * Validates references required by the notification type.
      *
-     * Only active referenced entities are accepted.
-     *
-     * @param request create notification request
-     * @throws ResourceNotFoundException when a referenced entity
-     *         does not exist or is inactive
+     * ALERT notifications must reference an active alert.
+     * COLLISION notifications must reference an active collision risk.
      */
     private void validateNotificationReferences(
-            CreateNotificationRequest request) {
+            CreateNotificationRequest request
+    ) {
 
-        if (request.getType() == null) {
-            return;
+        if (request == null) {
+            throw new BadRequestException(
+                    "Create Notification Request cannot be null."
+            );
         }
 
-        if (request.getType().name().equals("ALERT")) {
+        NotificationType type = request.getType();
+
+        if (type == null) {
+            throw new BadRequestException(
+                    "Notification type is required."
+            );
+        }
+
+        if (type == NotificationType.ALERT) {
+
+            validateIdentifier(
+                    request.getAlertId(),
+                    "Alert ID"
+            );
 
             alertRepository
                     .findByIdAndIsActiveTrue(request.getAlertId())
@@ -510,7 +410,12 @@ public class NotificationServiceImpl implements NotificationService {
                     );
         }
 
-        if (request.getType().name().equals("COLLISION")) {
+        if (type == NotificationType.COLLISION) {
+
+            validateIdentifier(
+                    request.getCollisionRiskId(),
+                    "Collision Risk ID"
+            );
 
             collisionRiskRepository
                     .findByIdAndIsActiveTrue(
@@ -525,21 +430,17 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     /**
-     * Validates an identifier used by the Notification module.
-     *
-     * @param value identifier value
-     * @param fieldName identifier field name
+     * Validates an identifier before database operations.
      */
     private void validateIdentifier(
             String value,
-            String fieldName) {
+            String fieldName
+    ) {
 
         if (value == null || value.isBlank()) {
-
             throw new BadRequestException(
                     fieldName + " is required."
             );
         }
     }
-
 }

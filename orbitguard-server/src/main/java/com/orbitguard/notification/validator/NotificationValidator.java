@@ -9,36 +9,12 @@ import com.orbitguard.notification.enums.NotificationAction;
 import com.orbitguard.notification.enums.NotificationType;
 import org.springframework.stereotype.Component;
 
-/**
- * ===============================================================
- * Notification Validator
- * ===============================================================
- *
- * Contains business-level validation rules specific to the
- * Notification module.
- *
- * Field-level validation such as @NotBlank, @NotNull and @Size
- * is handled by Jakarta Bean Validation on request DTOs.
- *
- * This validator is responsible only for rules that require
- * business-level validation.
- *
- * Module : Notification Management
- *
- * @author OrbitGuard AI Team
- * @version 1.0
- */
 @Component
 public class NotificationValidator {
 
-    /**
-     * Allowed notification fields for sorting.
-     *
-     * These values must correspond to actual Notification
-     * entity properties.
-     */
     private static final String SORT_FIELD_ID = "id";
-    private static final String SORT_FIELD_NOTIFICATION_CODE = "notificationCode";
+    private static final String SORT_FIELD_NOTIFICATION_CODE =
+            "notificationCode";
     private static final String SORT_FIELD_TITLE = "title";
     private static final String SORT_FIELD_PRIORITY = "priority";
     private static final String SORT_FIELD_STATUS = "status";
@@ -46,12 +22,12 @@ public class NotificationValidator {
     private static final String SORT_FIELD_CREATED_AT = "createdAt";
 
     /**
-     * Validates notification creation request.
-     *
-     * @param request create notification request
-     * @throws BadRequestException when business validation fails
+     * Validates a notification creation request, including required
+     * business fields and type-specific references.
      */
-    public void validateCreateRequest(CreateNotificationRequest request) {
+    public void validateCreateRequest(
+            CreateNotificationRequest request
+    ) {
 
         if (request == null) {
             throw new BadRequestException(
@@ -59,18 +35,52 @@ public class NotificationValidator {
             );
         }
 
-        validateNotificationReferences(request.getType(),
+        validateRequiredText(
+                request.getTitle(),
+                "Notification title",
+                5,
+                150
+        );
+
+        validateRequiredText(
+                request.getMessage(),
+                "Notification message",
+                10,
+                1000
+        );
+
+        if (request.getType() == null) {
+            throw new BadRequestException(
+                    "Notification type is required."
+            );
+        }
+
+        if (request.getPriority() == null) {
+            throw new BadRequestException(
+                    "Notification priority is required."
+            );
+        }
+
+        validateRequiredText(
+                request.getRecipientId(),
+                "Recipient ID",
+                1,
+                Integer.MAX_VALUE
+        );
+
+        validateNotificationReferences(
+                request.getType(),
                 request.getAlertId(),
-                request.getCollisionRiskId());
+                request.getCollisionRiskId()
+        );
     }
 
     /**
-     * Validates notification update request.
-     *
-     * @param request update notification request
-     * @throws BadRequestException when business validation fails
+     * Validates notification update requests.
      */
-    public void validateUpdateRequest(UpdateNotificationRequest request) {
+    public void validateUpdateRequest(
+            UpdateNotificationRequest request
+    ) {
 
         if (request == null) {
             throw new BadRequestException(
@@ -80,12 +90,11 @@ public class NotificationValidator {
     }
 
     /**
-     * Validates notification search request.
-     *
-     * @param request search request
-     * @throws BadRequestException when search parameters are invalid
+     * Validates notification search parameters.
      */
-    public void validateSearchRequest(NotificationSearchRequest request) {
+    public void validateSearchRequest(
+            NotificationSearchRequest request
+    ) {
 
         if (request == null) {
             throw new BadRequestException(
@@ -98,13 +107,11 @@ public class NotificationValidator {
     }
 
     /**
-     * Validates notification read/unread action.
-     *
-     * @param request mark notification request
-     * @throws BadRequestException when action is invalid
+     * Validates read/unread actions.
      */
     public void validateNotificationAction(
-            MarkNotificationReadRequest request) {
+            MarkNotificationReadRequest request
+    ) {
 
         if (request == null) {
             throw new BadRequestException(
@@ -128,52 +135,69 @@ public class NotificationValidator {
     }
 
     /**
-     * Validates notification reference relationships.
+     * Validates type-specific notification reference requirements.
      *
-     * <p>
-     * Notification references are validated at the notification
-     * domain level only. Existence checks against Alert or Risk
-     * collections are intentionally handled by the Service layer
-     * to avoid coupling this validator with other repositories.
-     * </p>
-     *
-     * @param type notification type
-     * @param alertId related alert identifier
-     * @param collisionRiskId related collision risk identifier
-     * @throws BadRequestException when the reference combination
-     *         is invalid
+     * Existence and active-status checks remain in
+     * NotificationServiceImpl.
      */
     private void validateNotificationReferences(
             NotificationType type,
             String alertId,
-            String collisionRiskId) {
+            String collisionRiskId
+    ) {
 
-        if (type == null) {
-            return;
-        }
+        if (type == NotificationType.ALERT) {
 
-        if (type == NotificationType.ALERT
-                && isBlank(alertId)) {
-
-            throw new BadRequestException(
-                    "Alert ID is required for ALERT notifications."
+            validateRequiredText(
+                    alertId,
+                    "Alert ID",
+                    1,
+                    Integer.MAX_VALUE
             );
         }
 
-        if (type == NotificationType.COLLISION
-                && isBlank(collisionRiskId)) {
+        if (type == NotificationType.COLLISION) {
 
-            throw new BadRequestException(
-                    "Collision Risk ID is required for COLLISION notifications."
+            validateRequiredText(
+                    collisionRiskId,
+                    "Collision Risk ID",
+                    1,
+                    Integer.MAX_VALUE
             );
         }
     }
 
     /**
-     * Validates the requested sorting field.
-     *
-     * @param sortBy requested sorting field
-     * @throws BadRequestException when field is not supported
+     * Validates required text and its permitted length.
+     */
+    private void validateRequiredText(
+            String value,
+            String fieldName,
+            int minLength,
+            int maxLength
+    ) {
+
+        if (isBlank(value)) {
+            throw new BadRequestException(
+                    fieldName + " is required."
+            );
+        }
+
+        String normalizedValue = value.trim();
+
+        if (normalizedValue.length() < minLength
+                || normalizedValue.length() > maxLength) {
+
+            throw new BadRequestException(
+                    fieldName + " must be between "
+                            + minLength + " and "
+                            + maxLength + " characters."
+            );
+        }
+    }
+
+    /**
+     * Validates supported notification sort fields.
      */
     private void validateSortField(String sortBy) {
 
@@ -183,13 +207,14 @@ public class NotificationValidator {
             );
         }
 
-        boolean valid = SORT_FIELD_ID.equals(sortBy)
-                || SORT_FIELD_NOTIFICATION_CODE.equals(sortBy)
-                || SORT_FIELD_TITLE.equals(sortBy)
-                || SORT_FIELD_PRIORITY.equals(sortBy)
-                || SORT_FIELD_STATUS.equals(sortBy)
-                || SORT_FIELD_TYPE.equals(sortBy)
-                || SORT_FIELD_CREATED_AT.equals(sortBy);
+        boolean valid =
+                SORT_FIELD_ID.equals(sortBy)
+                        || SORT_FIELD_NOTIFICATION_CODE.equals(sortBy)
+                        || SORT_FIELD_TITLE.equals(sortBy)
+                        || SORT_FIELD_PRIORITY.equals(sortBy)
+                        || SORT_FIELD_STATUS.equals(sortBy)
+                        || SORT_FIELD_TYPE.equals(sortBy)
+                        || SORT_FIELD_CREATED_AT.equals(sortBy);
 
         if (!valid) {
             throw new BadRequestException(
@@ -199,10 +224,7 @@ public class NotificationValidator {
     }
 
     /**
-     * Validates requested sort direction.
-     *
-     * @param direction requested sort direction
-     * @throws BadRequestException when direction is invalid
+     * Validates the requested sort direction.
      */
     private void validateSortDirection(String direction) {
 
@@ -221,14 +243,7 @@ public class NotificationValidator {
         }
     }
 
-    /**
-     * Checks whether a String is null, empty or whitespace.
-     *
-     * @param value value to check
-     * @return true when blank
-     */
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
     }
-
 }

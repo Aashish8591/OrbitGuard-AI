@@ -14,6 +14,7 @@ import com.orbitguard.alert.service.AlertService;
 import com.orbitguard.alert.specification.AlertQueryBuilder;
 import com.orbitguard.alert.util.AlertMessageGenerator;
 import com.orbitguard.alert.util.AlertPriorityCalculator;
+import com.orbitguard.auth.security.CustomUserDetails;
 import com.orbitguard.common.exception.BadRequestException;
 import com.orbitguard.common.exception.ResourceNotFoundException;
 import com.orbitguard.common.response.ApiResponse;
@@ -22,101 +23,88 @@ import com.orbitguard.common.sequence.SequenceConstants;
 import com.orbitguard.common.sequence.SequenceGeneratorService;
 import com.orbitguard.common.util.BusinessCodeGenerator;
 import com.orbitguard.common.util.ResponseBuilder;
+import com.orbitguard.notification.dto.request.CreateNotificationRequest;
+import com.orbitguard.notification.enums.NotificationPriority;
+import com.orbitguard.notification.enums.NotificationType;
+import com.orbitguard.notification.service.NotificationService;
 import com.orbitguard.risk.entity.CollisionRisk;
 import com.orbitguard.risk.repository.CollisionRiskRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * ==============================================================
- * Alert Service Implementation
- * ==============================================================
- *
- * Handles all business operations related to Alert Management.
+ * Alert Service Implementation.
  *
  * Responsibilities:
- *
- * • Create Alert
- * • Retrieve Alert
- * • Search Alerts
- * • Update Alert Status
- * • Soft Delete Alert
- *
- * Business Rules:
- *
- * • Only active alerts are processed.
- * • Alert Code is generated automatically.
- * • Alert Severity is calculated from Risk Level.
- * • Soft delete is used instead of permanent deletion.
- *
- * Module : Alert Management
- *
- * @author OrbitGuard AI Team
- * @version 1.0
+ * - Create and retrieve alerts.
+ * - Search alerts using filters and pagination.
+ * - Update alert status.
+ * - Soft-delete alerts.
+ * - Create a notification when an alert is created.
  */
 @Service
 @RequiredArgsConstructor
 public class AlertServiceImpl implements AlertService {
 
     private final AlertRepository alertRepository;
-
     private final CollisionRiskRepository collisionRiskRepository;
-
     private final AlertMapper alertMapper;
-
     private final MongoTemplate mongoTemplate;
-
     private final AlertQueryBuilder alertQueryBuilder;
-
     private final BusinessCodeGenerator businessCodeGenerator;
-
     private final SequenceGeneratorService sequenceGeneratorService;
-
     private final AlertPriorityCalculator alertPriorityCalculator;
-
     private final AlertMessageGenerator alertMessageGenerator;
 
-    /**
-     * Business Prefix.
+    /*
+     * Existing notification module.
      */
+    private final NotificationService notificationService;
+
     private static final String ALERT_PREFIX = "ALT";
 
+    /**
+     * Creates an alert and then creates its notification.
+     *
+     * The notification references the persisted alert and collision risk.
+     * The authenticated user is used as the recipient.
+     */
     @Override
     public ApiResponse<AlertResponse> createAlert(
             CreateAlertRequest request
     ) {
-
-        // Validate incoming request
         validateCreateRequest(request);
 
-        // Fetch active collision risk
         CollisionRisk collisionRisk =
                 getActiveRisk(request.getRiskId());
 
-        // Generate business alert code
         String alertCode = generateAlertCode();
 
-        // Build alert entity
         Alert alert = buildAlert(
                 request,
                 collisionRisk,
                 alertCode
         );
 
-        // Persist alert
         Alert savedAlert = saveAlert(alert);
 
-        // Convert entity to response
+        /*
+         * Create the notification only after the alert has been saved,
+         * so the notification can reference the persisted alert ID.
+         */
+        createAlertNotification(savedAlert);
+
         AlertResponse response =
                 alertMapper.toResponse(savedAlert);
 
-        // Return success response
         return ResponseBuilder.success(
                 "Alert created successfully.",
                 response
@@ -124,22 +112,92 @@ public class AlertServiceImpl implements AlertService {
     }
 
     /**
-     * ----------------------------------------------------------
-     * Validate Create Alert Request
-     * ----------------------------------------------------------
-     *
-     * Validates the incoming create alert request
-     * before processing.
-     *
-     * Business Rules:
-     * • Request must not be null.
-     * • Risk ID must be provided.
-     *
-     * @param request Create Alert Request
+     * Creates a notification for a persisted alert.
      */
-    private void validateCreateRequest(
-            CreateAlertRequest request
-    ) {
+    private void createAlertNotification(Alert alert) {
+
+        if (alert == null || alert.getId() == null
+                || alert.getId().isBlank()) {
+            throw new BadRequestException(
+                    "A persisted alert is required to create a notification."
+            );
+        }
+
+        String recipientId = getAuthenticatedUserId();
+
+        NotificationPriority notificationPriority =
+                mapNotificationPriority(alert);
+
+        CreateNotificationRequest notificationRequest =
+                new CreateNotificationRequest();
+
+        notificationRequest.setTitle(alert.getTitle());
+        notificationRequest.setMessage(alert.getMessage());
+        notificationRequest.setType(NotificationType.ALERT);
+        notificationRequest.setPriority(notificationPriority);
+        notificationRequest.setRecipientId(recipientId);
+        notificationRequest.setAlertId(alert.getId());
+        notificationRequest.setCollisionRiskId(alert.getRiskId());
+
+        notificationService.createNotification(notificationRequest);
+    }
+
+    /**
+     * Resolves the recipient from the authenticated Spring Security
+     * principal. No user ID is hardcoded.
+     */
+    private String getAuthenticatedUserId() {
+
+        Authentication authentication =
+                SecurityContextHolder.getContext().getAuthentication();
+
+        if (authentication == null
+                || !authentication.isAuthenticated()
+                || !(authentication.getPrincipal()
+                instanceof CustomUserDetails userDetails)) {
+            throw new BadRequestException(
+                    "Cannot create an alert notification without an authenticated user."
+            );
+        }
+
+        String userId = userDetails.getUserId();
+
+        if (userId == null || userId.isBlank()) {
+            throw new BadRequestException(
+                    "The authenticated user does not have a valid user ID."
+            );
+        }
+
+        return userId;
+    }
+
+    /**
+     * Maps alert severity to notification priority.
+     *
+     * The enum names must match between AlertSeverity and
+     * NotificationPriority: LOW, MEDIUM, HIGH, CRITICAL.
+     */
+    private NotificationPriority mapNotificationPriority(Alert alert) {
+
+        if (alert.getSeverity() == null) {
+            throw new BadRequestException(
+                    "Alert severity is required to determine notification priority."
+            );
+        }
+
+        try {
+            return NotificationPriority.valueOf(
+                    alert.getSeverity().name()
+            );
+        } catch (IllegalArgumentException exception) {
+            throw new BadRequestException(
+                    "Unsupported alert severity for notification priority: "
+                            + alert.getSeverity()
+            );
+        }
+    }
+
+    private void validateCreateRequest(CreateAlertRequest request) {
 
         if (request == null) {
             throw new BadRequestException(
@@ -149,27 +207,13 @@ public class AlertServiceImpl implements AlertService {
 
         if (request.getRiskId() == null
                 || request.getRiskId().isBlank()) {
-
             throw new BadRequestException(
                     "Risk ID is required."
             );
         }
     }
 
-    /**
-     * ----------------------------------------------------------
-     * Get Active Collision Risk
-     * ----------------------------------------------------------
-     *
-     * Retrieves an active collision risk by its ID.
-     *
-     * @param riskId Collision Risk ID
-     * @return Active Collision Risk
-     * @throws ResourceNotFoundException if risk is not found
-     */
-    private CollisionRisk getActiveRisk(
-            String riskId
-    ) {
+    private CollisionRisk getActiveRisk(String riskId) {
 
         return collisionRiskRepository
                 .findByIdAndIsActiveTrue(riskId)
@@ -180,19 +224,6 @@ public class AlertServiceImpl implements AlertService {
                 );
     }
 
-    /**
-     * ----------------------------------------------------------
-     * Generate Alert Code
-     * ----------------------------------------------------------
-     *
-     * Generates a unique business Alert Code.
-     *
-     * Example:
-     * ALT-000001
-     * ALT-000002
-     *
-     * @return Generated Alert Code
-     */
     private String generateAlertCode() {
 
         long sequence = sequenceGeneratorService.getNextSequence(
@@ -205,19 +236,6 @@ public class AlertServiceImpl implements AlertService {
         );
     }
 
-    /**
-     * ----------------------------------------------------------
-     * Build Alert Entity
-     * ----------------------------------------------------------
-     *
-     * Creates and populates an Alert entity using
-     * request data and Collision Risk information.
-     *
-     * @param request Create Alert Request
-     * @param collisionRisk Active Collision Risk
-     * @param alertCode Generated Alert Code
-     * @return Alert Entity
-     */
     private Alert buildAlert(
             CreateAlertRequest request,
             CollisionRisk collisionRisk,
@@ -267,16 +285,6 @@ public class AlertServiceImpl implements AlertService {
                 .build();
     }
 
-    /**
-     * ----------------------------------------------------------
-     * Save Alert
-     * ----------------------------------------------------------
-     *
-     * Persists the Alert entity into MongoDB.
-     *
-     * @param alert Alert Entity
-     * @return Saved Alert Entity
-     */
     private Alert saveAlert(Alert alert) {
 
         if (alert == null) {
@@ -288,20 +296,7 @@ public class AlertServiceImpl implements AlertService {
         return alertRepository.save(alert);
     }
 
-    /**
-     * ----------------------------------------------------------
-     * Get Active Alert
-     * ----------------------------------------------------------
-     *
-     * Retrieves an active Alert by its ID.
-     *
-     * @param alertId Alert ID
-     * @return Active Alert
-     * @throws ResourceNotFoundException if Alert is not found
-     */
-    private Alert getActiveAlert(
-            String alertId
-    ) {
+    private Alert getActiveAlert(String alertId) {
 
         validateAlertId(alertId);
 
@@ -314,18 +309,7 @@ public class AlertServiceImpl implements AlertService {
                 );
     }
 
-    /**
-     * ----------------------------------------------------------
-     * Validate Alert ID
-     * ----------------------------------------------------------
-     *
-     * Validates the Alert ID before database operations.
-     *
-     * @param alertId Alert ID
-     */
-    private void validateAlertId(
-            String alertId
-    ) {
+    private void validateAlertId(String alertId) {
 
         if (alertId == null || alertId.isBlank()) {
             throw new BadRequestException(
@@ -334,20 +318,8 @@ public class AlertServiceImpl implements AlertService {
         }
     }
 
-    /**
-     * ----------------------------------------------------------
-     * Get Alert By ID
-     * ----------------------------------------------------------
-     *
-     * Retrieves an active Alert using its unique ID.
-     *
-     * @param id Alert ID
-     * @return Alert Details
-     */
     @Override
-    public ApiResponse<AlertResponse> getAlertById(
-            String id
-    ) {
+    public ApiResponse<AlertResponse> getAlertById(String id) {
 
         Alert alert = getActiveAlert(id);
 
@@ -360,40 +332,21 @@ public class AlertServiceImpl implements AlertService {
         );
     }
 
-    /**
-     * ----------------------------------------------------------
-     * Get All Alerts
-     * ----------------------------------------------------------
-     *
-     * Retrieves Alerts using dynamic filters,
-     * pagination and sorting.
-     *
-     * @param request Search Request
-     * @param pageable Pageable Information
-     * @return Paged Alert Response
-     */
     @Override
     public ApiResponse<PagedResponse<AlertResponse>> getAllAlerts(
             AlertSearchRequest request,
             Pageable pageable
     ) {
 
-        Query query =
-                alertQueryBuilder.buildQuery(request);
+        Query query = alertQueryBuilder.buildQuery(request);
 
         long totalElements =
-                mongoTemplate.count(
-                        query,
-                        Alert.class
-                );
+                mongoTemplate.count(query, Alert.class);
 
         query.with(pageable);
 
         List<Alert> alerts =
-                mongoTemplate.find(
-                        query,
-                        Alert.class
-                );
+                mongoTemplate.find(query, Alert.class);
 
         PagedResponse<AlertResponse> response =
                 buildPagedResponse(
@@ -408,19 +361,6 @@ public class AlertServiceImpl implements AlertService {
         );
     }
 
-    /**
-     * ----------------------------------------------------------
-     * Build Paged Response
-     * ----------------------------------------------------------
-     *
-     * Converts Alert entities into AlertResponse DTOs
-     * and prepares a paginated response.
-     *
-     * @param alerts Alert Entity List
-     * @param pageable Pageable Information
-     * @param totalElements Total Records
-     * @return Paged Alert Response
-     */
     private PagedResponse<AlertResponse> buildPagedResponse(
             List<Alert> alerts,
             Pageable pageable,
@@ -450,42 +390,25 @@ public class AlertServiceImpl implements AlertService {
                 .build();
     }
 
-    /**
-     * ----------------------------------------------------------
-     * Update Alert Status
-     * ----------------------------------------------------------
-     *
-     * Updates the workflow status of an existing Alert.
-     *
-     * @param id Alert ID
-     * @param request Update Alert Status Request
-     * @return Updated Alert Response
-     */
     @Override
     public ApiResponse<AlertResponse> updateAlertStatus(
             String id,
             UpdateAlertStatusRequest request
     ) {
 
-        // Validate request before accessing its fields
         validateUpdateStatusRequest(request);
 
-        // Fetch active alert
         Alert alert = getActiveAlert(id);
 
-        // Validate status transition
         validateStatusTransition(
                 alert.getStatus(),
                 request.getStatus()
         );
 
-        // Use one timestamp for this status update
         LocalDateTime now = LocalDateTime.now();
 
         alert.setStatus(request.getStatus());
-
         alert.setRemarks(request.getRemarks());
-
         alert.setUpdatedAt(now);
 
         if (request.getStatus() == AlertStatus.ACKNOWLEDGED) {
@@ -496,8 +419,7 @@ public class AlertServiceImpl implements AlertService {
             alert.setResolvedAt(now);
         }
 
-        Alert updatedAlert =
-                alertRepository.save(alert);
+        Alert updatedAlert = alertRepository.save(alert);
 
         AlertResponse response =
                 alertMapper.toResponse(updatedAlert);
@@ -508,15 +430,6 @@ public class AlertServiceImpl implements AlertService {
         );
     }
 
-    /**
-     * ----------------------------------------------------------
-     * Validate Update Status Request
-     * ----------------------------------------------------------
-     *
-     * Validates the incoming status update request.
-     *
-     * @param request Update Alert Status Request
-     */
     private void validateUpdateStatusRequest(
             UpdateAlertStatusRequest request
     ) {
@@ -534,27 +447,6 @@ public class AlertServiceImpl implements AlertService {
         }
     }
 
-    /**
-     * ----------------------------------------------------------
-     * Validate Status Transition
-     * ----------------------------------------------------------
-     *
-     * Validates whether an Alert can move
-     * from the current status to the new status.
-     *
-     * Allowed Workflow:
-     *
-     * PENDING
-     *      ↓
-     * ACKNOWLEDGED
-     *      ↓
-     * RESOLVED
-     *      ↓
-     * CLOSED
-     *
-     * @param currentStatus Current Alert Status
-     * @param newStatus New Alert Status
-     */
     private void validateStatusTransition(
             AlertStatus currentStatus,
             AlertStatus newStatus
@@ -575,7 +467,6 @@ public class AlertServiceImpl implements AlertService {
         switch (currentStatus) {
 
             case PENDING -> {
-
                 if (newStatus != AlertStatus.ACKNOWLEDGED) {
                     throw new BadRequestException(
                             "A PENDING alert can only be moved to ACKNOWLEDGED."
@@ -584,7 +475,6 @@ public class AlertServiceImpl implements AlertService {
             }
 
             case ACKNOWLEDGED -> {
-
                 if (newStatus != AlertStatus.RESOLVED) {
                     throw new BadRequestException(
                             "An ACKNOWLEDGED alert can only be moved to RESOLVED."
@@ -593,7 +483,6 @@ public class AlertServiceImpl implements AlertService {
             }
 
             case RESOLVED -> {
-
                 if (newStatus != AlertStatus.CLOSED) {
                     throw new BadRequestException(
                             "A RESOLVED alert can only be moved to CLOSED."
@@ -602,37 +491,18 @@ public class AlertServiceImpl implements AlertService {
             }
 
             case CLOSED ->
-
                     throw new BadRequestException(
                             "A CLOSED alert cannot be updated."
                     );
         }
     }
 
-    /**
-     * ----------------------------------------------------------
-     * Delete Alert (Soft Delete)
-     * ----------------------------------------------------------
-     *
-     * Marks an Alert as inactive instead of
-     * permanently deleting it.
-     *
-     * Business Rules:
-     * • Only active Alerts can be deleted.
-     * • Alert history is preserved.
-     *
-     * @param id Alert ID
-     * @return Success Response
-     */
     @Override
-    public ApiResponse<Void> deleteAlert(
-            String id
-    ) {
+    public ApiResponse<Void> deleteAlert(String id) {
 
         Alert alert = getActiveAlert(id);
 
         alert.setIsActive(false);
-
         alert.setUpdatedAt(LocalDateTime.now());
 
         alertRepository.save(alert);
