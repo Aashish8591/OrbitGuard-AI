@@ -1,6 +1,6 @@
 import {
   FiFileText,
-  FiSatellite,
+  FiGlobe,
   FiGitBranch,
   FiShield,
   FiBarChart2,
@@ -18,32 +18,44 @@ import {
 
 /* ================================================================
    CONFIGURATION
-   ================================================================ */
+================================================================ */
 
 const REPORT_TYPE_CONFIG = {
   SATELLITE_ANALYSIS: {
     label: "Satellite Analysis",
-    icon: FiSatellite,
+    icon: FiGlobe,
+    accent: "text-cyan-300",
+    surface: "border-cyan-400/15 bg-cyan-400/[0.06]",
   },
   DEBRIS_ANALYSIS: {
     label: "Debris Analysis",
     icon: FiGitBranch,
+    accent: "text-violet-300",
+    surface: "border-violet-400/15 bg-violet-400/[0.06]",
   },
   RISK_ASSESSMENT: {
     label: "Risk Assessment",
     icon: FiShield,
+    accent: "text-amber-300",
+    surface: "border-amber-400/15 bg-amber-400/[0.06]",
   },
   DASHBOARD_ANALYTICS: {
     label: "Dashboard Analytics",
     icon: FiBarChart2,
+    accent: "text-blue-300",
+    surface: "border-blue-400/15 bg-blue-400/[0.06]",
   },
   ALERT_SUMMARY: {
     label: "Alert Summary",
     icon: FiBell,
+    accent: "text-rose-300",
+    surface: "border-rose-400/15 bg-rose-400/[0.06]",
   },
   AI_ANALYSIS: {
     label: "AI Analysis",
     icon: FiCpu,
+    accent: "text-emerald-300",
+    surface: "border-emerald-400/15 bg-emerald-400/[0.06]",
   },
 };
 
@@ -56,7 +68,7 @@ const STATUS_CONFIG = {
   },
   PROCESSING: {
     label: "Processing",
-    dot: "bg-sky-300 animate-pulse",
+    dot: "animate-pulse bg-sky-300",
     badge:
       "border-sky-400/25 bg-sky-400/[0.09] text-sky-200",
   },
@@ -76,7 +88,7 @@ const STATUS_CONFIG = {
 
 /* ================================================================
    HELPERS
-   ================================================================ */
+================================================================ */
 
 function normalizeStatus(status) {
   return String(status ?? "").trim().toUpperCase();
@@ -86,18 +98,32 @@ function normalizeReportType(type) {
   return String(type ?? "").trim().toUpperCase();
 }
 
+function getReportKey(report) {
+  return (
+    report?.id ??
+    report?._id ??
+    report?.reportCode ??
+    report?.reportId ??
+    null
+  );
+}
+
 function getReportCode(report) {
-  return report?.reportCode ?? report?.id ?? "—";
+  return report?.reportCode ?? report?.id ?? report?._id ?? "—";
 }
 
 function getReportType(report) {
+  const normalizedType = normalizeReportType(report?.reportType);
+
   return (
-    REPORT_TYPE_CONFIG[normalizeReportType(report?.reportType)] ?? {
-      label: String(report?.reportType ?? "Unknown type").replaceAll(
-        "_",
-        " "
-      ),
+    REPORT_TYPE_CONFIG[normalizedType] ?? {
+      label: String(report?.reportType ?? "Unknown type")
+        .replaceAll("_", " ")
+        .toLowerCase()
+        .replace(/\b\w/g, (character) => character.toUpperCase()),
       icon: FiFileText,
+      accent: "text-slate-300",
+      surface: "border-slate-700 bg-slate-800/60",
     }
   );
 }
@@ -119,12 +145,22 @@ function formatDate(value) {
   }).format(date);
 }
 
+function isDownloadingReport(report, downloadingReportCode) {
+  if (downloadingReportCode == null) return false;
+
+  return (
+    String(downloadingReportCode) === String(getReportCode(report)) ||
+    String(downloadingReportCode) === String(getReportKey(report))
+  );
+}
+
 /* ================================================================
    STATUS BADGE
-   ================================================================ */
+================================================================ */
 
 function ReportStatusBadge({ status }) {
-  const config = STATUS_CONFIG[normalizeStatus(status)];
+  const normalizedStatus = normalizeStatus(status);
+  const config = STATUS_CONFIG[normalizedStatus];
 
   if (!config) {
     return (
@@ -136,12 +172,7 @@ function ReportStatusBadge({ status }) {
 
   return (
     <span
-      className={`
-        inline-flex max-w-full items-center gap-2
-        whitespace-nowrap rounded-full border
-        px-2.5 py-1 text-[11px] font-semibold
-        tracking-wide ${config.badge}
-      `}
+      className={`inline-flex max-w-full items-center gap-2 whitespace-nowrap rounded-full border px-2.5 py-1 text-[11px] font-semibold tracking-wide ${config.badge}`}
     >
       <span
         aria-hidden="true"
@@ -154,14 +185,13 @@ function ReportStatusBadge({ status }) {
 
 /* ================================================================
    ACTION BUTTON
-   ================================================================ */
+================================================================ */
 
 function ActionButton({
   label,
   icon: Icon,
   onClick,
   disabled = false,
-  danger = false,
 }) {
   return (
     <button
@@ -170,18 +200,7 @@ function ActionButton({
       title={label}
       disabled={disabled}
       onClick={onClick}
-      className={`
-        inline-flex h-9 w-9 shrink-0 items-center
-        justify-center rounded-xl border transition-colors
-        disabled:cursor-not-allowed disabled:opacity-40
-        ${
-          danger
-            ? "border-red-400/15 text-red-300 hover:border-red-400/35 hover:bg-red-400/10"
-            : "border-white/[0.08] bg-white/[0.02] text-slate-400 hover:border-cyan-400/30 hover:bg-cyan-400/[0.07] hover:text-cyan-200"
-        }
-        focus-visible:outline-none focus-visible:ring-2
-        focus-visible:ring-cyan-400/60
-      `}
+      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.02] text-slate-400 transition-colors hover:border-cyan-400/30 hover:bg-cyan-400/[0.07] hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
     >
       <Icon aria-hidden="true" className="h-4 w-4" />
     </button>
@@ -190,7 +209,7 @@ function ActionButton({
 
 /* ================================================================
    EMPTY STATE
-   ================================================================ */
+================================================================ */
 
 function EmptyState({ hasFilters, onReset }) {
   return (
@@ -223,7 +242,7 @@ function EmptyState({ hasFilters, onReset }) {
         <button
           type="button"
           onClick={onReset}
-          className="mt-4 rounded-lg px-3 py-2 text-sm font-medium text-cyan-300 transition-colors hover:bg-cyan-400/[0.07] hover:text-cyan-200"
+          className="mt-4 rounded-lg px-3 py-2 text-sm font-medium text-cyan-300 transition-colors hover:bg-cyan-400/[0.07] hover:text-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
         >
           Clear filters
         </button>
@@ -234,7 +253,7 @@ function EmptyState({ hasFilters, onReset }) {
 
 /* ================================================================
    REPORT ROW
-   ================================================================ */
+================================================================ */
 
 function ReportRow({
   report,
@@ -249,12 +268,7 @@ function ReportRow({
   const reportCode = getReportCode(report);
 
   return (
-    <tr
-      className="
-        group border-t border-white/[0.055]
-        transition-colors hover:bg-cyan-400/[0.025]
-      "
-    >
+    <tr className="group border-t border-white/[0.055] transition-colors hover:bg-cyan-400/[0.025]">
       <td className="px-4 py-4 text-xs tabular-nums text-slate-500">
         {index + 1}
       </td>
@@ -285,16 +299,16 @@ function ReportRow({
 
       <td className="px-4 py-4">
         <div className="flex min-w-[150px] items-center gap-2.5">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-cyan-400/10 bg-cyan-400/[0.05]">
+          <span
+            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${type.surface}`}
+          >
             <TypeIcon
               aria-hidden="true"
-              className="h-4 w-4 text-cyan-300"
+              className={`h-4 w-4 ${type.accent}`}
             />
           </span>
 
-          <span className="text-xs text-slate-400">
-            {type.label}
-          </span>
+          <span className="text-xs text-slate-400">{type.label}</span>
         </div>
       </td>
 
@@ -339,8 +353,8 @@ function ReportRow({
 }
 
 /* ================================================================
-   MOBILE REPORT CARD
-   ================================================================ */
+   MOBILE / GRID REPORT CARD
+================================================================ */
 
 function MobileReportCard({
   report,
@@ -354,12 +368,14 @@ function MobileReportCard({
   const reportCode = getReportCode(report);
 
   return (
-    <article className="rounded-2xl border border-white/[0.08] bg-[#071321]/85 p-4 transition-colors hover:border-cyan-400/20">
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-cyan-400/15 bg-cyan-400/[0.06]">
+    <article className="min-w-0 rounded-2xl border border-white/[0.08] bg-[#071321]/85 p-4 transition-colors hover:border-cyan-400/20">
+      <div className="flex min-w-0 items-start gap-3">
+        <div
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${type.surface}`}
+        >
           <TypeIcon
             aria-hidden="true"
-            className="h-5 w-5 text-cyan-300"
+            className={`h-5 w-5 ${type.accent}`}
           />
         </div>
 
@@ -379,11 +395,12 @@ function MobileReportCard({
       </div>
 
       <div className="mt-4 space-y-3 border-t border-white/[0.06] pt-3">
-        <div className="flex items-start gap-2.5">
+        <div className="flex min-w-0 items-start gap-2.5">
           <FiFileText
             aria-hidden="true"
             className="mt-0.5 h-4 w-4 shrink-0 text-slate-500"
           />
+
           <div className="min-w-0">
             <p className="text-[11px] text-slate-500">Report type</p>
             <p className="mt-1 break-words text-xs text-slate-300">
@@ -398,6 +415,7 @@ function MobileReportCard({
               aria-hidden="true"
               className="mt-0.5 h-4 w-4 shrink-0 text-slate-500"
             />
+
             <div className="min-w-0">
               <p className="text-[11px] text-slate-500">Created</p>
               <p className="mt-1 break-words text-xs text-slate-300">
@@ -411,6 +429,7 @@ function MobileReportCard({
               aria-hidden="true"
               className="mt-0.5 h-4 w-4 shrink-0 text-slate-500"
             />
+
             <div className="min-w-0">
               <p className="text-[11px] text-slate-500">Last updated</p>
               <p className="mt-1 break-words text-xs text-slate-300">
@@ -425,7 +444,7 @@ function MobileReportCard({
         <button
           type="button"
           onClick={() => onView?.(report)}
-          className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl border border-cyan-400/20 bg-cyan-400/[0.06] px-3 py-2 text-xs font-medium text-cyan-200 transition-colors hover:bg-cyan-400/[0.12]"
+          className="inline-flex min-h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-xl border border-cyan-400/20 bg-cyan-400/[0.06] px-3 py-2 text-xs font-medium text-cyan-200 transition-colors hover:bg-cyan-400/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
         >
           <FiEye aria-hidden="true" className="h-4 w-4" />
           View details
@@ -435,7 +454,7 @@ function MobileReportCard({
           type="button"
           disabled={downloading}
           onClick={() => onDownload?.(report)}
-          className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-xs font-medium text-slate-300 transition-colors hover:border-white/20 hover:text-white disabled:opacity-40"
+          className="inline-flex min-h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-xs font-medium text-slate-300 transition-colors hover:border-white/20 hover:text-white disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
         >
           {downloading ? (
             <FiRefreshCw
@@ -462,7 +481,7 @@ function MobileReportCard({
 
 /* ================================================================
    REPORTS TABLE
-   ================================================================ */
+================================================================ */
 
 /**
  * Displays reports supplied by the parent.
@@ -482,6 +501,7 @@ function MobileReportCard({
  * onResetFilters()
  * downloadingReportCode: string | null
  */
+
 function ReportsTable({
   reports = [],
   loading = false,
@@ -497,8 +517,17 @@ function ReportsTable({
   onResetFilters,
   downloadingReportCode = null,
 }) {
+  const validReports = Array.isArray(reports)
+    ? reports.filter(
+        (report) =>
+          report &&
+          typeof report === "object" &&
+          !Array.isArray(report),
+      )
+    : [];
+
   const hasFilters = Boolean(
-    search.trim() || reportType || status
+    search.trim() || reportType || status,
   );
 
   if (error) {
@@ -517,14 +546,16 @@ function ReportsTable({
           </h3>
 
           <p className="mt-2 break-words text-sm leading-6 text-slate-400">
-            {error}
+            {typeof error === "string"
+              ? error
+              : error?.message ?? "Please try again."}
           </p>
 
           {onRetry && (
             <button
               type="button"
               onClick={onRetry}
-              className="mt-5 inline-flex min-h-10 items-center gap-2 rounded-xl bg-cyan-400 px-4 py-2 text-sm font-semibold text-[#04111D] transition-colors hover:bg-cyan-300"
+              className="mt-5 inline-flex min-h-10 items-center gap-2 rounded-xl bg-cyan-400 px-4 py-2 text-sm font-semibold text-[#04111D] transition-colors hover:bg-cyan-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
             >
               <FiRefreshCw aria-hidden="true" className="h-4 w-4" />
               Try again
@@ -535,122 +566,168 @@ function ReportsTable({
     );
   }
 
+  if (loading) {
+    return (
+      <section
+        aria-label="Loading reports"
+        aria-busy="true"
+        className="min-w-0 w-full"
+      >
+        <div className="hidden overflow-hidden rounded-2xl border border-white/[0.08] bg-[#050D18]/90 lg:block">
+          <div className="space-y-0">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <div
+                key={`desktop-loading-${index}`}
+                className="grid grid-cols-8 gap-4 border-b border-white/[0.05] px-4 py-5 last:border-b-0"
+              >
+                {Array.from({ length: 8 }).map((__, cellIndex) => (
+                  <div
+                    key={`desktop-loading-${index}-${cellIndex}`}
+                    className="h-4 animate-pulse rounded bg-white/[0.06]"
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 lg:hidden">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <div
+              key={`mobile-loading-${index}`}
+              className="h-44 animate-pulse rounded-2xl border border-white/[0.07] bg-white/[0.025]"
+            />
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  if (validReports.length === 0) {
+    return (
+      <section
+        aria-label="Reports archive"
+        className="min-w-0 w-full overflow-hidden rounded-2xl border border-white/[0.08] bg-[#050D18]/90"
+      >
+        <EmptyState
+          hasFilters={hasFilters}
+          onReset={onResetFilters}
+        />
+      </section>
+    );
+  }
+
+  const isGridView = viewMode === "grid";
+
   return (
     <section
       aria-label="Reports archive"
-      aria-busy={loading}
+      aria-busy={false}
       className="min-w-0 w-full"
     >
-      {/* Desktop table */}
-      <div className="hidden overflow-hidden rounded-2xl border border-white/[0.08] bg-[#050D18]/90 lg:block">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1120px] border-collapse text-left">
-            <thead className="bg-[#0B1929]/90">
-              <tr className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">
-                <th scope="col" className="w-12 px-4 py-4">#</th>
-                <th scope="col" className="px-4 py-4">Report Code</th>
-                <th scope="col" className="px-4 py-4">Title</th>
-                <th scope="col" className="px-4 py-4">Type</th>
-                <th scope="col" className="px-4 py-4">Status</th>
-                <th scope="col" className="px-4 py-4">Created At</th>
-                <th scope="col" className="px-4 py-4">Updated At</th>
-                <th scope="col" className="px-4 py-4 text-right">Actions</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {loading ? (
-                Array.from({ length: 5 }).map((_, index) => (
-                  <tr
-                    key={`loading-${index}`}
-                    className="border-t border-white/[0.05]"
-                  >
-                    {Array.from({ length: 8 }).map((__, cellIndex) => (
-                      <td
-                        key={`loading-${index}-${cellIndex}`}
-                        className="px-4 py-5"
-                      >
-                        <div className="h-3 animate-pulse rounded bg-white/[0.06]" />
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              ) : reports.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="p-0">
-                    <EmptyState
-                      hasFilters={hasFilters}
-                      onReset={onResetFilters}
-                    />
-                  </td>
-                </tr>
-              ) : (
-                reports.map((report, index) => (
-                  <ReportRow
-                    key={report?.id ?? getReportCode(report)}
-                    report={report}
-                    index={index}
-                    onView={onView}
-                    onDownload={onDownload}
-                    onMore={onMore}
-                    downloading={
-                      downloadingReportCode === getReportCode(report)
-                    }
-                  />
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Mobile and tablet cards */}
-      <div className="grid grid-cols-1 gap-3 lg:hidden">
-        {loading ? (
-          Array.from({ length: 4 }).map((_, index) => (
-            <div
-              key={`mobile-loading-${index}`}
-              className="h-48 animate-pulse rounded-2xl border border-white/[0.07] bg-white/[0.025]"
-            />
-          ))
-        ) : reports.length === 0 ? (
-          <div className="rounded-2xl border border-white/[0.08] bg-[#050D18]/90">
-            <EmptyState
-              hasFilters={hasFilters}
-              onReset={onResetFilters}
-            />
-          </div>
-        ) : (
-          reports.map((report) => (
+      {isGridView ? (
+        <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+          {validReports.map((report) => (
             <MobileReportCard
-              key={report?.id ?? getReportCode(report)}
+              key={getReportKey(report)}
               report={report}
               onView={onView}
               onDownload={onDownload}
               onMore={onMore}
-              downloading={
-                downloadingReportCode === getReportCode(report)
-              }
+              downloading={isDownloadingReport(
+                report,
+                downloadingReportCode,
+              )}
             />
-          ))
-        )}
-      </div>
-
-      {!loading && !error && reports.length > 0 && (
-        <div className="mt-3 flex flex-col gap-1 px-1 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-          <p>
-            Showing{" "}
-            <span className="font-medium text-slate-300">
-              {reports.length}
-            </span>{" "}
-            {reports.length === 1 ? "report" : "reports"}
-          </p>
-
-          <p className="text-slate-600">
-            Report timestamps are shown in your browser's local timezone.
-          </p>
+          ))}
         </div>
+      ) : (
+        <>
+          {/* Desktop table */}
+          <div className="hidden overflow-hidden rounded-2xl border border-white/[0.08] bg-[#050D18]/90 lg:block">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1120px] border-collapse text-left">
+                <thead className="bg-[#0B1929]/90">
+                  <tr className="text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+                    <th scope="col" className="w-12 px-4 py-4">
+                      #
+                    </th>
+                    <th scope="col" className="px-4 py-4">
+                      Report Code
+                    </th>
+                    <th scope="col" className="px-4 py-4">
+                      Title
+                    </th>
+                    <th scope="col" className="px-4 py-4">
+                      Type
+                    </th>
+                    <th scope="col" className="px-4 py-4">
+                      Status
+                    </th>
+                    <th scope="col" className="px-4 py-4">
+                      Created At
+                    </th>
+                    <th scope="col" className="px-4 py-4">
+                      Updated At
+                    </th>
+                    <th scope="col" className="px-4 py-4 text-right">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {validReports.map((report, index) => (
+                    <ReportRow
+                      key={getReportKey(report) ?? `report-${index}`}
+                      report={report}
+                      index={index}
+                      onView={onView}
+                      onDownload={onDownload}
+                      onMore={onMore}
+                      downloading={isDownloadingReport(
+                        report,
+                        downloadingReportCode,
+                      )}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Mobile and tablet cards */}
+          <div className="grid grid-cols-1 gap-3 lg:hidden">
+            {validReports.map((report, index) => (
+              <MobileReportCard
+                key={getReportKey(report) ?? `report-${index}`}
+                report={report}
+                onView={onView}
+                onDownload={onDownload}
+                onMore={onMore}
+                downloading={isDownloadingReport(
+                  report,
+                  downloadingReportCode,
+                )}
+              />
+            ))}
+          </div>
+        </>
       )}
+
+      <div className="mt-3 flex flex-col gap-1 px-1 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+        <p>
+          Showing{" "}
+          <span className="font-medium text-slate-300">
+            {validReports.length}
+          </span>{" "}
+          {validReports.length === 1 ? "report" : "reports"}
+        </p>
+
+        <p className="text-slate-600">
+          Timestamps are shown in your browser&apos;s local timezone.
+        </p>
+      </div>
     </section>
   );
 }

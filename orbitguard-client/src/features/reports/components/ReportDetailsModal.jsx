@@ -1,4 +1,6 @@
+
 import { useEffect, useId, useRef } from "react";
+
 import {
   FiX,
   FiFileText,
@@ -9,26 +11,21 @@ import {
   FiTrash2,
   FiAlertCircle,
   FiRefreshCw,
-  FiSatellite,
+  FiGlobe,
   FiGitBranch,
   FiShield,
   FiBarChart2,
   FiBell,
   FiCpu,
   FiFile,
-  FiExternalLink,
 } from "react-icons/fi";
 
 import ReportStatusBadge from "./ReportStatusBadge";
 
-/* ================================================================
-   REPORT TYPE CONFIGURATION
-   ================================================================ */
-
 const REPORT_TYPE_CONFIG = {
   SATELLITE_ANALYSIS: {
     label: "Satellite Analysis",
-    icon: FiSatellite,
+    icon: FiGlobe,
   },
   DEBRIS_ANALYSIS: {
     label: "Debris Analysis",
@@ -52,14 +49,10 @@ const REPORT_TYPE_CONFIG = {
   },
 };
 
-/* ================================================================
-   HELPERS
-   ================================================================ */
-
 function formatReportType(type) {
   return String(type ?? "Unknown")
     .trim()
-    .replaceAll("_", " ")
+    .replace(/_/g, " ")
     .toLowerCase()
     .replace(/\b\w/g, (character) => character.toUpperCase());
 }
@@ -73,24 +66,24 @@ function formatDate(value) {
     return "Not available";
   }
 
-  return new Intl.DateTimeFormat("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).format(date);
+  try {
+    return new Intl.DateTimeFormat("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    }).format(date);
+  } catch {
+    return "Not available";
+  }
 }
 
 function getReportCode(report) {
   return report?.reportCode ?? report?.id ?? "Not available";
 }
-
-/* ================================================================
-   METADATA ITEM
-   ================================================================ */
 
 function MetadataItem({ icon: Icon, label, value, mono = false }) {
   return (
@@ -108,10 +101,9 @@ function MetadataItem({ icon: Icon, label, value, mono = false }) {
         </p>
 
         <p
-          className={`
-            mt-1 break-words text-sm text-slate-200
-            ${mono ? "font-mono text-xs sm:text-sm" : ""}
-          `}
+          className={`mt-1 break-words text-sm text-slate-200 ${
+            mono ? "font-mono text-xs sm:text-sm" : ""
+          }`}
         >
           {value || "Not available"}
         </p>
@@ -119,10 +111,6 @@ function MetadataItem({ icon: Icon, label, value, mono = false }) {
     </div>
   );
 }
-
-/* ================================================================
-   ACTION BUTTON
-   ================================================================ */
 
 function ModalActionButton({
   children,
@@ -153,7 +141,7 @@ function ModalActionButton({
         focus-visible:outline-none focus-visible:ring-2
         focus-visible:ring-cyan-300/70
         disabled:cursor-not-allowed disabled:opacity-50
-        ${styles[variant]}
+        ${styles[variant] ?? styles.secondary}
       `}
     >
       {Icon && (
@@ -170,22 +158,6 @@ function ModalActionButton({
   );
 }
 
-/* ================================================================
-   REPORT DETAILS MODAL
-   ================================================================ */
-
-/**
- * Props:
- *
- * open: boolean
- * report: ReportResponse | null
- * onClose: () => void
- * onDownload: (report) => void | Promise<void>
- * downloading: boolean
- * downloadError: string | null
- * onDelete: (report) => void
- * deleting: boolean
- */
 function ReportDetailsModal({
   open,
   report,
@@ -198,19 +170,19 @@ function ReportDetailsModal({
 }) {
   const dialogTitleId = useId();
   const dialogDescriptionId = useId();
+  const dialogRef = useRef(null);
   const closeButtonRef = useRef(null);
-
-  /* ==============================================================
-     BODY SCROLL AND KEYBOARD
-     ============================================================== */
+  const previousFocusRef = useRef(null);
 
   useEffect(() => {
-    if (!open) return undefined;
+    if (!open || !report) return undefined;
+
+    previousFocusRef.current = document.activeElement;
 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
-    const frame = requestAnimationFrame(() => {
+    const focusFrame = requestAnimationFrame(() => {
       closeButtonRef.current?.focus();
     });
 
@@ -218,26 +190,60 @@ function ReportDetailsModal({
       if (event.key === "Escape" && !downloading && !deleting) {
         onClose?.();
       }
+
+      if (event.key !== "Tab") return;
+
+      const dialog = dialogRef.current;
+      if (!dialog) return;
+
+      const focusable = Array.from(
+        dialog.querySelectorAll(
+          'button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [href], [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((element) => element.getClientRects().length > 0);
+
+      if (!focusable.length) {
+        event.preventDefault();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (
+        !event.shiftKey &&
+        document.activeElement === last
+      ) {
+        event.preventDefault();
+        first.focus();
+      }
     };
 
     document.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      cancelAnimationFrame(frame);
+      cancelAnimationFrame(focusFrame);
       document.body.style.overflow = previousOverflow;
       document.removeEventListener("keydown", handleKeyDown);
+
+      const previousFocus = previousFocusRef.current;
+
+      if (previousFocus && typeof previousFocus.focus === "function") {
+        previousFocus.focus();
+      }
     };
-  }, [open, downloading, deleting, onClose]);
+  }, [open, report, downloading, deleting, onClose]);
 
   if (!open || !report) return null;
 
-  const reportType =
-    REPORT_TYPE_CONFIG[String(report.reportType ?? "").toUpperCase()];
+  const reportTypeKey = String(report.reportType ?? "").toUpperCase();
+  const reportType = REPORT_TYPE_CONFIG[reportTypeKey];
 
   const TypeIcon = reportType?.icon ?? FiFileText;
-  const typeLabel =
-    reportType?.label ?? formatReportType(report.reportType);
-
+  const typeLabel = reportType?.label ?? formatReportType(report.reportType);
   const reportCode = getReportCode(report);
 
   const handleClose = () => {
@@ -252,12 +258,12 @@ function ReportDetailsModal({
   };
 
   const handleDownload = () => {
-    if (downloading) return;
+    if (downloading || deleting) return;
     onDownload?.(report);
   };
 
   const handleDelete = () => {
-    if (deleting || !onDelete) return;
+    if (deleting || downloading || !onDelete) return;
     onDelete(report);
   };
 
@@ -265,32 +271,37 @@ function ReportDetailsModal({
     <div
       className="
         fixed inset-0 z-[100]
-        flex items-center justify-center
-        overflow-y-auto overscroll-contain
-        bg-[#020611]/80 p-3 backdrop-blur-md
-        sm:p-5
+        flex items-start justify-center
+        overflow-x-hidden overflow-y-auto overscroll-contain
+        bg-[#020611]/80
+        px-3 pb-3 pt-[100px]
+        backdrop-blur-md
+        sm:px-5 sm:pb-5 sm:pt-[100px]
       "
       onMouseDown={handleBackdropClick}
     >
       <section
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={dialogTitleId}
         aria-describedby={dialogDescriptionId}
         className="
-          relative my-auto flex max-h-[calc(100dvh-24px)]
-          w-full max-w-3xl flex-col overflow-hidden
+          relative flex w-full max-w-5xl min-w-0
+          flex-col overflow-hidden
           rounded-2xl border border-cyan-300/15
           bg-[#07111F]
           shadow-[0_24px_100px_rgba(0,0,0,0.65)]
-          sm:max-h-[calc(100dvh-40px)] sm:rounded-3xl
+          sm:rounded-3xl
         "
+        style={{
+          height: "min(620px, calc(100dvh - 120px))",
+          minHeight: "320px",
+        }}
       >
-        {/* ======================================================
-            HEADER
-            ====================================================== */}
+        {/* Fixed modal header */}
 
-        <header className="relative shrink-0 border-b border-white/[0.07] px-4 py-4 sm:px-7 sm:py-5">
+        <header className="relative z-10 shrink-0 border-b border-white/[0.07] bg-[#07111F] px-4 py-4 sm:px-7 sm:py-5">
           <div
             aria-hidden="true"
             className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/60 to-transparent"
@@ -343,22 +354,26 @@ function ReportDetailsModal({
           </div>
         </header>
 
-        {/* ======================================================
-            SCROLLABLE CONTENT
-            ====================================================== */}
+        {/* Only this content area scrolls */}
 
-        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto overscroll-contain px-4 py-5 sm:px-7 sm:py-6">
-          {/* Status and type */}
+        <div
+          className="
+            min-h-0 flex-1 space-y-6 overflow-x-hidden
+            overflow-y-auto overscroll-contain
+            px-4 py-5 sm:px-7 sm:py-6
+          "
+          style={{
+            scrollbarGutter: "stable",
+            WebkitOverflowScrolling: "touch",
+          }}
+        >
           <section>
             <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
               Current report state
             </p>
 
             <div className="mt-3 flex flex-wrap items-center gap-3">
-              <ReportStatusBadge
-                status={report.status}
-                showIcon
-              />
+              <ReportStatusBadge status={report.status} showIcon />
 
               <span className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.025] px-3 py-1.5 text-xs text-slate-400">
                 <TypeIcon
@@ -370,7 +385,6 @@ function ReportDetailsModal({
             </div>
           </section>
 
-          {/* Description */}
           <section>
             <h3 className="text-sm font-semibold text-slate-100">
               Report description
@@ -384,7 +398,6 @@ function ReportDetailsModal({
             </div>
           </section>
 
-          {/* Metadata */}
           <section>
             <h3 className="text-sm font-semibold text-slate-100">
               Report metadata
@@ -418,7 +431,6 @@ function ReportDetailsModal({
             </div>
           </section>
 
-          {/* PDF information */}
           <section className="rounded-xl border border-cyan-300/10 bg-gradient-to-br from-cyan-400/[0.055] to-transparent p-4">
             <div className="flex items-start gap-3">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-cyan-300/15 bg-cyan-400/[0.07]">
@@ -466,11 +478,9 @@ function ReportDetailsModal({
           </section>
         </div>
 
-        {/* ======================================================
-            FOOTER
-            ====================================================== */}
+        {/* Fixed modal footer */}
 
-        <footer className="flex shrink-0 flex-col-reverse gap-3 border-t border-white/[0.07] bg-[#060E19] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-7">
+        <footer className="relative z-10 flex shrink-0 flex-col-reverse gap-3 border-t border-white/[0.07] bg-[#060E19] px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-7 sm:py-4">
           <p className="text-[11px] leading-5 text-slate-500">
             Report information is shown as returned by the backend.
           </p>

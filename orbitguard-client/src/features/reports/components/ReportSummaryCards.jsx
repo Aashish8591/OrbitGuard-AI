@@ -1,4 +1,6 @@
+
 import { useMemo } from "react";
+
 import {
   FiFileText,
   FiClock,
@@ -10,6 +12,8 @@ import {
 /* ================================================================
    REPORT SUMMARY CONFIGURATION
    ================================================================ */
+
+const REPORT_CARD_BACKGROUND = "/images/Report/reportCardbg.jpg";
 
 const SUMMARY_CONFIG = [
   {
@@ -51,44 +55,44 @@ const SUMMARY_CONFIG = [
 
 const ACCENT_STYLES = {
   cyan: {
-    icon: "text-cyan-300",
-    iconSurface: "border-cyan-400/20 bg-cyan-400/[0.09]",
-    glow: "from-cyan-400/10",
-    border: "border-cyan-400/15",
+    icon: "text-cyan-200",
+    iconSurface: "border-cyan-300/25 bg-cyan-400/15",
+    border: "border-cyan-300/20",
     indicator: "bg-cyan-300",
     value: "text-white",
+    glow: "from-cyan-400/[0.14]",
   },
   amber: {
-    icon: "text-amber-300",
-    iconSurface: "border-amber-400/20 bg-amber-400/[0.09]",
-    glow: "from-amber-400/[0.09]",
-    border: "border-amber-400/15",
+    icon: "text-amber-200",
+    iconSurface: "border-amber-300/25 bg-amber-400/15",
+    border: "border-amber-300/20",
     indicator: "bg-amber-300",
     value: "text-amber-100",
+    glow: "from-amber-400/[0.12]",
   },
   blue: {
-    icon: "text-sky-300",
-    iconSurface: "border-sky-400/20 bg-sky-400/[0.09]",
-    glow: "from-sky-400/[0.09]",
-    border: "border-sky-400/15",
+    icon: "text-sky-200",
+    iconSurface: "border-sky-300/25 bg-sky-400/15",
+    border: "border-sky-300/20",
     indicator: "bg-sky-300",
     value: "text-sky-100",
+    glow: "from-sky-400/[0.13]",
   },
   emerald: {
-    icon: "text-emerald-300",
-    iconSurface: "border-emerald-400/20 bg-emerald-400/[0.09]",
-    glow: "from-emerald-400/[0.09]",
-    border: "border-emerald-400/15",
+    icon: "text-emerald-200",
+    iconSurface: "border-emerald-300/25 bg-emerald-400/15",
+    border: "border-emerald-300/20",
     indicator: "bg-emerald-300",
     value: "text-emerald-100",
+    glow: "from-emerald-400/[0.12]",
   },
   red: {
-    icon: "text-red-300",
-    iconSurface: "border-red-400/20 bg-red-400/[0.09]",
-    glow: "from-red-400/[0.09]",
-    border: "border-red-400/15",
+    icon: "text-red-200",
+    iconSurface: "border-red-300/25 bg-red-400/15",
+    border: "border-red-300/20",
     indicator: "bg-red-300",
     value: "text-red-100",
+    glow: "from-red-400/[0.13]",
   },
 };
 
@@ -97,30 +101,13 @@ const ACCENT_STYLES = {
    ================================================================ */
 
 function normalizeStatus(status) {
-  return String(status ?? "")
-    .trim()
-    .toUpperCase();
+  return String(status ?? "").trim().toUpperCase();
 }
 
-/**
- * Accepts either:
- * - An array of report objects
- * - An object containing a reports array
- *
- * The parent should pass the actual report list returned by the API.
- */
 function getReportsArray(reports) {
-  if (Array.isArray(reports)) {
-    return reports;
-  }
-
-  if (Array.isArray(reports?.data)) {
-    return reports.data;
-  }
-
-  if (Array.isArray(reports?.data?.data)) {
-    return reports.data.data;
-  }
+  if (Array.isArray(reports)) return reports;
+  if (Array.isArray(reports?.data)) return reports.data;
+  if (Array.isArray(reports?.data?.data)) return reports.data.data;
 
   return [];
 }
@@ -148,7 +135,6 @@ function calculateSummary(reports) {
           break;
 
         default:
-          // Unknown statuses count toward the total only.
           break;
       }
 
@@ -174,42 +160,68 @@ function SummaryCard({ config, value }) {
 
   return (
     <article
-      className={`
-        group relative isolate min-w-0 overflow-hidden
-        rounded-2xl border ${styles.border}
-        bg-[#071321]/90
-        p-4 sm:p-5
-        transition-all duration-300
-        hover:-translate-y-0.5
-        hover:border-white/15
-        hover:bg-[#0A1929]
-        hover:shadow-[0_12px_35px_rgba(0,0,0,0.2)]
-      `}
       aria-label={`${config.label}: ${value}`}
+      className={`
+        group relative isolate flex h-full min-w-0 flex-col
+        overflow-hidden rounded-xl border ${styles.border}
+        bg-[#071321]
+        p-3
+        transition-all duration-300
+        hover:border-white/25
+        hover:shadow-[0_10px_25px_rgba(0,0,0,0.25)]
+        sm:rounded-2xl sm:p-4
+        lg:p-5
+      `}
     >
-      {/* Restrained atmospheric highlight */}
+      {/* Background image */}
+      <div
+        aria-hidden="true"
+        className="
+          pointer-events-none absolute inset-0 -z-20
+          bg-[#071321] bg-cover bg-center
+        "
+        style={{
+          backgroundImage: `url("${REPORT_CARD_BACKGROUND}")`,
+        }}
+      />
+
+      {/* Dark overlay for readability */}
+      <div
+        aria-hidden="true"
+        className="
+          pointer-events-none absolute inset-0 -z-10
+          bg-gradient-to-br
+          from-[#06111F]/75
+          via-[#06111F]/85
+          to-[#020711]/95
+        "
+      />
+
+      {/* Accent glow */}
       <div
         aria-hidden="true"
         className={`
           pointer-events-none absolute inset-0 -z-10
           bg-gradient-to-br ${styles.glow}
-          via-transparent to-transparent
-          opacity-80 transition-opacity duration-300
+          via-transparent to-transparent opacity-70
+          transition-opacity duration-300
           group-hover:opacity-100
         `}
       />
 
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs font-medium tracking-wide text-slate-400 sm:text-sm">
+      {/* Card heading and icon */}
+      <div className="relative flex min-w-0 items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[11px] font-medium leading-4 tracking-wide text-slate-300 sm:text-xs sm:leading-5 lg:text-sm">
             {config.label}
           </p>
 
           <p
             className={`
-              mt-2 text-3xl font-semibold tracking-tight
-              tabular-nums ${styles.value}
-              sm:text-[2rem]
+              mt-1.5 text-2xl font-semibold leading-none
+              tracking-tight tabular-nums ${styles.value}
+              sm:mt-2 sm:text-3xl
+              lg:text-[2rem]
             `}
           >
             {value.toLocaleString()}
@@ -218,28 +230,28 @@ function SummaryCard({ config, value }) {
 
         <div
           className={`
-            flex h-11 w-11 shrink-0 items-center justify-center
-            rounded-xl border ${styles.iconSurface}
-            transition-transform duration-300
-            group-hover:scale-105
-            sm:h-12 sm:w-12
+            flex h-8 w-8 shrink-0 items-center justify-center
+            rounded-lg border ${styles.iconSurface}
+            sm:h-10 sm:w-10 sm:rounded-xl
+            lg:h-12 lg:w-12
           `}
         >
           <Icon
             aria-hidden="true"
-            className={`h-5 w-5 sm:h-[22px] sm:w-[22px] ${styles.icon}`}
+            className={`h-4 w-4 ${styles.icon} sm:h-5 sm:w-5 lg:h-[22px] lg:w-[22px]`}
             strokeWidth={1.8}
           />
         </div>
       </div>
 
-      <div className="mt-4 flex items-center gap-2 border-t border-white/[0.06] pt-3">
+      {/* Description */}
+      <div className="relative mt-3 flex min-w-0 items-center gap-1.5 border-t border-white/10 pt-2.5 sm:mt-4 sm:gap-2 sm:pt-3">
         <span
           aria-hidden="true"
           className={`h-1.5 w-1.5 shrink-0 rounded-full ${styles.indicator}`}
         />
 
-        <p className="truncate text-[11px] leading-5 text-slate-500 sm:text-xs">
+        <p className="truncate text-[9px] leading-4 text-slate-300 sm:text-[11px] lg:text-xs">
           {config.description}
         </p>
       </div>
@@ -251,13 +263,6 @@ function SummaryCard({ config, value }) {
    REPORT SUMMARY CARDS
    ================================================================ */
 
-/**
- * @param {Object} props
- * @param {Array|Object} props.reports Report list from the existing API.
- * @param {Object|null} props.summary Optional server-calculated summary.
- * @param {boolean} props.loading Whether the report list is loading.
- * @param {string|null} props.error Error message to display, if any.
- */
 function ReportSummaryCards({
   reports = [],
   summary,
@@ -274,16 +279,8 @@ function ReportSummaryCards({
     [reportList]
   );
 
-  /*
-   * Use a server-provided summary only when the parent has a
-   * genuine summary endpoint. Otherwise calculate from loaded reports.
-   *
-   * This avoids presenting invented totals as authoritative.
-   */
   const values = useMemo(() => {
-    if (!summary) {
-      return calculatedSummary;
-    }
+    if (!summary) return calculatedSummary;
 
     return {
       total: Number(summary.total ?? calculatedSummary.total),
@@ -302,7 +299,7 @@ function ReportSummaryCards({
     return (
       <section
         aria-label="Report summary"
-        className="rounded-2xl border border-red-400/20 bg-red-400/[0.05] p-4 sm:p-5"
+        className="rounded-xl border border-red-400/20 bg-red-400/[0.05] p-3 sm:rounded-2xl sm:p-5"
       >
         <div className="flex items-start gap-3">
           <FiAlertTriangle
@@ -310,12 +307,12 @@ function ReportSummaryCards({
             className="mt-0.5 h-5 w-5 shrink-0 text-red-300"
           />
 
-          <div>
+          <div className="min-w-0">
             <h2 className="text-sm font-semibold text-red-200">
               Report summary unavailable
             </h2>
 
-            <p className="mt-1 text-sm leading-6 text-slate-400">
+            <p className="mt-1 break-words text-sm leading-6 text-slate-400">
               {error}
             </p>
           </div>
@@ -330,21 +327,44 @@ function ReportSummaryCards({
       aria-busy={loading}
       className="w-full"
     >
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5 sm:gap-4">
+      <div
+        className="
+          grid grid-cols-2 gap-2
+          sm:gap-3
+          md:grid-cols-3
+          xl:grid-cols-5 xl:gap-4
+        "
+      >
         {SUMMARY_CONFIG.map((config) => (
-          <div key={config.key} className="min-w-0">
+          <div
+            key={config.key}
+            className={`
+              min-w-0
+              ${config.key === "failed" ? "hidden md:block" : ""}
+            `}
+          >
             {loading ? (
               <div
                 aria-label={`Loading ${config.label}`}
                 className="
-                  h-[132px] animate-pulse rounded-2xl
+                  relative h-[104px] animate-pulse
+                  overflow-hidden rounded-xl
                   border border-white/[0.07]
-                  bg-white/[0.035] p-4 sm:p-5
+                  bg-[#071321] p-3
+                  sm:h-[120px] sm:rounded-2xl sm:p-4
+                  lg:h-[132px] lg:p-5
                 "
               >
-                <div className="h-3 w-24 rounded bg-white/10" />
-                <div className="mt-4 h-8 w-16 rounded bg-white/10" />
-                <div className="mt-4 h-2 w-32 max-w-full rounded bg-white/[0.06]" />
+                <div
+                  aria-hidden="true"
+                  className="absolute inset-0 bg-gradient-to-br from-white/[0.04] to-transparent"
+                />
+
+                <div className="relative">
+                  <div className="h-3 w-20 max-w-full rounded bg-white/10" />
+                  <div className="mt-3 h-7 w-12 rounded bg-white/10 sm:mt-4 sm:h-8" />
+                  <div className="mt-3 h-2 w-24 max-w-full rounded bg-white/[0.06]" />
+                </div>
               </div>
             ) : (
               <SummaryCard

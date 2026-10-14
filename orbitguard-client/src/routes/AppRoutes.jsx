@@ -25,6 +25,8 @@ import Alerts from "../pages/app/Alerts";
 
 import Notifications from "../pages/app/Notifications";
 
+import Reports from "../pages/app/Reports";
+
 function AppRoutes() {
   return (
     <Routes>
@@ -99,7 +101,7 @@ function AppRoutes() {
               REPORTS
               ===================================================== */}
 
-          <Route path="/reports" element={<div>Reports</div>} />
+          <Route path="/reports" element={<Reports />} />
 
           {/* =====================================================
               AI ASSISTANT

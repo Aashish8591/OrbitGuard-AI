@@ -1,4 +1,6 @@
+
 import { useState } from "react";
+
 import {
   FiSearch,
   FiSliders,
@@ -10,7 +12,7 @@ import {
 
 /* ================================================================
    REPORT FILTER CONFIGURATION
-   Keep these values aligned with the backend enums.
+   Values must match the existing backend enums.
    ================================================================ */
 
 const REPORT_TYPES = [
@@ -51,18 +53,20 @@ function FilterSelect({
   className = "",
 }) {
   return (
-    <label className={`relative block min-w-0 ${className}`}>
+    <label className={`relative block w-full min-w-0 ${className}`}>
       <span className="sr-only">{label}</span>
 
       <select
+        aria-label={label}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className="
-          h-11 w-full appearance-none rounded-xl
-          border border-white/10 bg-[#071321]/95
-          py-2 pl-3 pr-9 text-sm text-slate-200
+          block h-11 w-full min-w-0 appearance-none
+          rounded-xl border border-white/10
+          bg-[#071321] py-2 pl-3 pr-10
+          text-sm text-slate-200
           outline-none transition-colors
-          hover:border-cyan-400/25
+          hover:border-cyan-400/30
           focus:border-cyan-400/60
           focus:ring-2 focus:ring-cyan-400/10
         "
@@ -90,24 +94,61 @@ function FilterSelect({
 }
 
 /* ================================================================
+   REPORT TYPE BUTTONS
+   ================================================================ */
+
+function ReportTypeButtons({
+  mobile = false,
+  reportType,
+  onReportTypeChange,
+}) {
+  return (
+    <>
+      {REPORT_TYPES.map((type) => {
+        const active = reportType === type.value;
+
+        return (
+          <button
+            key={type.value || (mobile ? "mobile-all" : "desktop-all")}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onReportTypeChange(type.value)}
+            className={
+              mobile
+                ? `
+                  inline-flex min-h-9 shrink-0 items-center justify-center
+                  rounded-lg border px-3 py-2
+                  text-xs font-medium transition-colors
+                  ${
+                    active
+                      ? "border-cyan-400/50 bg-cyan-400/10 text-cyan-200"
+                      : "border-white/[0.08] bg-white/[0.02] text-slate-400 hover:border-cyan-300/25 hover:text-white"
+                  }
+                `
+                : `
+                  inline-flex min-h-10 shrink-0 items-center justify-center
+                  whitespace-nowrap rounded-xl border px-3.5 py-2
+                  text-xs font-medium transition-all duration-200
+                  ${
+                    active
+                      ? "border-cyan-300/60 bg-gradient-to-r from-cyan-400 to-sky-500 text-[#04111D] shadow-[0_0_20px_rgba(34,211,238,0.16)]"
+                      : "border-white/[0.08] bg-[#071321]/80 text-slate-400 hover:border-cyan-300/25 hover:bg-white/[0.04] hover:text-white"
+                  }
+                `
+            }
+          >
+            {type.label}
+          </button>
+        );
+      })}
+    </>
+  );
+}
+
+/* ================================================================
    REPORT FILTERS
    ================================================================ */
 
-/**
- * Controlled filters for the Reports page.
- *
- * @param {string} search
- * @param {(value: string) => void} onSearchChange
- * @param {string} reportType
- * @param {(value: string) => void} onReportTypeChange
- * @param {string} status
- * @param {(value: string) => void} onStatusChange
- * @param {string} sortBy
- * @param {(value: string) => void} onSortChange
- * @param {"list" | "grid"} viewMode
- * @param {(value: "list" | "grid") => void} onViewModeChange
- * @param {() => void} onReset
- */
 function ReportFilters({
   search = "",
   onSearchChange = () => {},
@@ -129,287 +170,307 @@ function ReportFilters({
     status !== "" ||
     sortBy !== "createdAt:desc";
 
-  const resetFilters = () => {
-    onSearchChange("");
-    onReportTypeChange("");
-    onStatusChange("");
-    onSortChange("createdAt:desc");
-    onReset?.();
-    setMobileFiltersOpen(false);
-  };
-
   const reportTypeLabel =
     REPORT_TYPES.find((item) => item.value === reportType)?.label ??
     "All Reports";
 
-  return (
-    <section
-      aria-label="Filter reports"
-      className="w-full space-y-3"
-    >
-      {/* ======================================================
-          DESKTOP / TABLET FILTER BAR
-          ====================================================== */}
+  const selectedStatusLabel =
+    REPORT_STATUSES.find((item) => item.value === status)?.label ?? status;
 
-      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-        {/* Report type tabs */}
+  const selectedSortLabel =
+    SORT_OPTIONS.find((item) => item.value === sortBy)?.label ?? sortBy;
+
+  const resetFilters = () => {
+    if (onReset) {
+      onReset();
+    } else {
+      onSearchChange("");
+      onReportTypeChange("");
+      onStatusChange("");
+      onSortChange("createdAt:desc");
+    }
+
+    setMobileFiltersOpen(false);
+  };
+
+  return (
+    <section aria-label="Filter reports" className="w-full min-w-0 space-y-3">
+      {/* Desktop report type tabs */}
+
+      <div className="hidden min-w-0 lg:block">
         <div
           role="group"
           aria-label="Filter by report type"
           className="
-            hidden min-w-0 flex-wrap items-center gap-2
-            lg:flex
+            flex min-w-0 items-center gap-2
+            overflow-x-auto overscroll-x-contain
+            pb-1
           "
         >
-          {REPORT_TYPES.map((type) => {
-            const active = reportType === type.value;
-
-            return (
-              <button
-                key={type.value || "all"}
-                type="button"
-                onClick={() => onReportTypeChange(type.value)}
-                aria-pressed={active}
-                className={`
-                  inline-flex min-h-10 items-center justify-center
-                  rounded-xl border px-3.5 py-2
-                  text-xs font-medium transition-all duration-200
-                  ${
-                    active
-                      ? "border-cyan-300/60 bg-gradient-to-r from-cyan-400 to-sky-500 text-[#04111D] shadow-[0_0_20px_rgba(34,211,238,0.16)]"
-                      : "border-white/[0.08] bg-[#071321]/80 text-slate-400 hover:border-cyan-300/25 hover:bg-white/[0.04] hover:text-white"
-                  }
-                `}
-              >
-                {type.label}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Search and controls */}
-        <div className="flex min-w-0 flex-col gap-2 sm:flex-row xl:ml-auto">
-          {/* Search */}
-          <label className="relative block min-w-0 flex-1 sm:min-w-[220px] xl:w-[290px] xl:flex-none">
-            <span className="sr-only">
-              Search reports by code, title, or description
-            </span>
-
-            <FiSearch
-              aria-hidden="true"
-              className="
-                pointer-events-none absolute left-3.5 top-1/2
-                h-4 w-4 -translate-y-1/2 text-slate-500
-              "
-            />
-
-            <input
-              type="search"
-              value={search}
-              onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Search reports..."
-              className="
-                h-11 w-full rounded-xl
-                border border-white/10 bg-[#071321]/90
-                pl-10 pr-10 text-sm text-slate-100
-                outline-none placeholder:text-slate-600
-                transition-colors
-                hover:border-white/15
-                focus:border-cyan-400/60
-                focus:ring-2 focus:ring-cyan-400/10
-              "
-            />
-
-            {search && (
-              <button
-                type="button"
-                aria-label="Clear search"
-                onClick={() => onSearchChange("")}
-                className="
-                  absolute right-3 top-1/2
-                  -translate-y-1/2 rounded-md p-1
-                  text-slate-500 transition-colors
-                  hover:bg-white/10 hover:text-white
-                "
-              >
-                <FiX aria-hidden="true" className="h-4 w-4" />
-              </button>
-            )}
-          </label>
-
-          {/* Mobile filters trigger */}
-          <button
-            type="button"
-            aria-expanded={mobileFiltersOpen}
-            aria-controls="mobile-report-filters"
-            onClick={() => setMobileFiltersOpen((open) => !open)}
-            className="
-              inline-flex h-11 items-center justify-center gap-2
-              rounded-xl border border-white/10
-              bg-[#071321]/90 px-3.5
-              text-sm text-slate-300 transition-colors
-              hover:border-cyan-400/30 hover:text-white
-              lg:hidden
-            "
-          >
-            <FiSliders aria-hidden="true" className="h-4 w-4" />
-            Filters
-
-            {hasActiveFilters && (
-              <span
-                aria-label="Active filters"
-                className="h-1.5 w-1.5 rounded-full bg-cyan-300"
-              />
-            )}
-          </button>
-
-          {/* Desktop status filter */}
-          <FilterSelect
-            label="Filter by status"
-            value={status}
-            options={REPORT_STATUSES}
-            onChange={onStatusChange}
-            className="hidden sm:block sm:w-[145px]"
+          <ReportTypeButtons
+            reportType={reportType}
+            onReportTypeChange={onReportTypeChange}
           />
-
-          {/* Sorting */}
-          <FilterSelect
-            label="Sort reports"
-            value={sortBy}
-            options={SORT_OPTIONS}
-            onChange={onSortChange}
-            className="hidden sm:block sm:w-[165px]"
-          />
-
-          {/* View toggle */}
-          <div
-            role="group"
-            aria-label="Report display mode"
-            className="
-              hidden h-11 shrink-0 items-center gap-1
-              rounded-xl border border-white/10
-              bg-[#071321]/90 p-1 sm:flex
-            "
-          >
-            <button
-              type="button"
-              aria-label="List view"
-              aria-pressed={viewMode === "list"}
-              onClick={() => onViewModeChange("list")}
-              className={`
-                flex h-8 w-9 items-center justify-center rounded-lg
-                transition-colors
-                ${
-                  viewMode === "list"
-                    ? "bg-cyan-400 text-[#04111D]"
-                    : "text-slate-500 hover:bg-white/[0.06] hover:text-white"
-                }
-              `}
-            >
-              <FiList aria-hidden="true" className="h-4 w-4" />
-            </button>
-
-            <button
-              type="button"
-              aria-label="Grid view"
-              aria-pressed={viewMode === "grid"}
-              onClick={() => onViewModeChange("grid")}
-              className={`
-                flex h-8 w-9 items-center justify-center rounded-lg
-                transition-colors
-                ${
-                  viewMode === "grid"
-                    ? "bg-cyan-400 text-[#04111D]"
-                    : "text-slate-500 hover:bg-white/[0.06] hover:text-white"
-                }
-              `}
-            >
-              <FiGrid aria-hidden="true" className="h-4 w-4" />
-            </button>
-          </div>
         </div>
       </div>
 
-      {/* ======================================================
-          MOBILE FILTER PANEL
-          ====================================================== */}
+      {/* Search and desktop controls */}
+
+      <div
+        className="
+          grid min-w-0 grid-cols-1 gap-2
+          sm:grid-cols-[minmax(0,1fr)_auto]
+          lg:grid-cols-[minmax(200px,1fr)_minmax(150px,180px)_minmax(165px,190px)_auto]
+          lg:items-center
+        "
+      >
+        {/* Search */}
+
+        <label className="relative block min-w-0">
+          <span className="sr-only">
+            Search reports by code, title, or description
+          </span>
+
+          <FiSearch
+            aria-hidden="true"
+            className="
+              pointer-events-none absolute left-3.5 top-1/2
+              h-4 w-4 -translate-y-1/2 text-slate-500
+            "
+          />
+
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder="Search reports..."
+            className="
+              h-11 w-full min-w-0 rounded-xl
+              border border-white/10 bg-[#071321]/90
+              pl-10 pr-10 text-sm text-slate-100
+              outline-none placeholder:text-slate-600
+              transition-colors
+              hover:border-white/15
+              focus:border-cyan-400/60
+              focus:ring-2 focus:ring-cyan-400/10
+            "
+          />
+
+          {search && (
+            <button
+              type="button"
+              aria-label="Clear search"
+              onClick={() => onSearchChange("")}
+              className="
+                absolute right-3 top-1/2
+                -translate-y-1/2 rounded-md p-1
+                text-slate-500 transition-colors
+                hover:bg-white/10 hover:text-white
+              "
+            >
+              <FiX aria-hidden="true" className="h-4 w-4" />
+            </button>
+          )}
+        </label>
+
+        {/* Mobile filter toggle */}
+
+        <button
+          type="button"
+          aria-expanded={mobileFiltersOpen}
+          aria-controls="mobile-report-filters"
+          onClick={() => setMobileFiltersOpen((open) => !open)}
+          className="
+            inline-flex h-11 items-center justify-center gap-2
+            rounded-xl border border-white/10
+            bg-[#071321]/90 px-4
+            text-sm text-slate-300 transition-colors
+            hover:border-cyan-400/30 hover:text-white
+            lg:hidden
+          "
+        >
+          {mobileFiltersOpen ? (
+            <FiX aria-hidden="true" className="h-4 w-4" />
+          ) : (
+            <FiSliders aria-hidden="true" className="h-4 w-4" />
+          )}
+
+          {mobileFiltersOpen ? "Close filters" : "Filters"}
+
+          {hasActiveFilters && !mobileFiltersOpen && (
+            <span
+              aria-label="Active filters"
+              className="h-1.5 w-1.5 rounded-full bg-cyan-300"
+            />
+          )}
+        </button>
+
+        {/* Status dropdown */}
+
+        <FilterSelect
+          label="Filter by status"
+          value={status}
+          options={REPORT_STATUSES}
+          onChange={onStatusChange}
+          className="hidden sm:block sm:w-full"
+        />
+
+        {/* Sort dropdown */}
+
+        <FilterSelect
+          label="Sort reports"
+          value={sortBy}
+          options={SORT_OPTIONS}
+          onChange={onSortChange}
+          className="hidden sm:block sm:w-full"
+        />
+
+        {/* View mode */}
+
+        <div
+          role="group"
+          aria-label="Report display mode"
+          className="
+            hidden h-11 shrink-0 items-center justify-center gap-1
+            rounded-xl border border-white/10
+            bg-[#071321]/90 p-1 sm:flex
+            lg:col-start-4
+          "
+        >
+          <button
+            type="button"
+            aria-label="List view"
+            aria-pressed={viewMode === "list"}
+            onClick={() => onViewModeChange("list")}
+            className={`
+              flex h-8 w-9 items-center justify-center rounded-lg
+              transition-colors
+              ${
+                viewMode === "list"
+                  ? "bg-cyan-400 text-[#04111D]"
+                  : "text-slate-500 hover:bg-white/[0.06] hover:text-white"
+              }
+            `}
+          >
+            <FiList aria-hidden="true" className="h-4 w-4" />
+          </button>
+
+          <button
+            type="button"
+            aria-label="Grid view"
+            aria-pressed={viewMode === "grid"}
+            onClick={() => onViewModeChange("grid")}
+            className={`
+              flex h-8 w-9 items-center justify-center rounded-lg
+              transition-colors
+              ${
+                viewMode === "grid"
+                  ? "bg-cyan-400 text-[#04111D]"
+                  : "text-slate-500 hover:bg-white/[0.06] hover:text-white"
+              }
+            `}
+          >
+            <FiGrid aria-hidden="true" className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Mobile filter panel */}
 
       {mobileFiltersOpen && (
         <div
           id="mobile-report-filters"
           className="
-            grid grid-cols-1 gap-3 rounded-2xl
-            border border-white/[0.08]
-            bg-[#071321]/95 p-4
-            sm:grid-cols-2 lg:hidden
+            min-w-0 rounded-2xl border border-white/[0.08]
+            bg-[#071321]/95 p-3 sm:p-4 lg:hidden
           "
         >
-          <div className="sm:col-span-2">
-            <p className="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
+          {/* Panel heading and dedicated close button */}
+
+          <div className="mb-4 flex items-center justify-between gap-3 border-b border-white/[0.07] pb-3">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-100">
+                Report filters
+              </h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Narrow down your report list
+              </p>
+            </div>
+
+            <button
+              type="button"
+              aria-label="Close report filters"
+              onClick={() => setMobileFiltersOpen(false)}
+              className="
+                flex h-9 w-9 shrink-0 items-center justify-center
+                rounded-lg border border-white/10
+                bg-white/[0.025] text-slate-400
+                transition-colors hover:border-cyan-300/30
+                hover:bg-cyan-400/10 hover:text-white
+                focus-visible:outline-none
+                focus-visible:ring-2 focus-visible:ring-cyan-300/60
+              "
+            >
+              <FiX aria-hidden="true" className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* Report type */}
+
+          <div className="min-w-0">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
               Report type
             </p>
 
             <div className="flex flex-wrap gap-2">
-              {REPORT_TYPES.map((type) => {
-                const active = reportType === type.value;
-
-                return (
-                  <button
-                    key={type.value || "mobile-all"}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => onReportTypeChange(type.value)}
-                    className={`
-                      rounded-lg border px-3 py-2 text-xs
-                      transition-colors
-                      ${
-                        active
-                          ? "border-cyan-400/50 bg-cyan-400/10 text-cyan-200"
-                          : "border-white/[0.08] text-slate-400 hover:text-white"
-                      }
-                    `}
-                  >
-                    {type.label}
-                  </button>
-                );
-              })}
+              <ReportTypeButtons
+                mobile
+                reportType={reportType}
+                onReportTypeChange={onReportTypeChange}
+              />
             </div>
           </div>
 
-          <div>
-            <p className="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
-              Status
-            </p>
+          {/* Dropdowns: full width and spaced consistently */}
 
-            <FilterSelect
-              label="Filter by status"
-              value={status}
-              options={REPORT_STATUSES}
-              onChange={onStatusChange}
-            />
+          <div className="mt-4 grid grid-cols-1 gap-4">
+            <div className="min-w-0">
+              <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                Status
+              </label>
+
+              <FilterSelect
+                label="Filter by status"
+                value={status}
+                options={REPORT_STATUSES}
+                onChange={onStatusChange}
+              />
+            </div>
+
+            <div className="min-w-0">
+              <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                Sort by
+              </label>
+
+              <FilterSelect
+                label="Sort reports"
+                value={sortBy}
+                options={SORT_OPTIONS}
+                onChange={onSortChange}
+              />
+            </div>
           </div>
 
-          <div>
-            <p className="mb-2 text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
-              Sort by
-            </p>
+          {/* Panel actions */}
 
-            <FilterSelect
-              label="Sort reports"
-              value={sortBy}
-              options={SORT_OPTIONS}
-              onChange={onSortChange}
-            />
-          </div>
-
-          <div className="flex items-center justify-between gap-3 border-t border-white/[0.07] pt-3 sm:col-span-2">
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.07] pt-3">
             <button
               type="button"
               onClick={resetFilters}
               disabled={!hasActiveFilters}
               className="
                 inline-flex items-center gap-2 rounded-lg
-                px-3 py-2 text-sm text-slate-400
+                px-2 py-2 text-sm text-slate-400
                 transition-colors hover:text-white
                 disabled:cursor-not-allowed disabled:opacity-40
               "
@@ -422,7 +483,7 @@ function ReportFilters({
               type="button"
               onClick={() => setMobileFiltersOpen(false)}
               className="
-                rounded-lg bg-cyan-400 px-4 py-2
+                min-h-10 rounded-lg bg-cyan-400 px-4 py-2
                 text-sm font-semibold text-[#04111D]
                 transition-colors hover:bg-cyan-300
               "
@@ -434,8 +495,9 @@ function ReportFilters({
       )}
 
       {/* Active filter summary */}
+
       {hasActiveFilters && (
-        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-slate-500">
           <span>Active filters:</span>
 
           {search.trim() && (
@@ -445,20 +507,20 @@ function ReportFilters({
           )}
 
           {reportType && (
-            <span className="rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-slate-300">
+            <span className="max-w-full truncate rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-slate-300">
               {reportTypeLabel}
             </span>
           )}
 
           {status && (
             <span className="rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-slate-300">
-              {REPORT_STATUSES.find((item) => item.value === status)?.label}
+              {selectedStatusLabel}
             </span>
           )}
 
           {sortBy !== "createdAt:desc" && (
             <span className="rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-slate-300">
-              {SORT_OPTIONS.find((item) => item.value === sortBy)?.label}
+              {selectedSortLabel}
             </span>
           )}
 
