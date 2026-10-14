@@ -1,3 +1,4 @@
+
 package com.orbitguard.report.service.impl;
 
 import com.orbitguard.common.exception.BadRequestException;
@@ -21,6 +22,7 @@ import com.orbitguard.report.service.ReportService;
 import com.orbitguard.report.util.ReportPdfGenerator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,40 +31,16 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * ==============================================================
- * Report Service Implementation
- * ==============================================================
+ * Business orchestration for the OrbitGuard AI Reports module.
  *
- * Provides business orchestration for the OrbitGuard AI
- * Reports module.
+ * Handles report creation, retrieval, filtering, deletion,
+ * and delegation of PDF generation.
  *
- * <p>
- * This service coordinates:
- *
- * <ul>
- *     <li>Report validation</li>
- *     <li>Business-code generation</li>
- *     <li>Report persistence</li>
- *     <li>Report retrieval</li>
- *     <li>Report filtering</li>
- *     <li>Report deletion</li>
- *     <li>Standard API response construction</li>
- * </ul>
- *
- * <p>
- * The service does not directly interact with MongoDB.
- * Database operations are delegated to {@link ReportRepository}.
- * </p>
- *
- * <p>
- * The service also does not contain PDF-generation logic.
- * PDF generation is delegated to {@link ReportPdfGenerator}.
- * </p>
- *
- * Module : Reports
+ * Persistence is delegated to ReportRepository, mapping to
+ * ReportMapper, and PDF rendering to ReportPdfGenerator.
  *
  * @author OrbitGuard AI Team
- * @version 1.0
+ * @version 1.1
  */
 @Service
 @RequiredArgsConstructor
@@ -70,127 +48,74 @@ import java.util.Objects;
 @Transactional(readOnly = true)
 public class ReportServiceImpl implements ReportService {
 
-    /**
-     * Repository responsible for report persistence.
-     */
+    private static final String REPORT_CODE_PREFIX = "RPT";
+
+    private static final String REPORT_DELETED_SUCCESS_MESSAGE =
+            "Report deleted successfully.";
+
     private final ReportRepository reportRepository;
-
-    /**
-     * Mapper responsible for converting between
-     * Report entities and report DTOs.
-     */
     private final ReportMapper reportMapper;
-
-    /**
-     * Generates sequential numbers using MongoDB.
-     */
     private final SequenceGeneratorService sequenceGeneratorService;
-
-    /**
-     * Formats business codes such as:
-     *
-     * RPT-000001
-     */
     private final BusinessCodeGenerator businessCodeGenerator;
-
-    /**
-     * Generates PDF documents for reports.
-     */
     private final ReportPdfGenerator reportPdfGenerator;
 
-
     /**
-     * ==============================================================
-     * Generate Report
-     * ==============================================================
+     * Creates and persists a report in PENDING status.
      *
-     * Creates and persists a new report.
-     *
-     * <p>
-     * Business-code generation follows the existing OrbitGuard
-     * sequence architecture:
-     *
-     * <pre>
-     * SequenceGeneratorService
-     *          ↓
-     * REPORT_SEQUENCE
-     *          ↓
-     * BusinessCodeGenerator
-     *          ↓
-     * RPT-000001
-     * </pre>
-     *
-     * @param request report generation request
-     * @return standard API response containing generated report
+     * This method creates report metadata. It does not claim that
+     * the actual operational report has already been generated.
      */
     @Override
     @Transactional
     public ApiResponse<ReportResponse> generateReport(
             ReportGenerationRequest request
     ) {
-
         validateGenerationRequest(request);
 
+        long sequence = sequenceGeneratorService.getNextSequence(
+                SequenceConstants.REPORT_SEQUENCE
+        );
+
+        String reportCode = businessCodeGenerator.generate(
+                REPORT_CODE_PREFIX,
+                sequence
+        );
+
+        if (reportCode == null || reportCode.isBlank()) {
+            log.error(
+                    "BusinessCodeGenerator returned an invalid report code. sequence={}",
+                    sequence
+            );
+
+            throw new IllegalStateException(
+                    ReportApiConstants.REPORT_GENERATION_FAILED_MESSAGE
+            );
+        }
+
+        reportCode = reportCode.trim();
+
         /*
-         * ----------------------------------------------------------
-         * Generate next report sequence
-         * ----------------------------------------------------------
-         */
-        long sequence =
-                sequenceGeneratorService.getNextSequence(
-                        SequenceConstants.REPORT_SEQUENCE
-                );
-
-
-        /*
-         * ----------------------------------------------------------
-         * Generate business report code
-         * ----------------------------------------------------------
-         */
-        String reportCode =
-                businessCodeGenerator.generate(
-                        "RPT",
-                        sequence
-                );
-
-
-        /*
-         * ----------------------------------------------------------
-         * Defensive duplicate check
-         * ----------------------------------------------------------
-         *
-         * The sequence generator should provide unique values.
-         * This additional check protects the business-code
-         * uniqueness contract.
+         * Defensive pre-check. The MongoDB unique index must remain
+         * in place because this check alone cannot prevent races
+         * between concurrent requests.
          */
         if (reportRepository.existsByReportCode(reportCode)) {
-
-            log.error(
-                    "Generated duplicate report code: {}",
+            log.warn(
+                    "Report code already exists before persistence. reportCode={}",
                     reportCode
             );
 
             throw new DuplicateResourceException(
-                    "Report with code "
-                            + reportCode
-                            + " already exists."
+                    "Report with code " + reportCode + " already exists."
             );
         }
 
-
-        /*
-         * ----------------------------------------------------------
-         * Map request to entity
-         * ----------------------------------------------------------
-         */
-        Report report =
-                reportMapper.toEntity(request);
-
+        Report report = reportMapper.toEntity(request);
 
         if (report == null) {
-
             log.error(
-                    "ReportMapper returned null while generating report."
+                    "ReportMapper returned null while creating report. reportCode={}",
+                    reportCode
             );
 
             throw new IllegalStateException(
@@ -198,35 +123,37 @@ public class ReportServiceImpl implements ReportService {
             );
         }
 
-
         /*
-         * ----------------------------------------------------------
-         * Set generated business fields
-         * ----------------------------------------------------------
-         *
-         * These values are controlled by the service and must
-         * not come from the client request.
+         * Server-controlled fields must not be accepted from the
+         * client request.
          */
         report.setReportCode(reportCode);
+        report.setStatus(ReportStatus.PENDING);
 
-        report.setStatus(
-                ReportStatus.PENDING
-        );
+        final Report savedReport;
 
+        try {
+            savedReport = reportRepository.save(report);
+        } catch (DuplicateKeyException ex) {
+            /*
+             * Handles the concurrent-request case where another
+             * request inserts the same unique report code after
+             * the pre-check.
+             */
+            log.warn(
+                    "MongoDB rejected a duplicate report key. reportCode={}",
+                    reportCode,
+                    ex
+            );
 
-        /*
-         * ----------------------------------------------------------
-         * Persist report
-         * ----------------------------------------------------------
-         */
-        Report savedReport =
-                reportRepository.save(report);
-
+            throw new DuplicateResourceException(
+                    "Report with code " + reportCode + " already exists."
+            );
+        }
 
         if (savedReport == null) {
-
             log.error(
-                    "Repository returned null after saving report: {}",
+                    "ReportRepository returned null after saving. reportCode={}",
                     reportCode
             );
 
@@ -235,20 +162,11 @@ public class ReportServiceImpl implements ReportService {
             );
         }
 
-
-        /*
-         * ----------------------------------------------------------
-         * Map entity to response
-         * ----------------------------------------------------------
-         */
-        ReportResponse response =
-                reportMapper.toResponse(savedReport);
-
+        ReportResponse response = reportMapper.toResponse(savedReport);
 
         if (response == null) {
-
             log.error(
-                    "ReportMapper returned null response for report: {}",
+                    "ReportMapper returned a null response after persistence. reportCode={}",
                     reportCode
             );
 
@@ -257,63 +175,35 @@ public class ReportServiceImpl implements ReportService {
             );
         }
 
-
         log.info(
-                "Report generated successfully. reportCode={}",
-                reportCode
+                "Report metadata created successfully. reportCode={}, status={}",
+                savedReport.getReportCode(),
+                savedReport.getStatus()
         );
 
-
-        /*
-         * ----------------------------------------------------------
-         * Return standard OrbitGuard API response
-         * ----------------------------------------------------------
-         */
         return ResponseBuilder.success(
                 ReportApiConstants.REPORT_GENERATED_SUCCESS_MESSAGE,
                 response
         );
     }
 
-
     /**
-     * ==============================================================
-     * Get Report By Code
-     * ==============================================================
-     *
      * Retrieves a report using its unique business code.
-     *
-     * @param reportCode unique report business code
-     * @return standard API response containing the report
      */
     @Override
     public ApiResponse<ReportResponse> getReportByCode(
             String reportCode
     ) {
+        String normalizedCode = normalizeReportCode(reportCode);
 
-        validateReportCode(reportCode);
+        Report report = findReportByCode(normalizedCode);
 
-
-        Report report =
-                reportRepository.findByReportCode(
-                                reportCode.trim()
-                        )
-                        .orElseThrow(() ->
-                                new ResourceNotFoundException(
-                                        ReportApiConstants.REPORT_NOT_FOUND_MESSAGE
-                                )
-                        );
-
-
-        ReportResponse response =
-                reportMapper.toResponse(report);
-
+        ReportResponse response = reportMapper.toResponse(report);
 
         if (response == null) {
-
             log.error(
-                    "ReportMapper returned null response for report: {}",
-                    reportCode
+                    "ReportMapper returned null while retrieving report. reportCode={}",
+                    normalizedCode
             );
 
             throw new IllegalStateException(
@@ -321,47 +211,19 @@ public class ReportServiceImpl implements ReportService {
             );
         }
 
-
         return ResponseBuilder.success(
                 ReportApiConstants.REPORT_RETRIEVED_SUCCESS_MESSAGE,
                 response
         );
     }
 
-
     /**
-     * ==============================================================
-     * Get All Reports
-     * ==============================================================
-     *
-     * Retrieves all reports and converts them into lightweight
-     * summary responses.
-     *
-     * @return standard API response containing report summaries
+     * Retrieves summary responses for all reports.
      */
     @Override
     public ApiResponse<List<ReportSummaryResponse>> getAllReports() {
-
-        List<Report> reports =
-                reportRepository.findAll();
-
-
-        if (reports == null || reports.isEmpty()) {
-
-            return ResponseBuilder.success(
-                    ReportApiConstants.REPORTS_RETRIEVED_SUCCESS_MESSAGE,
-                    Collections.emptyList()
-            );
-        }
-
-
         List<ReportSummaryResponse> responses =
-                reports.stream()
-                        .filter(Objects::nonNull)
-                        .map(reportMapper::toSummaryResponse)
-                        .filter(Objects::nonNull)
-                        .toList();
-
+                mapToSummaryResponses(reportRepository.findAll());
 
         return ResponseBuilder.success(
                 ReportApiConstants.REPORTS_RETRIEVED_SUCCESS_MESSAGE,
@@ -369,34 +231,19 @@ public class ReportServiceImpl implements ReportService {
         );
     }
 
-
     /**
-     * ==============================================================
-     * Get Reports By Type
-     * ==============================================================
-     *
-     * Retrieves reports matching the supplied report type.
-     *
-     * @param reportType report type used for filtering
-     * @return standard API response containing matching reports
+     * Retrieves reports filtered by report type.
      */
     @Override
     public ApiResponse<List<ReportSummaryResponse>> getReportsByType(
             ReportType reportType
     ) {
-
         validateReportType(reportType);
 
-
-        List<Report> reports =
-                reportRepository.findByReportType(
-                        reportType
-                );
-
-
         List<ReportSummaryResponse> responses =
-                mapToSummaryResponses(reports);
-
+                mapToSummaryResponses(
+                        reportRepository.findByReportType(reportType)
+                );
 
         return ResponseBuilder.success(
                 ReportApiConstants.REPORTS_RETRIEVED_SUCCESS_MESSAGE,
@@ -404,34 +251,19 @@ public class ReportServiceImpl implements ReportService {
         );
     }
 
-
     /**
-     * ==============================================================
-     * Get Reports By Status
-     * ==============================================================
-     *
-     * Retrieves reports matching the supplied status.
-     *
-     * @param status report status used for filtering
-     * @return standard API response containing matching reports
+     * Retrieves reports filtered by status.
      */
     @Override
     public ApiResponse<List<ReportSummaryResponse>> getReportsByStatus(
             ReportStatus status
     ) {
-
         validateReportStatus(status);
 
-
-        List<Report> reports =
-                reportRepository.findByStatus(
-                        status
-                );
-
-
         List<ReportSummaryResponse> responses =
-                mapToSummaryResponses(reports);
-
+                mapToSummaryResponses(
+                        reportRepository.findByStatus(status)
+                );
 
         return ResponseBuilder.success(
                 ReportApiConstants.REPORTS_RETRIEVED_SUCCESS_MESSAGE,
@@ -439,17 +271,8 @@ public class ReportServiceImpl implements ReportService {
         );
     }
 
-
     /**
-     * ==============================================================
-     * Get Reports By Type And Status
-     * ==============================================================
-     *
      * Retrieves reports matching both report type and status.
-     *
-     * @param reportType report type used for filtering
-     * @param status report status used for filtering
-     * @return standard API response containing matching reports
      */
     @Override
     public ApiResponse<List<ReportSummaryResponse>>
@@ -457,22 +280,16 @@ public class ReportServiceImpl implements ReportService {
             ReportType reportType,
             ReportStatus status
     ) {
-
         validateReportType(reportType);
-
         validateReportStatus(status);
 
-
-        List<Report> reports =
-                reportRepository.findByReportTypeAndStatus(
-                        reportType,
-                        status
-                );
-
-
         List<ReportSummaryResponse> responses =
-                mapToSummaryResponses(reports);
-
+                mapToSummaryResponses(
+                        reportRepository.findByReportTypeAndStatus(
+                                reportType,
+                                status
+                        )
+                );
 
         return ResponseBuilder.success(
                 ReportApiConstants.REPORTS_RETRIEVED_SUCCESS_MESSAGE,
@@ -480,72 +297,108 @@ public class ReportServiceImpl implements ReportService {
         );
     }
 
-
     /**
-     * ==============================================================
-     * Delete Report
-     * ==============================================================
-     *
-     * Deletes a report using its business code.
-     *
-     * @param reportCode unique report business code
-     * @return standard API response indicating deletion success
+     * Deletes a report using its unique business code.
      */
     @Override
     @Transactional
-    public ApiResponse<Void> deleteReport(
-            String reportCode
-    ) {
+    public ApiResponse<Void> deleteReport(String reportCode) {
+        String normalizedCode = normalizeReportCode(reportCode);
 
-        validateReportCode(reportCode);
-
-
-        Report report =
-                reportRepository.findByReportCode(
-                                reportCode.trim()
-                        )
-                        .orElseThrow(() ->
-                                new ResourceNotFoundException(
-                                        ReportApiConstants.REPORT_NOT_FOUND_MESSAGE
-                                )
-                        );
-
+        Report report = findReportByCode(normalizedCode);
 
         reportRepository.delete(report);
 
-
         log.info(
                 "Report deleted successfully. reportCode={}",
-                reportCode
+                normalizedCode
         );
 
-
         return ResponseBuilder.success(
-                "Report deleted successfully.",
+                REPORT_DELETED_SUCCESS_MESSAGE,
                 null
         );
     }
 
+    /**
+     * Generates PDF bytes for an existing report.
+     *
+     * PDF layout and rendering remain the responsibility of
+     * ReportPdfGenerator.
+     */
+    @Override
+    public byte[] generateReportPdf(String reportCode) {
+        String normalizedCode = normalizeReportCode(reportCode);
+
+        Report report = findReportByCode(normalizedCode);
+
+        try {
+            byte[] pdfBytes = reportPdfGenerator.generate(report);
+
+            if (pdfBytes == null || pdfBytes.length == 0) {
+                log.error(
+                        "PDF generator returned an empty document. reportCode={}",
+                        normalizedCode
+                );
+
+                throw new IllegalStateException(
+                        ReportApiConstants.REPORT_PDF_GENERATION_FAILED_MESSAGE
+                );
+            }
+
+            log.debug(
+                    "Report PDF generated successfully. reportCode={}, bytes={}",
+                    normalizedCode,
+                    pdfBytes.length
+            );
+
+            return pdfBytes;
+        } catch (Exception ex) {
+            /*
+             * Preserve the established PDF failure contract while
+             * avoiding redundant wrapping of our own failure exception.
+             */
+            if (ex instanceof IllegalStateException
+                    && ReportApiConstants.REPORT_PDF_GENERATION_FAILED_MESSAGE
+                    .equals(ex.getMessage())) {
+                throw (IllegalStateException) ex;
+            }
+
+            log.error(
+                    "Failed to generate PDF. reportCode={}",
+                    normalizedCode,
+                    ex
+            );
+
+            throw new IllegalStateException(
+                    ReportApiConstants.REPORT_PDF_GENERATION_FAILED_MESSAGE,
+                    ex
+            );
+        }
+    }
 
     /**
-     * ==============================================================
-     * Map Reports To Summary Responses
-     * ==============================================================
-     *
-     * Centralizes entity-to-summary conversion so that filtering
-     * methods do not duplicate mapping logic.
-     *
-     * @param reports report entities
-     * @return mapped summary responses
+     * Retrieves an entity by its business code or throws the
+     * existing application-level not-found exception.
+     */
+    private Report findReportByCode(String reportCode) {
+        return reportRepository.findByReportCode(reportCode)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException(
+                                ReportApiConstants.REPORT_NOT_FOUND_MESSAGE
+                        )
+                );
+    }
+
+    /**
+     * Converts entities to summary DTOs.
      */
     private List<ReportSummaryResponse> mapToSummaryResponses(
             List<Report> reports
     ) {
-
         if (reports == null || reports.isEmpty()) {
             return Collections.emptyList();
         }
-
 
         return reports.stream()
                 .filter(Objects::nonNull)
@@ -554,149 +407,45 @@ public class ReportServiceImpl implements ReportService {
                 .toList();
     }
 
-
     /**
-     * ==============================================================
-     * Validate Report Generation Request
-     * ==============================================================
-     *
-     * Performs service-level validation for the report generation
-     * request.
-     *
-     * Bean validation annotations remain responsible for
-     * structural request validation at the controller boundary.
-     *
-     * @param request report generation request
+     * Performs the service-level null check. Bean Validation
+     * remains responsible for request-field constraints.
      */
     private void validateGenerationRequest(
             ReportGenerationRequest request
     ) {
-
         if (request == null) {
-
             throw new BadRequestException(
                     "Report generation request must not be null."
             );
         }
     }
 
-
     /**
-     * ==============================================================
-     * Validate Report Code
-     * ==============================================================
-     *
-     * @param reportCode report business code
+     * Validates and normalizes a report business code.
      */
-    private void validateReportCode(
-            String reportCode
-    ) {
-
+    private String normalizeReportCode(String reportCode) {
         if (reportCode == null || reportCode.isBlank()) {
-
             throw new BadRequestException(
                     "Report code must not be null or blank."
             );
         }
+
+        return reportCode.trim();
     }
 
-
-    /**
-     * ==============================================================
-     * Validate Report Type
-     * ==============================================================
-     *
-     * @param reportType report type
-     */
-    private void validateReportType(
-            ReportType reportType
-    ) {
-
+    private void validateReportType(ReportType reportType) {
         if (reportType == null) {
-
             throw new BadRequestException(
                     ReportApiConstants.INVALID_REPORT_TYPE_MESSAGE
             );
         }
     }
 
-
-    /**
-     * ==============================================================
-     * Validate Report Status
-     * ==============================================================
-     *
-     * @param status report status
-     */
-    private void validateReportStatus(
-            ReportStatus status
-    ) {
-
+    private void validateReportStatus(ReportStatus status) {
         if (status == null) {
-
             throw new BadRequestException(
                     ReportApiConstants.INVALID_REPORT_STATUS_MESSAGE
-            );
-        }
-    }
-
-
-    /**
-     * ==============================================================
-     * Generate Report PDF
-     * ==============================================================
-     *
-     * Generates a PDF document for an existing report.
-     *
-     * <p>
-     * The report is first retrieved using its business code.
-     * The existing {@link ReportPdfGenerator} is then responsible
-     * for converting the report entity into PDF content.
-     * </p>
-     *
-     * <p>
-     * This service method intentionally does not contain PDF
-     * formatting logic. PDF generation remains isolated inside
-     * {@link ReportPdfGenerator}.
-     * </p>
-     *
-     * @param reportCode unique report business code
-     * @return generated PDF content
-     *
-     * @throws ResourceNotFoundException when the report does not exist
-     * @throws IllegalStateException when PDF generation fails
-     */
-    @Override
-    @Transactional(readOnly = true)
-    public byte[] generateReportPdf(String reportCode) {
-
-        validateReportCode(reportCode);
-
-        Report report =
-                reportRepository.findByReportCode(
-                                reportCode.trim()
-                        )
-                        .orElseThrow(() ->
-                                new ResourceNotFoundException(
-                                        ReportApiConstants.REPORT_NOT_FOUND_MESSAGE
-                                )
-                        );
-
-        try {
-
-            return reportPdfGenerator.generate(report);
-
-        } catch (Exception ex) {
-
-            log.error(
-                    "Failed to generate PDF for reportCode={}",
-                    reportCode,
-                    ex
-            );
-
-            throw new IllegalStateException(
-                    ReportApiConstants.REPORT_PDF_GENERATION_FAILED_MESSAGE,
-                    ex
             );
         }
     }
