@@ -26,6 +26,8 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -36,11 +38,8 @@ import java.util.Objects;
  * Handles report creation, retrieval, filtering, deletion,
  * and delegation of PDF generation.
  *
- * Persistence is delegated to ReportRepository, mapping to
- * ReportMapper, and PDF rendering to ReportPdfGenerator.
- *
  * @author OrbitGuard AI Team
- * @version 1.1
+ * @version 1.2
  */
 @Service
 @RequiredArgsConstructor
@@ -60,10 +59,11 @@ public class ReportServiceImpl implements ReportService {
     private final ReportPdfGenerator reportPdfGenerator;
 
     /**
-     * Creates and persists a report in PENDING status.
+     * Creates and persists report metadata.
      *
-     * This method creates report metadata. It does not claim that
-     * the actual operational report has already been generated.
+     * Timestamps are initialized explicitly so newly created
+     * reports contain timestamp values even if Mongo auditing
+     * callbacks are not active.
      */
     @Override
     @Transactional
@@ -94,11 +94,6 @@ public class ReportServiceImpl implements ReportService {
 
         reportCode = reportCode.trim();
 
-        /*
-         * Defensive pre-check. The MongoDB unique index must remain
-         * in place because this check alone cannot prevent races
-         * between concurrent requests.
-         */
         if (reportRepository.existsByReportCode(reportCode)) {
             log.warn(
                     "Report code already exists before persistence. reportCode={}",
@@ -124,22 +119,21 @@ public class ReportServiceImpl implements ReportService {
         }
 
         /*
-         * Server-controlled fields must not be accepted from the
-         * client request.
+         * Server-controlled fields.
+         * Use UTC consistently for report timestamps.
          */
+        LocalDateTime creationTime = LocalDateTime.now(ZoneOffset.UTC);
+
         report.setReportCode(reportCode);
         report.setStatus(ReportStatus.PENDING);
+        report.setCreatedAt(creationTime);
+        report.setUpdatedAt(creationTime);
 
         final Report savedReport;
 
         try {
             savedReport = reportRepository.save(report);
         } catch (DuplicateKeyException ex) {
-            /*
-             * Handles the concurrent-request case where another
-             * request inserts the same unique report code after
-             * the pre-check.
-             */
             log.warn(
                     "MongoDB rejected a duplicate report key. reportCode={}",
                     reportCode,
@@ -162,6 +156,14 @@ public class ReportServiceImpl implements ReportService {
             );
         }
 
+        log.info(
+                "Report saved. reportCode={}, status={}, createdAt={}, updatedAt={}",
+                savedReport.getReportCode(),
+                savedReport.getStatus(),
+                savedReport.getCreatedAt(),
+                savedReport.getUpdatedAt()
+        );
+
         ReportResponse response = reportMapper.toResponse(savedReport);
 
         if (response == null) {
@@ -174,12 +176,6 @@ public class ReportServiceImpl implements ReportService {
                     ReportApiConstants.REPORT_GENERATION_FAILED_MESSAGE
             );
         }
-
-        log.info(
-                "Report metadata created successfully. reportCode={}, status={}",
-                savedReport.getReportCode(),
-                savedReport.getStatus()
-        );
 
         return ResponseBuilder.success(
                 ReportApiConstants.REPORT_GENERATED_SUCCESS_MESSAGE,
@@ -195,7 +191,6 @@ public class ReportServiceImpl implements ReportService {
             String reportCode
     ) {
         String normalizedCode = normalizeReportCode(reportCode);
-
         Report report = findReportByCode(normalizedCode);
 
         ReportResponse response = reportMapper.toResponse(report);
@@ -252,7 +247,7 @@ public class ReportServiceImpl implements ReportService {
     }
 
     /**
-     * Retrieves reports filtered by status.
+     * Retrieves reports filtered by processing status.
      */
     @Override
     public ApiResponse<List<ReportSummaryResponse>> getReportsByStatus(
@@ -272,7 +267,7 @@ public class ReportServiceImpl implements ReportService {
     }
 
     /**
-     * Retrieves reports matching both report type and status.
+     * Retrieves reports matching both type and status.
      */
     @Override
     public ApiResponse<List<ReportSummaryResponse>>
@@ -298,13 +293,12 @@ public class ReportServiceImpl implements ReportService {
     }
 
     /**
-     * Deletes a report using its unique business code.
+     * Deletes a report using its business code.
      */
     @Override
     @Transactional
     public ApiResponse<Void> deleteReport(String reportCode) {
         String normalizedCode = normalizeReportCode(reportCode);
-
         Report report = findReportByCode(normalizedCode);
 
         reportRepository.delete(report);
@@ -322,25 +316,16 @@ public class ReportServiceImpl implements ReportService {
 
     /**
      * Generates PDF bytes for an existing report.
-     *
-     * PDF layout and rendering remain the responsibility of
-     * ReportPdfGenerator.
      */
     @Override
     public byte[] generateReportPdf(String reportCode) {
         String normalizedCode = normalizeReportCode(reportCode);
-
         Report report = findReportByCode(normalizedCode);
 
         try {
             byte[] pdfBytes = reportPdfGenerator.generate(report);
 
             if (pdfBytes == null || pdfBytes.length == 0) {
-                log.error(
-                        "PDF generator returned an empty document. reportCode={}",
-                        normalizedCode
-                );
-
                 throw new IllegalStateException(
                         ReportApiConstants.REPORT_PDF_GENERATION_FAILED_MESSAGE
                 );
@@ -354,10 +339,6 @@ public class ReportServiceImpl implements ReportService {
 
             return pdfBytes;
         } catch (Exception ex) {
-            /*
-             * Preserve the established PDF failure contract while
-             * avoiding redundant wrapping of our own failure exception.
-             */
             if (ex instanceof IllegalStateException
                     && ReportApiConstants.REPORT_PDF_GENERATION_FAILED_MESSAGE
                     .equals(ex.getMessage())) {
@@ -377,10 +358,6 @@ public class ReportServiceImpl implements ReportService {
         }
     }
 
-    /**
-     * Retrieves an entity by its business code or throws the
-     * existing application-level not-found exception.
-     */
     private Report findReportByCode(String reportCode) {
         return reportRepository.findByReportCode(reportCode)
                 .orElseThrow(() ->
@@ -390,9 +367,6 @@ public class ReportServiceImpl implements ReportService {
                 );
     }
 
-    /**
-     * Converts entities to summary DTOs.
-     */
     private List<ReportSummaryResponse> mapToSummaryResponses(
             List<Report> reports
     ) {
@@ -407,10 +381,6 @@ public class ReportServiceImpl implements ReportService {
                 .toList();
     }
 
-    /**
-     * Performs the service-level null check. Bean Validation
-     * remains responsible for request-field constraints.
-     */
     private void validateGenerationRequest(
             ReportGenerationRequest request
     ) {
@@ -421,9 +391,6 @@ public class ReportServiceImpl implements ReportService {
         }
     }
 
-    /**
-     * Validates and normalizes a report business code.
-     */
     private String normalizeReportCode(String reportCode) {
         if (reportCode == null || reportCode.isBlank()) {
             throw new BadRequestException(
