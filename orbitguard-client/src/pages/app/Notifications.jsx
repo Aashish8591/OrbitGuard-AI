@@ -1,11 +1,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-
-import {
-  FiBell,
-  FiChevronLeft,
-  FiX,
-} from "react-icons/fi";
+import { FiBell, FiChevronLeft, FiX } from "react-icons/fi";
 
 import NotificationSidebar from "../../features/notifications/components/NotificationSidebar";
 import NotificationToolbar from "../../features/notifications/components/NotificationToolbar";
@@ -24,7 +19,7 @@ import {
 } from "../../services/notificationService";
 
 const DEFAULT_FILTER = "all";
-
+const DEFAULT_DATE_RANGE = "7_DAYS";
 const PRIORITY_OPTIONS = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 
 const CATEGORY_FILTERS = new Set([
@@ -37,16 +32,42 @@ const CATEGORY_FILTERS = new Set([
   "info",
 ]);
 
+const DATE_RANGES = new Set([
+  "24_HOURS",
+  "7_DAYS",
+  "30_DAYS",
+  "90_DAYS",
+  "ALL_TIME",
+]);
+
 function normalizeText(value) {
   return String(value ?? "").trim().toLowerCase();
 }
 
-function getNotificationId(notification) {
+function getNotificationKey(notification) {
+  return (
+    notification?.id ??
+    notification?._id ??
+    notification?.notificationCode ??
+    notification?.notificationId ??
+    null
+  );
+}
+
+function getApiNotificationId(notification) {
   return notification?.id ?? notification?._id ?? null;
 }
 
+function getNotificationStatus(notification) {
+  return String(notification?.status ?? "").trim().toUpperCase();
+}
+
 function isNotificationRead(notification) {
-  return String(notification?.status ?? "").toUpperCase() === "READ";
+  return getNotificationStatus(notification) === "READ";
+}
+
+function isNotificationUnread(notification) {
+  return getNotificationStatus(notification) === "UNREAD";
 }
 
 function getNotificationCategory(notification) {
@@ -55,7 +76,10 @@ function getNotificationCategory(notification) {
 
 function matchesCategory(notification, filter) {
   if (filter === "all") return true;
-  if (filter === "unread") return !isNotificationRead(notification);
+
+  if (filter === "unread") {
+    return isNotificationUnread(notification);
+  }
 
   return getNotificationCategory(notification) === filter;
 }
@@ -70,31 +94,75 @@ function matchesSearch(notification, query) {
     notification?.priority,
     notification?.status,
     notification?.notificationCode,
+    notification?.recipientId,
     notification?.alertId,
     notification?.collisionRiskId,
   ]
-    .filter((value) => value != null)
+    .filter((value) => value !== null && value !== undefined)
     .join(" ");
 
   return normalizeText(searchable).includes(query);
+}
+
+function matchesDateRange(notification, dateRange) {
+  if (!dateRange || dateRange === "ALL_TIME") return true;
+
+  const timestamp = new Date(notification?.createdAt ?? "").getTime();
+
+  if (!Number.isFinite(timestamp)) return false;
+
+  const rangeMilliseconds = {
+    "24_HOURS": 24 * 60 * 60 * 1000,
+    "7_DAYS": 7 * 24 * 60 * 60 * 1000,
+    "30_DAYS": 30 * 24 * 60 * 60 * 1000,
+    "90_DAYS": 90 * 24 * 60 * 60 * 1000,
+  };
+
+  const limit = rangeMilliseconds[dateRange];
+
+  if (!limit) return true;
+
+  const now = Date.now();
+
+  return timestamp >= now - limit && timestamp <= now;
 }
 
 function filterNotifications(
   notifications,
   activeFilter,
   searchQuery,
-  priorities
+  priorities,
+  dateRange,
+  readStatus
 ) {
   const query = normalizeText(searchQuery);
 
   return notifications.filter((notification) => {
-    if (!notification) return false;
+    if (
+      !notification ||
+      typeof notification !== "object" ||
+      Array.isArray(notification)
+    ) {
+      return false;
+    }
 
     if (!matchesCategory(notification, activeFilter)) return false;
 
-    const priority = String(notification.priority ?? "").toUpperCase();
+    const priority = String(notification?.priority ?? "")
+      .trim()
+      .toUpperCase();
 
     if (priorities.length > 0 && !priorities.includes(priority)) {
+      return false;
+    }
+
+    if (!matchesDateRange(notification, dateRange)) return false;
+
+    if (readStatus === "UNREAD" && !isNotificationUnread(notification)) {
+      return false;
+    }
+
+    if (readStatus === "READ" && !isNotificationRead(notification)) {
       return false;
     }
 
@@ -103,18 +171,19 @@ function filterNotifications(
 }
 
 function getResponseBody(response) {
-  const body = response?.data ?? response;
-  return unwrapResponse(body);
+  return unwrapResponse(response?.data ?? response);
 }
 
 function getNotificationPage(response) {
   const body = getResponseBody(response);
-
-  if (Array.isArray(body)) {
-    return { items: body, totalElements: body.length };
-  }
-
   const page = body?.data ?? body?.result ?? body;
+
+  if (Array.isArray(page)) {
+    return {
+      items: page.filter(Boolean),
+      totalElements: page.length,
+    };
+  }
 
   const items =
     page?.content ??
@@ -123,12 +192,42 @@ function getNotificationPage(response) {
     page?.records ??
     [];
 
+  const parsedTotal = Number(
+    page?.totalElements ?? page?.totalItems ?? page?.total ?? items.length
+  );
+
+  const validItems = Array.isArray(items)
+    ? items.filter(
+        (item) =>
+          item &&
+          typeof item === "object" &&
+          !Array.isArray(item)
+      )
+    : [];
+
   return {
-    items: Array.isArray(items) ? items.filter(Boolean) : [],
+    items: validItems,
     totalElements:
-      Number(page?.totalElements ?? page?.totalItems ?? page?.total ?? items.length) ||
-      0,
+      Number.isFinite(parsedTotal) && parsedTotal >= 0
+        ? parsedTotal
+        : validItems.length,
   };
+}
+
+function getUnreadCountFromResponse(response) {
+  const body = getResponseBody(response);
+
+  const value =
+    typeof body === "number"
+      ? body
+      : body?.count ??
+        body?.unreadCount ??
+        body?.data?.count ??
+        body?.data?.unreadCount;
+
+  const count = Number(value);
+
+  return Number.isFinite(count) && count >= 0 ? count : null;
 }
 
 function getErrorMessage(error) {
@@ -140,7 +239,7 @@ function getErrorMessage(error) {
   );
 }
 
-function Notifications({
+export default function Notifications({
   notifications: suppliedNotifications,
   loading: suppliedLoading,
   refreshing: suppliedRefreshing,
@@ -156,6 +255,7 @@ function Notifications({
   const [remoteNotifications, setRemoteNotifications] = useState([]);
   const [remoteTotal, setRemoteTotal] = useState(0);
   const [remoteUnreadCount, setRemoteUnreadCount] = useState(null);
+
   const [remoteLoading, setRemoteLoading] = useState(true);
   const [remoteRefreshing, setRemoteRefreshing] = useState(false);
   const [remoteError, setRemoteError] = useState(null);
@@ -164,15 +264,31 @@ function Notifications({
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedId, setSelectedId] = useState(null);
   const [selectedPriorities, setSelectedPriorities] = useState([]);
+  const [dateRange, setDateRange] = useState(DEFAULT_DATE_RANGE);
+  const [readStatus, setReadStatus] = useState("ALL");
+  const [sortBy, setSortBy] = useState("NEWEST");
+
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
+  const [markingAllRead, setMarkingAllRead] = useState(false);
+  const [updatingNotificationId, setUpdatingNotificationId] = useState(null);
+  const [deletingNotificationId, setDeletingNotificationId] = useState(null);
 
   const isControlled = Array.isArray(suppliedNotifications);
 
-  const notificationList = useMemo(
-    () =>
-      (isControlled ? suppliedNotifications : remoteNotifications).filter(Boolean),
-    [isControlled, suppliedNotifications, remoteNotifications]
-  );
+  const notificationList = useMemo(() => {
+    const source = isControlled
+      ? suppliedNotifications
+      : remoteNotifications;
+
+    return Array.isArray(source)
+      ? source.filter(
+          (item) =>
+            item &&
+            typeof item === "object" &&
+            !Array.isArray(item)
+        )
+      : [];
+  }, [isControlled, suppliedNotifications, remoteNotifications]);
 
   const loading = suppliedLoading ?? remoteLoading;
   const refreshing = suppliedRefreshing ?? remoteRefreshing;
@@ -181,7 +297,9 @@ function Notifications({
   const loadNotifications = useCallback(
     async ({ refresh = false } = {}) => {
       if (isControlled) {
-        if (refresh) onRefresh?.();
+        if (refresh && typeof onRefresh === "function") {
+          await onRefresh();
+        }
         return;
       }
 
@@ -194,27 +312,13 @@ function Notifications({
       setRemoteError(null);
 
       try {
-        const params = {
+        const response = await getNotifications({
           page: 0,
           size: 100,
           sortBy: "createdAt",
           direction: "DESC",
-        };
+        });
 
-        if (activeFilter === "unread") params.status = "UNREAD";
-        else if (activeFilter !== "all" && CATEGORY_FILTERS.has(activeFilter)) {
-          params.type = activeFilter.toUpperCase();
-        }
-
-        if (selectedPriorities.length === 1) {
-          params.priority = selectedPriorities[0];
-        }
-
-        if (searchQuery.trim()) {
-          params.keyword = searchQuery.trim();
-        }
-
-        const response = await getNotifications(params);
         const page = getNotificationPage(response);
 
         setRemoteNotifications(page.items);
@@ -222,23 +326,19 @@ function Notifications({
 
         if (recipientId != null && String(recipientId).trim()) {
           try {
-            const countResponse = await getUnreadNotificationCount(recipientId);
-            const countBody = getResponseBody(countResponse);
-            const countValue =
-              typeof countBody === "number"
-                ? countBody
-                : Number(
-                    countBody?.count ??
-                    countBody?.unreadCount ??
-                    countBody?.data?.count
-                  );
+            const countResponse =
+              await getUnreadNotificationCount(recipientId);
 
-            if (Number.isFinite(countValue)) {
-              setRemoteUnreadCount(countValue);
+            const count = getUnreadCountFromResponse(countResponse);
+
+            if (count !== null) {
+              setRemoteUnreadCount(count);
             }
           } catch {
-            // Keep the inbox usable if the separate unread-count request fails.
+            // Keep the inbox usable if the count request fails.
           }
+        } else {
+          setRemoteUnreadCount(null);
         }
       } catch (requestError) {
         setRemoteError(getErrorMessage(requestError));
@@ -247,47 +347,62 @@ function Notifications({
         setRemoteRefreshing(false);
       }
     },
-    [
-      isControlled,
-      onRefresh,
-      activeFilter,
-      selectedPriorities,
-      searchQuery,
-      recipientId,
-    ]
+    [isControlled, onRefresh, recipientId]
   );
 
   useEffect(() => {
     void loadNotifications();
   }, [loadNotifications]);
 
-  const filteredNotifications = useMemo(
-    () =>
-      filterNotifications(
-        notificationList,
-        activeFilter,
-        searchQuery,
-        selectedPriorities
-      ),
-    [notificationList, activeFilter, searchQuery, selectedPriorities]
-  );
+  const filteredNotifications = useMemo(() => {
+    const filtered = filterNotifications(
+      notificationList,
+      activeFilter,
+      searchQuery,
+      selectedPriorities,
+      dateRange,
+      readStatus
+    );
 
-  const selectedNotification = useMemo(
-    () =>
-      selectedId == null
-        ? null
-        : notificationList.find(
-            (item) => String(getNotificationId(item)) === String(selectedId)
-          ) ?? null,
-    [notificationList, selectedId]
-  );
+    return [...filtered].sort((a, b) => {
+      const first = new Date(a?.createdAt ?? "").getTime();
+      const second = new Date(b?.createdAt ?? "").getTime();
 
-  const unreadCount = useMemo(
-    () =>
-      remoteUnreadCount ??
-      notificationList.filter((item) => !isNotificationRead(item)).length,
-    [remoteUnreadCount, notificationList]
-  );
+      const firstTime = Number.isFinite(first) ? first : 0;
+      const secondTime = Number.isFinite(second) ? second : 0;
+
+      return sortBy === "OLDEST"
+        ? firstTime - secondTime
+        : secondTime - firstTime;
+    });
+  }, [
+    notificationList,
+    activeFilter,
+    searchQuery,
+    selectedPriorities,
+    dateRange,
+    readStatus,
+    sortBy,
+  ]);
+
+  const selectedNotification = useMemo(() => {
+    if (selectedId == null) return null;
+
+    return (
+      notificationList.find(
+        (item) =>
+          String(getNotificationKey(item)) === String(selectedId)
+      ) ?? null
+    );
+  }, [notificationList, selectedId]);
+
+  const unreadCount = useMemo(() => {
+    if (remoteUnreadCount !== null && !isControlled) {
+      return remoteUnreadCount;
+    }
+
+    return notificationList.filter(isNotificationUnread).length;
+  }, [remoteUnreadCount, isControlled, notificationList]);
 
   const categoryCounts = useMemo(() => {
     const counts = {
@@ -302,7 +417,12 @@ function Notifications({
 
     for (const notification of notificationList) {
       const category = getNotificationCategory(notification);
-      if (Object.hasOwn(counts, category) && category !== "all" && category !== "unread") {
+
+      if (
+        Object.hasOwn(counts, category) &&
+        category !== "all" &&
+        category !== "unread"
+      ) {
         counts[category] += 1;
       }
     }
@@ -311,10 +431,11 @@ function Notifications({
   }, [notificationList, remoteTotal, unreadCount]);
 
   const handleSelectNotification = useCallback((notification) => {
-    const id = getNotificationId(notification);
-    if (id == null) return;
+    const key = getNotificationKey(notification);
 
-    setSelectedId(id);
+    if (key == null) return;
+
+    setSelectedId(key);
     setMobileDetailOpen(true);
   }, []);
 
@@ -324,12 +445,16 @@ function Notifications({
   }, []);
 
   const handlePriorityToggle = useCallback((priority) => {
-    if (!PRIORITY_OPTIONS.includes(priority)) return;
+    const normalized = String(priority ?? "")
+      .trim()
+      .toUpperCase();
+
+    if (!PRIORITY_OPTIONS.includes(normalized)) return;
 
     setSelectedPriorities((current) =>
-      current.includes(priority)
-        ? current.filter((item) => item !== priority)
-        : [...current, priority]
+      current.includes(normalized)
+        ? current.filter((item) => item !== normalized)
+        : [...current, normalized]
     );
   }, []);
 
@@ -337,6 +462,8 @@ function Notifications({
     setActiveFilter(DEFAULT_FILTER);
     setSearchQuery("");
     setSelectedPriorities([]);
+    setDateRange(DEFAULT_DATE_RANGE);
+    setReadStatus("ALL");
   }, []);
 
   const handleRefresh = useCallback(() => {
@@ -345,13 +472,26 @@ function Notifications({
 
   const updateReadStatus = useCallback(
     async (notification, action) => {
-      const id = getNotificationId(notification);
-      if (id == null) return;
+      const id = getApiNotificationId(notification);
 
-      const callback = action === "READ" ? onMarkRead : onMarkUnread;
+      if (id == null || !["READ", "UNREAD"].includes(action)) {
+        setRemoteError("This notification has no usable backend ID.");
+        return;
+      }
+
+      if (updatingNotificationId != null) return;
+
+      const previousStatus = isNotificationRead(notification)
+        ? "READ"
+        : "UNREAD";
+
+      setUpdatingNotificationId(id);
+      setRemoteError(null);
 
       try {
-        if (callback) {
+        const callback = action === "READ" ? onMarkRead : onMarkUnread;
+
+        if (typeof callback === "function") {
           await callback(notification);
         } else if (action === "READ") {
           await markNotificationAsRead(id);
@@ -360,26 +500,46 @@ function Notifications({
         }
 
         if (!isControlled) {
+          const now = new Date().toISOString();
+
           setRemoteNotifications((current) =>
             current.map((item) =>
-              String(getNotificationId(item)) === String(id)
-                ? { ...item, status: action, readAt: action === "READ" ? new Date().toISOString() : null }
+              String(getApiNotificationId(item)) === String(id)
+                ? {
+                    ...item,
+                    status: action,
+                    readAt: action === "READ" ? now : null,
+                  }
                 : item
             )
           );
-          setRemoteUnreadCount((current) =>
-            current == null
-              ? current
-              : Math.max(0, current + (action === "READ" ? -1 : 1))
-          );
+
+          setRemoteUnreadCount((current) => {
+            if (current == null || previousStatus === action) {
+              return current;
+            }
+
+            return Math.max(
+              0,
+              current + (action === "READ" ? -1 : 1)
+            );
+          });
         }
 
         await loadNotifications({ refresh: true });
       } catch (requestError) {
         setRemoteError(getErrorMessage(requestError));
+      } finally {
+        setUpdatingNotificationId(null);
       }
     },
-    [onMarkRead, onMarkUnread, isControlled, loadNotifications]
+    [
+      updatingNotificationId,
+      onMarkRead,
+      onMarkUnread,
+      isControlled,
+      loadNotifications,
+    ]
   );
 
   const handleMarkRead = useCallback(
@@ -394,11 +554,20 @@ function Notifications({
 
   const handleDelete = useCallback(
     async (notification) => {
-      const id = getNotificationId(notification);
-      if (id == null) return;
+      const id = getApiNotificationId(notification);
+
+      if (id == null) {
+        setRemoteError("This notification has no usable backend ID.");
+        return;
+      }
+
+      if (deletingNotificationId != null) return;
+
+      setDeletingNotificationId(id);
+      setRemoteError(null);
 
       try {
-        if (onDelete) {
+        if (typeof onDelete === "function") {
           await onDelete(notification);
         } else {
           await deleteNotification(id);
@@ -407,46 +576,134 @@ function Notifications({
         if (!isControlled) {
           setRemoteNotifications((current) =>
             current.filter(
-              (item) => String(getNotificationId(item)) !== String(id)
+              (item) =>
+                String(getApiNotificationId(item)) !== String(id)
             )
           );
         }
 
-        if (String(selectedId) === String(id)) handleCloseDetail();
+        if (
+          selectedId != null &&
+          String(selectedId) === String(getNotificationKey(notification))
+        ) {
+          handleCloseDetail();
+        }
 
         await loadNotifications({ refresh: true });
       } catch (requestError) {
         setRemoteError(getErrorMessage(requestError));
+      } finally {
+        setDeletingNotificationId(null);
       }
     },
-    [onDelete, isControlled, selectedId, handleCloseDetail, loadNotifications]
+    [
+      deletingNotificationId,
+      onDelete,
+      isControlled,
+      selectedId,
+      handleCloseDetail,
+      loadNotifications,
+    ]
   );
 
   const handleArchive = useCallback(
     async (notification) => {
-      // The backend has soft-delete, not a separate archive operation.
-      if (onArchive) {
-        await onArchive(notification);
+      if (typeof onArchive === "function") {
+        try {
+          await onArchive(notification);
+          await loadNotifications({ refresh: true });
+        } catch (requestError) {
+          setRemoteError(getErrorMessage(requestError));
+        }
         return;
       }
 
+      // The current backend contract uses soft-delete instead
+      // of a separate archive operation.
       await handleDelete(notification);
     },
-    [onArchive, handleDelete]
+    [onArchive, handleDelete, loadNotifications]
   );
 
   const handleMarkAllRead = useCallback(async () => {
-    // No bulk mark-as-read endpoint exists in the current backend contract.
-    // Use an existing parent implementation if one was provided.
-    if (onMarkAllRead) {
-      await onMarkAllRead();
+    if (markingAllRead || unreadCount === 0) return;
+
+    setMarkingAllRead(true);
+    setRemoteError(null);
+
+    try {
+      if (typeof onMarkAllRead === "function") {
+        await onMarkAllRead();
+      } else {
+        const unreadItems = notificationList.filter(isNotificationUnread);
+
+        for (const notification of unreadItems) {
+          if (typeof onMarkRead === "function") {
+            await onMarkRead(notification);
+          } else {
+            const id = getApiNotificationId(notification);
+
+            if (id != null) {
+              await markNotificationAsRead(id);
+            }
+          }
+        }
+      }
+
       await loadNotifications({ refresh: true });
+    } catch (requestError) {
+      setRemoteError(getErrorMessage(requestError));
+      await loadNotifications({ refresh: true });
+    } finally {
+      setMarkingAllRead(false);
     }
-  }, [onMarkAllRead, loadNotifications]);
+  }, [
+    markingAllRead,
+    unreadCount,
+    onMarkAllRead,
+    notificationList,
+    onMarkRead,
+    loadNotifications,
+  ]);
+
+  const handleToolbarFiltersChange = useCallback((nextFilters) => {
+    if (!nextFilters || typeof nextFilters !== "object") return;
+
+    if (nextFilters.category !== undefined) {
+      const category = normalizeText(nextFilters.category);
+
+      if (CATEGORY_FILTERS.has(category)) {
+        setActiveFilter(category);
+      }
+    }
+
+    if (nextFilters.readStatus !== undefined) {
+      const status = String(nextFilters.readStatus).toUpperCase();
+
+      if (["ALL", "READ", "UNREAD"].includes(status)) {
+        setReadStatus(status);
+      }
+    }
+  }, []);
+
+  const handleSidebarCategoryChange = useCallback((category) => {
+    const normalized = normalizeText(category);
+
+    if (CATEGORY_FILTERS.has(normalized)) {
+      setActiveFilter(normalized);
+    }
+  }, []);
+
+  const hasActiveFilters =
+    activeFilter !== DEFAULT_FILTER ||
+    searchQuery.trim().length > 0 ||
+    selectedPriorities.length > 0 ||
+    dateRange !== DEFAULT_DATE_RANGE ||
+    readStatus !== "ALL";
 
   if (loading && notificationList.length === 0) {
     return (
-      <div className="h-[calc(100svh-68px)] min-h-0 overflow-hidden p-3 sm:p-4">
+      <div className="flex h-[calc(100dvh-68px)] min-h-0 flex-col overflow-hidden p-2 sm:p-4">
         <NotificationSkeleton layout="workspace" />
       </div>
     );
@@ -458,13 +715,27 @@ function Notifications({
       onClose={handleCloseDetail}
       onMarkRead={handleMarkRead}
       onMarkUnread={handleMarkUnread}
-      onArchive={handleArchive}
       onDelete={handleDelete}
+      onArchive={handleArchive}
+      isUpdating={
+        updatingNotificationId != null &&
+        String(updatingNotificationId) ===
+          String(getApiNotificationId(selectedNotification))
+      }
+      isDeleting={
+        deletingNotificationId != null &&
+        String(deletingNotificationId) ===
+          String(getApiNotificationId(selectedNotification))
+      }
     />
   ) : (
     <div className="flex h-full min-h-[280px] flex-col items-center justify-center px-6 py-10 text-center">
       <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-cyan-400/20 bg-cyan-400/[0.06]">
-        <FiBell size={24} className="text-cyan-300/80" />
+        <FiBell
+          size={24}
+          className="text-cyan-300/80"
+          aria-hidden="true"
+        />
       </div>
 
       <h2 className="font-['Orbitron'] text-sm font-semibold text-slate-200">
@@ -472,7 +743,8 @@ function Notifications({
       </h2>
 
       <p className="mt-3 max-w-[260px] text-xs leading-6 text-slate-500">
-        Select a notification from the inbox to inspect its details and available actions.
+        Select a notification from the inbox to inspect its details and
+        available actions.
       </p>
 
       <div className="mt-6 flex items-center gap-2">
@@ -485,28 +757,41 @@ function Notifications({
   );
 
   return (
-    <main className="relative isolate z-10 h-[calc(100svh-68px)] min-h-0 w-full min-w-0 overflow-hidden font-['Inter'] text-slate-100">
-      <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
+    <main className="relative isolate z-10 flex h-[calc(100dvh-68px)] min-h-0 w-full min-w-0 flex-col overflow-hidden font-['Inter'] text-slate-100">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 -z-10 overflow-hidden"
+      >
         <div className="absolute -top-36 left-[25%] h-96 w-96 rounded-full bg-cyan-500/[0.035] blur-[110px]" />
         <div className="absolute right-0 top-24 h-80 w-80 rounded-full bg-blue-600/[0.04] blur-[100px]" />
       </div>
 
-      <div className="grid h-full min-h-0 min-w-0 grid-cols-1 gap-3 p-3 sm:p-4 xl:grid-cols-[minmax(190px,0.75fr)_minmax(0,1.8fr)_minmax(300px,1.25fr)] 2xl:grid-cols-[225px_minmax(0,1fr)_365px]">
+      {/*
+        Important:
+        - Explicit minmax(0, 1fr) row prevents grid min-content sizing
+          from pushing the inbox outside its available height.
+        - At tablet widths, sidebar and inbox occupy separate columns.
+        - The notification stream below owns its own vertical scrolling.
+      */}
+      <div className="grid h-full min-h-0 min-w-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)] gap-2 overflow-hidden p-2 sm:gap-3 sm:p-4 md:grid-cols-[minmax(180px,0.7fr)_minmax(0,1.8fr)] xl:grid-cols-[minmax(190px,0.75fr)_minmax(0,1.8fr)_minmax(300px,1.25fr)] 2xl:grid-cols-[225px_minmax(0,1fr)_365px]">
         <aside
           aria-label="Notification filters"
-          className="hidden min-h-0 min-w-0 overflow-y-auto overscroll-contain rounded-xl border border-cyan-400/15 bg-[#040d1b]/95 [scrollbar-width:thin] [scrollbar-color:rgba(80,190,220,0.25)_transparent] md:block"
+          className="hidden min-h-0 min-w-0 overflow-x-hidden overflow-y-auto overscroll-contain rounded-xl border border-cyan-400/15 bg-[#040d1b]/95 [scrollbar-width:thin] [scrollbar-color:rgba(80,190,220,0.25)_transparent] md:block"
         >
           <NotificationSidebar
-            activeFilter={activeFilter}
-            onFilterChange={(filter) => {
-              const normalized = normalizeText(filter);
-              setActiveFilter(CATEGORY_FILTERS.has(normalized) ? normalized : DEFAULT_FILTER);
-            }}
+            activeCategory={activeFilter.toUpperCase()}
+            onCategoryChange={handleSidebarCategoryChange}
             selectedPriorities={selectedPriorities}
             onPriorityToggle={handlePriorityToggle}
             counts={categoryCounts}
-            unreadCount={unreadCount}
+            dateRange={dateRange}
+            onDateRangeChange={(value) => {
+              if (DATE_RANGES.has(value)) {
+                setDateRange(value);
+              }
+            }}
             onResetFilters={handleResetFilters}
+            disabled={loading || refreshing || markingAllRead}
           />
         </aside>
 
@@ -514,21 +799,38 @@ function Notifications({
           aria-label="Notification inbox"
           className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-cyan-400/15 bg-[#040d1b]/95 shadow-[0_18px_60px_rgba(0,0,0,0.18)]"
         >
-          <div className="shrink-0 border-b border-white/[0.07] bg-[#061121]/95 p-3">
+          <div className="relative z-20 shrink-0 border-b border-white/[0.07] bg-[#061121]/95 p-2.5 sm:p-3">
             <NotificationToolbar
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}
+              filters={{
+                category: activeFilter.toUpperCase(),
+                readStatus,
+              }}
+              onFiltersChange={handleToolbarFiltersChange}
+              sortBy={sortBy}
+              onSortChange={setSortBy}
               onMarkAllRead={handleMarkAllRead}
               onRefresh={handleRefresh}
-              refreshing={refreshing}
               unreadCount={unreadCount}
+              totalCount={filteredNotifications.length}
+              loading={loading}
+              refreshing={refreshing}
+              markingAllRead={markingAllRead}
+              disabled={loading || refreshing || markingAllRead}
             />
 
             {error && (
-              <div role="alert" className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-rose-400/20 bg-rose-500/[0.07] px-3 py-2.5">
-                <p className="min-w-0 text-xs leading-5 text-rose-200">
-                  {typeof error === "string" ? error : error?.message ?? "Please retry the request."}
+              <div
+                role="alert"
+                className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-rose-400/20 bg-rose-500/[0.07] px-3 py-2.5"
+              >
+                <p className="min-w-0 flex-1 text-xs leading-5 text-rose-200">
+                  {typeof error === "string"
+                    ? error
+                    : error?.message ?? "Please retry the request."}
                 </p>
+
                 <button
                   type="button"
                   onClick={handleRefresh}
@@ -540,31 +842,83 @@ function Notifications({
               </div>
             )}
 
-            <div className="mt-3 flex items-center justify-between gap-3 text-[11px] text-slate-500">
-              <span>
+            <div className="mt-2.5 flex items-center justify-between gap-3 border-t border-white/[0.055] pt-2.5 text-[11px] text-slate-500">
+              <span className="min-w-0 truncate">
                 <span className="mr-1.5 text-cyan-300">●</span>
                 {filteredNotifications.length} notifications shown
               </span>
-              <span className="text-rose-300">{unreadCount} unread</span>
+
+              <span className="shrink-0 text-rose-300">
+                {unreadCount} unread
+              </span>
             </div>
           </div>
 
-          <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain p-3 [scrollbar-width:thin] [scrollbar-color:rgba(80,190,220,0.28)_transparent]">
-            {filteredNotifications.length > 0 ? (
+          {/*
+            Dedicated scroll viewport.
+
+            flex-1 + min-h-0 gives this element a bounded height.
+            overflow-y-auto enables wheel, trackpad, keyboard, and touch
+            scrolling when the rendered notification content exceeds it.
+            tabIndex=0 also allows keyboard users to focus the viewport.
+          */}
+          <div
+            role="region"
+            aria-label="Notification stream"
+            tabIndex={0}
+            className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-auto touch-pan-y p-2.5 sm:p-3 [scrollbar-width:thin] [scrollbar-color:rgba(80,190,220,0.45)_transparent] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-cyan-400/30"
+            style={{
+              WebkitOverflowScrolling: "touch",
+              overscrollBehaviorY: "contain",
+            }}
+          >
+            {error && notificationList.length === 0 ? (
+              <NotificationEmptyState
+                type="empty"
+                title="Unable to load notifications"
+                description={String(
+                  typeof error === "string"
+                    ? error
+                    : error?.message ?? "Please try again."
+                )}
+                primaryLabel="Retry loading"
+                onPrimaryAction={handleRefresh}
+                loading={refreshing}
+              />
+            ) : filteredNotifications.length > 0 ? (
               <NotificationFeed
                 notifications={filteredNotifications}
-                selectedId={selectedId}
-                onSelect={handleSelectNotification}
+                selectedNotification={selectedNotification}
+                onSelectNotification={handleSelectNotification}
                 onMarkRead={handleMarkRead}
+                loading={false}
+                error={null}
+                onRetry={handleRefresh}
+                hasFilters={hasActiveFilters}
+                onClearFilters={handleResetFilters}
+                compact
+                maxHeight="none"
               />
             ) : (
               <NotificationEmptyState
-                hasFilters={
-                  activeFilter !== DEFAULT_FILTER ||
-                  searchQuery.trim().length > 0 ||
-                  selectedPriorities.length > 0
+                type={
+                  activeFilter === "unread" && notificationList.length > 0
+                    ? "unread"
+                    : searchQuery.trim()
+                      ? "search"
+                      : hasActiveFilters
+                        ? "filtered"
+                        : "empty"
                 }
-                onReset={handleResetFilters}
+                onPrimaryAction={
+                  searchQuery.trim()
+                    ? () => setSearchQuery("")
+                    : activeFilter === "unread"
+                      ? () => setActiveFilter("all")
+                      : handleResetFilters
+                }
+                onSecondaryAction={handleRefresh}
+                loading={refreshing}
               />
             )}
           </div>
@@ -577,6 +931,7 @@ function Notifications({
               </span>{" "}
               of {remoteTotal || notificationList.length} loaded notifications
             </p>
+
             <span className="flex items-center gap-2 text-[9px] uppercase tracking-[0.14em] text-slate-500">
               <span className="h-1.5 w-1.5 rounded-full bg-cyan-400" />
               Mission communications
@@ -586,14 +941,14 @@ function Notifications({
 
         <aside
           aria-label="Selected notification details"
-          className="hidden min-h-0 min-w-0 overflow-y-auto overscroll-contain rounded-xl border border-cyan-400/15 bg-[#040d1b]/95 [scrollbar-width:thin] [scrollbar-color:rgba(80,190,220,0.25)_transparent] xl:block"
+          className="hidden min-h-0 min-w-0 overflow-x-hidden overflow-y-auto overscroll-contain rounded-xl border border-cyan-400/15 bg-[#040d1b]/95 [scrollbar-width:thin] [scrollbar-color:rgba(80,190,220,0.25)_transparent] xl:block"
         >
           {detailContent}
         </aside>
       </div>
 
       {mobileDetailOpen && selectedNotification && (
-        <div className="fixed inset-0 z-[90] flex items-end justify-center xl:hidden">
+        <div className="fixed inset-0 z-[90] flex items-end justify-center overflow-hidden overscroll-none xl:hidden">
           <button
             type="button"
             aria-label="Close notification details"
@@ -605,15 +960,15 @@ function Notifications({
             role="dialog"
             aria-modal="true"
             aria-label="Notification details"
-            className="relative z-10 flex max-h-[90svh] w-full max-w-[700px] flex-col overflow-hidden rounded-t-2xl border border-cyan-400/20 bg-[#061121] shadow-2xl sm:mb-5 sm:rounded-2xl"
+            className="relative z-10 flex h-[min(90dvh,760px)] max-h-[90dvh] w-full max-w-[700px] min-h-0 flex-col overflow-hidden rounded-t-2xl border border-cyan-400/20 bg-[#061121] shadow-2xl sm:mb-5 sm:rounded-2xl"
           >
-            <div className="flex shrink-0 items-center justify-between border-b border-white/[0.07] px-4 py-3">
+            <div className="flex h-12 shrink-0 items-center justify-between border-b border-white/[0.07] px-4">
               <button
                 type="button"
                 onClick={handleCloseDetail}
-                className="inline-flex items-center gap-2 text-xs text-slate-300 hover:text-cyan-200"
+                className="inline-flex min-h-10 items-center gap-2 text-xs text-slate-300 hover:text-cyan-200"
               >
-                <FiChevronLeft size={16} />
+                <FiChevronLeft size={16} aria-hidden="true" />
                 Back to inbox
               </button>
 
@@ -621,18 +976,24 @@ function Notifications({
                 type="button"
                 onClick={handleCloseDetail}
                 aria-label="Close details"
-                className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 text-slate-400 hover:bg-white/5 hover:text-white"
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 text-slate-400 hover:bg-white/5 hover:text-white"
               >
-                <FiX size={16} />
+                <FiX size={16} aria-hidden="true" />
               </button>
             </div>
 
-            <div className="min-h-0 overflow-y-auto">{detailContent}</div>
+            <div
+              className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain"
+              style={{
+                WebkitOverflowScrolling: "touch",
+                overscrollBehaviorY: "contain",
+              }}
+            >
+              {detailContent}
+            </div>
           </section>
         </div>
       )}
     </main>
   );
 }
-
-export default Notifications;

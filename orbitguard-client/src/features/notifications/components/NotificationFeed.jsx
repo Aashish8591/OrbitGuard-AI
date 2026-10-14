@@ -1,5 +1,6 @@
 
 import { useMemo } from "react";
+
 import {
   FiBell,
   FiInbox,
@@ -8,26 +9,6 @@ import {
 } from "react-icons/fi";
 
 import NotificationItem from "./NotificationItem";
-
-/**
- * ================================================================
- * OrbitGuard AI — Notification Feed
- * ================================================================
- *
- * Responsibilities:
- * - Group notifications by creation date.
- * - Render reusable NotificationItem components.
- * - Preserve selection managed by the parent.
- * - Display loading, empty and error states.
- * - Keep the feed independently scrollable.
- *
- * Backend integration:
- * - NotificationResponse is the source of notification data.
- * - NotificationService and the parent page own API operations.
- * - Counts represent the currently loaded collection, not
- *   necessarily all records in MongoDB.
- * ================================================================
- */
 
 const DATE_FORMATTER = new Intl.DateTimeFormat("en-IN", {
   day: "2-digit",
@@ -45,10 +26,6 @@ function getNotificationId(notification) {
   );
 }
 
-/**
- * Prefer the backend's createdAt field.
- * The other fields are compatibility fallbacks only.
- */
 function getNotificationDate(notification) {
   const value =
     notification?.createdAt ??
@@ -70,12 +47,8 @@ function getSortTimestamp(notification) {
   return getNotificationDate(notification)?.getTime() ?? 0;
 }
 
-function getDateGroup(date) {
-  if (!date) {
-    return "DATE UNAVAILABLE";
-  }
-
-  const now = new Date();
+function getDateGroup(date, now) {
+  if (!date) return "DATE UNAVAILABLE";
 
   const todayStart = new Date(
     now.getFullYear(),
@@ -83,10 +56,13 @@ function getDateGroup(date) {
     now.getDate()
   );
 
+  const tomorrowStart = new Date(todayStart);
+  tomorrowStart.setDate(todayStart.getDate() + 1);
+
   const yesterdayStart = new Date(todayStart);
   yesterdayStart.setDate(todayStart.getDate() - 1);
 
-  if (date >= todayStart) {
+  if (date >= todayStart && date < tomorrowStart) {
     return "TODAY";
   }
 
@@ -98,6 +74,8 @@ function getDateGroup(date) {
 }
 
 function groupNotifications(notifications) {
+  const now = new Date();
+
   const sorted = [...notifications].sort(
     (a, b) => getSortTimestamp(b) - getSortTimestamp(a)
   );
@@ -106,7 +84,7 @@ function groupNotifications(notifications) {
 
   sorted.forEach((notification) => {
     const date = getNotificationDate(notification);
-    const label = getDateGroup(date);
+    const label = getDateGroup(date, now);
 
     if (!groups.has(label)) {
       groups.set(label, []);
@@ -121,23 +99,19 @@ function groupNotifications(notifications) {
   }));
 }
 
-/**
- * Backend notification statuses are READ and UNREAD.
- * Treat only explicit UNREAD records as unread.
- */
 function isNotificationUnread(notification) {
   return (
-    String(notification?.status ?? "").toUpperCase() === "UNREAD"
+    String(notification?.status ?? "").trim().toUpperCase() === "UNREAD"
   );
 }
 
 function FeedSkeleton() {
   return (
     <div
-      className="space-y-2.5"
       role="status"
       aria-label="Loading notifications"
       aria-live="polite"
+      className="space-y-2.5"
     >
       {Array.from({ length: 5 }, (_, index) => (
         <div
@@ -147,7 +121,7 @@ function FeedSkeleton() {
             flex animate-pulse items-center gap-3
             rounded-xl border border-white/[0.06]
             border-l-[3px] border-l-cyan-400/30
-            bg-[#061323]/75 p-3
+            bg-[#061323]/90 p-3
           "
         >
           <div className="h-11 w-11 shrink-0 rounded-lg bg-slate-700/40" />
@@ -158,7 +132,7 @@ function FeedSkeleton() {
             <div className="h-2.5 w-1/3 rounded bg-slate-800/80" />
           </div>
 
-          <div className="h-2.5 w-2.5 rounded-full bg-slate-700/50" />
+          <div className="h-2.5 w-2.5 shrink-0 rounded-full bg-slate-700/50" />
         </div>
       ))}
 
@@ -172,17 +146,9 @@ function EmptyFeed({ hasFilters, onClearFilters }) {
     <div className="flex min-h-[280px] flex-col items-center justify-center px-5 py-12 text-center">
       <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-cyan-400/15 bg-cyan-400/[0.06]">
         {hasFilters ? (
-          <FiBell
-            className="text-cyan-300"
-            size={25}
-            aria-hidden="true"
-          />
+          <FiBell className="text-cyan-300" size={25} aria-hidden="true" />
         ) : (
-          <FiInbox
-            className="text-cyan-300"
-            size={27}
-            aria-hidden="true"
-          />
+          <FiInbox className="text-cyan-300" size={27} aria-hidden="true" />
         )}
       </div>
 
@@ -190,7 +156,7 @@ function EmptyFeed({ hasFilters, onClearFilters }) {
         {hasFilters ? "No matching notifications" : "Inbox is clear"}
       </h3>
 
-      <p className="mt-2 max-w-xs text-xs leading-5 text-slate-500">
+      <p className="mt-2 max-w-xs text-xs leading-5 text-slate-400">
         {hasFilters
           ? "Try adjusting your search or filters to find the notification you need."
           : "There are no notifications to display right now. New system activity will appear here."}
@@ -201,12 +167,15 @@ function EmptyFeed({ hasFilters, onClearFilters }) {
           type="button"
           onClick={onClearFilters}
           className="
-            mt-5 min-h-10 rounded-lg border border-cyan-400/25
+            mt-5 min-h-10 rounded-lg
+            border border-cyan-400/25
             bg-cyan-400/[0.06] px-4 py-2
             text-xs font-medium text-cyan-200
             transition hover:bg-cyan-400/[0.12]
             focus-visible:outline-none focus-visible:ring-2
             focus-visible:ring-cyan-400
+            focus-visible:ring-offset-2
+            focus-visible:ring-offset-[#030d1b]
           "
         >
           Clear filters
@@ -227,13 +196,18 @@ function NotificationFeed({
   hasFilters = false,
   onClearFilters,
   compact = true,
+
+  // "parent" lets Notifications.jsx own scrolling.
+  // "self" keeps this component independently scrollable.
+  scrollMode = "parent",
   maxHeight = "calc(100svh - 190px)",
 }) {
   const safeNotifications = Array.isArray(notifications)
     ? notifications.filter(
         (notification) =>
           notification !== null &&
-          typeof notification === "object"
+          typeof notification === "object" &&
+          !Array.isArray(notification)
       )
     : [];
 
@@ -248,6 +222,11 @@ function NotificationFeed({
     isNotificationUnread
   ).length;
 
+  const canSelectNotifications =
+    typeof onSelectNotification === "function";
+
+  const useInternalScroll = scrollMode === "self";
+
   const errorMessage =
     typeof error === "string" && error.trim()
       ? error.trim()
@@ -260,14 +239,38 @@ function NotificationFeed({
       aria-label="Notification inbox feed"
       aria-busy={loading}
       className="
-        flex min-h-0 min-w-0 flex-col overflow-hidden
-        rounded-2xl border border-cyan-400/[0.13]
+        relative isolate flex min-h-0 min-w-0 flex-col
+        overflow-hidden rounded-2xl
+        border border-cyan-400/[0.16]
         bg-[#030d1b]/90
-        shadow-[0_18px_55px_rgba(0,0,0,0.18)]
+        shadow-[0_18px_55px_rgba(0,0,0,0.22)]
       "
     >
+      {/* Background artwork */}
+      <div
+        aria-hidden="true"
+        className="
+          pointer-events-none absolute inset-0 z-0
+          bg-[url('/images/Notification/streambg.png')]
+          bg-cover bg-center bg-no-repeat
+          opacity-200
+        "
+      />
+
+      {/* Contrast overlay */}
+      <div
+        aria-hidden="true"
+        className="
+          pointer-events-none absolute inset-0 z-0
+          bg-gradient-to-b
+          from-[#020914]/75
+          via-[#020914]/55
+          to-[#020914]/85
+        "
+      />
+
       {/* Feed status strip */}
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/[0.06] px-4 py-3">
+      <div className="relative z-10 flex shrink-0 items-center justify-between gap-3 border-b border-white/[0.08] bg-[#030d1b]/50 px-3 py-3 sm:px-4">
         <div className="flex min-w-0 items-center gap-2">
           <span
             aria-hidden="true"
@@ -277,39 +280,54 @@ function NotificationFeed({
             <span className="relative inline-flex h-2 w-2 rounded-full bg-cyan-300" />
           </span>
 
-          <span className="truncate text-[10px] font-semibold uppercase tracking-[0.17em] text-slate-400">
+          <span className="truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-300 sm:tracking-[0.17em]">
             Notification stream
           </span>
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          <span className="hidden text-[10px] text-slate-500 sm:inline">
+          <span className="hidden text-[10px] text-slate-300 sm:inline">
             {safeNotifications.length} loaded
           </span>
 
-          <span className="rounded-md border border-rose-400/15 bg-rose-400/[0.07] px-2 py-1 text-[10px] font-semibold tabular-nums text-rose-300">
+          <span className="rounded-md border border-rose-400/20 bg-[#190f20]/85 px-2 py-1 text-[10px] font-semibold tabular-nums text-rose-300">
             {unreadCount} unread
           </span>
         </div>
       </div>
 
-      {/* Independently scrollable feed */}
+      {/* Notification content.
+          In parent mode, this content expands naturally so the
+          scroll container in Notifications.jsx can scroll the feed.
+          In self mode, this element owns its own scrolling. */}
       <div
-        className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain p-3 sm:p-3.5"
-        style={{
-          maxHeight,
-          scrollbarWidth: "thin",
-          scrollbarColor: "rgba(100,116,139,0.45) transparent",
-        }}
+        className={[
+          "relative z-10 min-w-0 bg-[#030d1b]/15 p-3 sm:p-3.5",
+          useInternalScroll
+            ? "min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain"
+            : "shrink-0 overflow-visible",
+        ].join(" ")}
+        style={
+          useInternalScroll
+            ? {
+                height: "100%",
+                maxHeight,
+                scrollbarWidth: "thin",
+                scrollbarColor: "rgba(100,116,139,0.45) transparent",
+                WebkitOverflowScrolling: "touch",
+                overscrollBehaviorY: "contain",
+              }
+            : undefined
+        }
       >
         {loading ? (
           <FeedSkeleton />
         ) : error ? (
           <div
             role="alert"
-            className="flex min-h-[260px] flex-col items-center justify-center px-5 text-center"
+            className="flex min-h-[260px] flex-col items-center justify-center px-4 text-center"
           >
-            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl border border-rose-400/20 bg-rose-400/[0.07]">
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl border border-rose-400/20 bg-[#190f20]/90">
               <FiRadio
                 size={21}
                 className="text-rose-300"
@@ -317,11 +335,11 @@ function NotificationFeed({
               />
             </div>
 
-            <h3 className="text-sm font-semibold text-slate-200">
+            <h3 className="text-sm font-semibold text-slate-100">
               Unable to load notifications
             </h3>
 
-            <p className="mt-2 max-w-xs break-words text-xs leading-5 text-slate-500">
+            <p className="mt-2 max-w-xs break-words text-xs leading-5 text-slate-300">
               {errorMessage}
             </p>
 
@@ -332,7 +350,7 @@ function NotificationFeed({
                 className="
                   mt-5 inline-flex min-h-10 items-center justify-center gap-2
                   rounded-lg border border-cyan-400/25
-                  bg-cyan-400/[0.06] px-4 py-2
+                  bg-[#061323]/90 px-4 py-2
                   text-xs font-medium text-cyan-200
                   transition hover:bg-cyan-400/[0.12]
                   focus-visible:outline-none focus-visible:ring-2
@@ -359,21 +377,21 @@ function NotificationFeed({
               >
                 {/* Date divider */}
                 <div className="flex items-center gap-2 px-1 pb-0.5 pt-1">
-                  <h3 className="font-['Orbitron'] text-[9px] font-semibold tracking-[0.15em] text-slate-400">
+                  <h3 className="font-['Orbitron'] text-[9px] font-semibold tracking-[0.15em] text-slate-200">
                     {label}
                   </h3>
 
                   <span
                     aria-hidden="true"
-                    className="h-1 w-1 rounded-full bg-cyan-300/80 shadow-[0_0_8px_rgba(34,211,238,0.5)]"
+                    className="h-1 w-1 shrink-0 rounded-full bg-cyan-300 shadow-[0_0_8px_rgba(34,211,238,0.5)]"
                   />
 
-                  <span className="ml-auto text-[9px] tabular-nums text-slate-600">
+                  <span className="ml-auto text-[9px] tabular-nums text-slate-300">
                     {items.length}
                   </span>
                 </div>
 
-                {/* Notification rows */}
+                {/* Notification cards */}
                 <div className="space-y-1.5">
                   {items.map((notification, index) => {
                     const notificationId =
@@ -405,6 +423,18 @@ function NotificationFeed({
             ))}
           </div>
         )}
+
+        {!loading &&
+          !error &&
+          safeNotifications.length > 0 &&
+          !canSelectNotifications && (
+            <p
+              role="status"
+              className="mt-3 text-center text-xs text-amber-300"
+            >
+              Notification selection is unavailable. Check the parent page callback.
+            </p>
+          )}
       </div>
     </section>
   );

@@ -2,30 +2,12 @@
 import {
   FiActivity,
   FiAlertTriangle,
-  FiBell,
   FiCheckCircle,
   FiDatabase,
   FiFileText,
   FiInfo,
   FiShield,
 } from "react-icons/fi";
-
-/**
- * ================================================================
- * OrbitGuard AI — Notification Item
- * ================================================================
- *
- * Presentational component for one NotificationResponse.
- *
- * Backend notification types:
- * ALERT, COLLISION, SYSTEM, WARNING, INFO
- *
- * Backend notification statuses:
- * READ, UNREAD
- *
- * API calls and mutations remain owned by the parent.
- * ================================================================
- */
 
 const CATEGORY_CONFIG = {
   ALERT: {
@@ -36,6 +18,7 @@ const CATEGORY_CONFIG = {
     iconSurface: "border-rose-400/20 bg-rose-400/10",
     badge: "border-rose-400/20 bg-rose-400/10 text-rose-300",
   },
+
   COLLISION: {
     label: "Collision risk",
     Icon: FiActivity,
@@ -44,6 +27,7 @@ const CATEGORY_CONFIG = {
     iconSurface: "border-amber-400/20 bg-amber-400/10",
     badge: "border-amber-400/20 bg-amber-400/10 text-amber-300",
   },
+
   SYSTEM: {
     label: "System",
     Icon: FiShield,
@@ -52,6 +36,7 @@ const CATEGORY_CONFIG = {
     iconSurface: "border-cyan-400/20 bg-cyan-400/10",
     badge: "border-cyan-400/20 bg-cyan-400/10 text-cyan-300",
   },
+
   WARNING: {
     label: "Warning",
     Icon: FiAlertTriangle,
@@ -60,6 +45,7 @@ const CATEGORY_CONFIG = {
     iconSurface: "border-orange-400/20 bg-orange-400/10",
     badge: "border-orange-400/20 bg-orange-400/10 text-orange-300",
   },
+
   INFO: {
     label: "Information",
     Icon: FiInfo,
@@ -76,16 +62,19 @@ const PRIORITY_CONFIG = {
     dot: "bg-rose-400",
     text: "text-rose-300",
   },
+
   HIGH: {
     label: "High",
     dot: "bg-orange-400",
     text: "text-orange-300",
   },
+
   MEDIUM: {
     label: "Medium",
     dot: "bg-cyan-400",
     text: "text-cyan-300",
   },
+
   LOW: {
     label: "Low",
     dot: "bg-slate-400",
@@ -94,14 +83,18 @@ const PRIORITY_CONFIG = {
 };
 
 function getCategoryConfig(type) {
-  const normalizedType = String(type ?? "").trim().toUpperCase();
+  const normalizedType = String(type ?? "")
+    .trim()
+    .toUpperCase();
 
   if (CATEGORY_CONFIG[normalizedType]) {
     return CATEGORY_CONFIG[normalizedType];
   }
 
-  // Defensive display fallbacks for unknown future backend values.
-  if (normalizedType.includes("COLLISION") || normalizedType.includes("RISK")) {
+  if (
+    normalizedType.includes("COLLISION") ||
+    normalizedType.includes("RISK")
+  ) {
     return CATEGORY_CONFIG.COLLISION;
   }
 
@@ -140,14 +133,24 @@ function getCategoryConfig(type) {
   return CATEGORY_CONFIG.SYSTEM;
 }
 
-function formatTime(value) {
-  if (value === null || value === undefined || value === "") {
-    return "Time unavailable";
+function parseDate(value) {
+  if (
+    value == null ||
+    value === "" ||
+    typeof value === "boolean"
+  ) {
+    return null;
   }
 
   const date = new Date(value);
 
-  if (Number.isNaN(date.getTime())) {
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatTime(value) {
+  const date = parseDate(value);
+
+  if (!date) {
     return "Time unavailable";
   }
 
@@ -182,8 +185,8 @@ function formatTime(value) {
 function getNotificationKey(notification) {
   return (
     notification?.id ??
-    notification?.notificationCode ??
     notification?.notificationId ??
+    notification?.notificationCode ??
     notification?._id ??
     ""
   );
@@ -198,7 +201,11 @@ function NotificationItem({
   compact = false,
   disabled = false,
 }) {
-  if (!notification || typeof notification !== "object") {
+  if (
+    !notification ||
+    typeof notification !== "object" ||
+    Array.isArray(notification)
+  ) {
     return null;
   }
 
@@ -214,47 +221,72 @@ function NotificationItem({
   const category = getCategoryConfig(type);
   const CategoryIcon = category.Icon;
 
-  const normalizedStatus = String(status ?? "").toUpperCase();
+  const normalizedStatus = String(status ?? "")
+    .trim()
+    .toUpperCase();
+
   const isRead = normalizedStatus === "READ";
   const isUnread = normalizedStatus === "UNREAD";
 
-  const priorityConfig =
-    PRIORITY_CONFIG[String(priority ?? "").toUpperCase()];
+  const normalizedPriority = String(priority ?? "")
+    .trim()
+    .toUpperCase();
 
-  const notificationTitle = title || "Untitled notification";
+  const priorityConfig =
+    PRIORITY_CONFIG[normalizedPriority];
+
+  const notificationTitle =
+    typeof title === "string" && title.trim()
+      ? title.trim()
+      : "Untitled notification";
+
   const notificationMessage =
-    message || "No message content available.";
+    typeof message === "string" && message.trim()
+      ? message.trim()
+      : "No message content available.";
 
   const notificationKey = getNotificationKey(notification);
+  const parsedCreatedAt = parseDate(createdAt);
 
-  const handleSelect = () => {
-    if (disabled || typeof onClick !== "function") {
+  const canSelect = typeof onClick === "function";
+
+  const canMarkRead =
+    isUnread && typeof onMarkRead === "function";
+
+  function handleSelect() {
+    if (disabled || !canSelect) {
       return;
     }
 
     onClick(notification);
-  };
+  }
 
-  const handleMarkRead = (event) => {
+  function handleMarkRead(event) {
+    event.preventDefault();
     event.stopPropagation();
 
-    if (
-      disabled ||
-      !isUnread ||
-      typeof onMarkRead !== "function"
-    ) {
+    if (disabled || !canMarkRead) {
       return;
     }
 
     onMarkRead(notification);
-  };
+  }
 
   return (
     <article
-      data-notification-id={notificationKey || undefined}
+      data-notification-id={
+        notificationKey != null
+          ? String(notificationKey)
+          : undefined
+      }
+      data-notification-status={
+        normalizedStatus || "UNKNOWN"
+      }
+      data-selected={selected ? "true" : "false"}
       className={`
-        group relative flex w-full min-w-0 items-stretch
-        overflow-hidden rounded-xl border border-l-[3px]
+        group relative flex w-full min-w-0
+        items-stretch overflow-hidden
+        rounded-xl border border-l-[3px]
         transition duration-200 ease-out
         ${category.accent}
         ${
@@ -262,24 +294,26 @@ function NotificationItem({
             ? "border-cyan-400/40 bg-gradient-to-r from-cyan-400/[0.10] via-[#081b2e]/95 to-[#071426]/95 shadow-[0_0_24px_rgba(34,211,238,0.07)]"
             : "border-white/[0.07] bg-[#061323]/75 hover:border-white/[0.14] hover:bg-[#0a1a2c]/95"
         }
-        ${disabled ? "opacity-50" : ""}
+        ${disabled ? "opacity-60" : ""}
       `}
     >
-      {/* Selectable notification content */}
+      {/* Main selection button */}
       <button
         type="button"
         onClick={handleSelect}
-        disabled={disabled || typeof onClick !== "function"}
+        disabled={disabled || !canSelect}
         aria-label={`Open notification: ${notificationTitle}`}
         aria-pressed={selected}
         title={notificationTitle}
         className="
-          flex min-w-0 flex-1 items-center gap-3
+          flex min-w-0 flex-1
+          cursor-pointer items-center gap-3
           px-2.5 py-3 text-left
           transition-colors
           sm:gap-3.5 sm:px-3
           focus-visible:outline-none
-          focus-visible:ring-2 focus-visible:ring-inset
+          focus-visible:ring-2
+          focus-visible:ring-inset
           focus-visible:ring-cyan-400/70
           disabled:cursor-not-allowed
         "
@@ -288,11 +322,17 @@ function NotificationItem({
         <span
           aria-hidden="true"
           className={`
-            flex h-10 w-10 shrink-0 items-center justify-center
-            rounded-lg border transition-colors duration-200
+            flex h-10 w-10 shrink-0
+            items-center justify-center
+            rounded-lg border
+            transition-colors duration-200
             sm:h-11 sm:w-11
             ${category.iconSurface}
-            ${selected ? "shadow-[0_0_16px_rgba(34,211,238,0.08)]" : ""}
+            ${
+              selected
+                ? "shadow-[0_0_16px_rgba(34,211,238,0.08)]"
+                : ""
+            }
           `}
         >
           <CategoryIcon
@@ -302,13 +342,13 @@ function NotificationItem({
           />
         </span>
 
-        {/* Main notification content */}
+        {/* Notification content */}
         <span className="block min-w-0 flex-1">
           <span className="flex min-w-0 items-start justify-between gap-2">
             <span
               className={`
-                min-w-0 flex-1 truncate text-[12px] leading-5
-                sm:text-[12px]
+                min-w-0 flex-1 truncate
+                text-[12px] leading-5
                 ${
                   isRead
                     ? "font-medium text-slate-300"
@@ -321,16 +361,20 @@ function NotificationItem({
 
             <time
               dateTime={
-                createdAt && !Number.isNaN(new Date(createdAt).getTime())
-                  ? new Date(createdAt).toISOString()
+                parsedCreatedAt
+                  ? parsedCreatedAt.toISOString()
                   : undefined
               }
-              className="shrink-0 pt-0.5 text-[9px] tabular-nums text-slate-500 sm:text-[10px]"
               title={
-                createdAt && !Number.isNaN(new Date(createdAt).getTime())
-                  ? new Date(createdAt).toLocaleString("en-IN")
+                parsedCreatedAt
+                  ? parsedCreatedAt.toLocaleString("en-IN")
                   : undefined
               }
+              className="
+                shrink-0 pt-0.5
+                text-[9px] tabular-nums
+                text-slate-500 sm:text-[10px]
+              "
             >
               {formatTime(createdAt)}
             </time>
@@ -338,8 +382,10 @@ function NotificationItem({
 
           <span
             className={`
-              mt-0.5 block overflow-hidden text-ellipsis
-              break-words text-[10px] leading-[1.55] text-slate-500
+              mt-0.5 block overflow-hidden
+              break-words text-ellipsis
+              text-[10px] leading-[1.55]
+              text-slate-500
               ${compact ? "line-clamp-1" : "line-clamp-2"}
             `}
           >
@@ -350,42 +396,49 @@ function NotificationItem({
           <span className="mt-2 flex min-w-0 flex-wrap items-center gap-2">
             <span
               className={`
-                inline-flex max-w-full items-center rounded-md border
-                px-2 py-0.5 text-[9px] font-medium
+                inline-flex max-w-full items-center
+                rounded-md border px-2 py-0.5
+                text-[9px] font-medium
                 ${category.badge}
               `}
             >
-              <span className="truncate">{category.label}</span>
+              <span className="truncate">
+                {category.label}
+              </span>
             </span>
 
-            {showPriority && (
-              priorityConfig ? (
+            {showPriority &&
+              (priorityConfig ? (
                 <span
-                  className={`inline-flex items-center gap-1.5 text-[9px] ${priorityConfig.text}`}
+                  className={`
+                    inline-flex items-center gap-1.5
+                    text-[9px] ${priorityConfig.text}
+                  `}
                 >
                   <span
                     aria-hidden="true"
-                    className={`h-1.5 w-1.5 rounded-full ${priorityConfig.dot}`}
+                    className={`
+                      h-1.5 w-1.5 rounded-full
+                      ${priorityConfig.dot}
+                    `}
                   />
                   {priorityConfig.label}
                 </span>
-              ) : (
-                priority && (
-                  <span className="text-[9px] text-slate-500">
-                    {String(priority)}
-                  </span>
-                )
-              )
-            )}
+              ) : priority ? (
+                <span className="text-[9px] text-slate-500">
+                  {String(priority)}
+                </span>
+              ) : null)}
           </span>
         </span>
 
-        {/* Read/unread indicator */}
+        {/* Read status indicator */}
         <span className="flex shrink-0 items-center justify-center self-stretch">
           {isUnread ? (
             <span
               className={`
-                h-2.5 w-2.5 rounded-full bg-rose-400
+                h-2.5 w-2.5 rounded-full
+                bg-rose-400
                 shadow-[0_0_10px_rgba(251,113,133,0.24)]
                 ${selected ? "ring-2 ring-rose-400/15" : ""}
               `}
@@ -394,7 +447,10 @@ function NotificationItem({
             </span>
           ) : isRead ? (
             <span
-              className="flex h-6 w-6 items-center justify-center text-slate-600"
+              className="
+                flex h-6 w-6 items-center
+                justify-center text-slate-600
+              "
               title="Read notification"
             >
               <FiCheckCircle size={13} aria-hidden="true" />
@@ -405,14 +461,16 @@ function NotificationItem({
               className="h-2 w-2 rounded-full bg-slate-600"
               title="Status unavailable"
             >
-              <span className="sr-only">Status unavailable</span>
+              <span className="sr-only">
+                Status unavailable
+              </span>
             </span>
           )}
         </span>
       </button>
 
-      {/* Separate action button: not nested inside the selection button */}
-      {isUnread && typeof onMarkRead === "function" && (
+      {/* Independent mark-as-read action */}
+      {canMarkRead && (
         <div className="flex shrink-0 items-center pr-2">
           <button
             type="button"
@@ -421,18 +479,27 @@ function NotificationItem({
             title="Mark as read"
             aria-label={`Mark ${notificationTitle} as read`}
             className="
-              inline-flex h-8 w-8 items-center justify-center
-              rounded-md border border-cyan-400/20
+              inline-flex h-8 w-8
+              items-center justify-center
+              rounded-md border
+              border-cyan-400/20
               bg-[#071323] text-cyan-300
-              transition hover:bg-cyan-400/10
+              transition-colors
+              hover:bg-cyan-400/10
               focus-visible:outline-none
-              focus-visible:ring-2 focus-visible:ring-cyan-400
-              disabled:cursor-not-allowed disabled:opacity-50
-              sm:opacity-0 sm:group-hover:opacity-100
+              focus-visible:ring-2
+              focus-visible:ring-cyan-400
+              disabled:cursor-not-allowed
+              disabled:opacity-50
+              sm:opacity-70
+              sm:group-hover:opacity-100
               sm:focus-visible:opacity-100
             "
           >
-            <FiCheckCircle size={14} aria-hidden="true" />
+            <FiCheckCircle
+              size={14}
+              aria-hidden="true"
+            />
           </button>
         </div>
       )}
