@@ -9,7 +9,7 @@ import {
 /* ================================================================
    REPORT STATUS CONFIGURATION
    Values must match the backend ReportStatus enum.
-   ================================================================ */
+================================================================ */
 
 const STATUS_CONFIG = {
   PENDING: {
@@ -51,27 +51,39 @@ const STATUS_CONFIG = {
 
 /* ================================================================
    HELPERS
-   ================================================================ */
+================================================================ */
 
 function normalizeStatus(status) {
-  return String(status ?? "")
-    .trim()
-    .toUpperCase();
+  return String(status ?? "").trim().toUpperCase();
+}
+
+function formatUnknownStatus(status) {
+  const normalized = normalizeStatus(status);
+
+  if (!normalized) {
+    return "Unknown";
+  }
+
+  return normalized
+    .replace(/_/g, " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
 /* ================================================================
    REPORT STATUS BADGE
-   ================================================================ */
+================================================================ */
 
 /**
  * Displays a report's backend status.
  *
  * @param {Object} props
- * @param {string} props.status - PENDING, PROCESSING, COMPLETED, FAILED
+ * @param {string} props.status
  * @param {"compact"|"default"} [props.size="default"]
  * @param {boolean} [props.showIcon=false]
  * @param {boolean} [props.showIndicator=true]
  * @param {boolean} [props.animated=true]
+ * @param {string} [props.className=""]
  */
 function ReportStatusBadge({
   status,
@@ -86,39 +98,48 @@ function ReportStatusBadge({
 
   const compact = size === "compact";
 
-  const baseStyles = `
-    inline-flex max-w-full items-center justify-center
-    gap-1.5 whitespace-nowrap rounded-full border
-    font-semibold tracking-wide
-    transition-colors duration-200
-    ${compact ? "px-2 py-0.5 text-[10px]" : "px-2.5 py-1 text-[11px]"}
-  `;
+  const sizeStyles = compact
+    ? "gap-1 px-2 py-0.5 text-[10px]"
+    : "gap-1.5 px-2.5 py-1 text-[11px]";
+
+  const baseStyles = [
+    "inline-flex max-w-full min-w-0 items-center justify-center",
+    "whitespace-nowrap rounded-full border",
+    "font-semibold tracking-wide transition-colors duration-200",
+    sizeStyles,
+  ].join(" ");
+
+  const customClassName =
+    typeof className === "string" ? className.trim() : "";
+
+  const iconSize = compact ? "h-3 w-3" : "h-3.5 w-3.5";
+
+  const shouldAnimate =
+    animated &&
+    normalizedStatus === "PROCESSING";
 
   if (!config) {
-    const fallbackLabel =
-      normalizedStatus
-        ? normalizedStatus
-            .toLowerCase()
-            .replaceAll("_", " ")
-            .replace(/\b\w/g, (character) => character.toUpperCase())
-        : "Unknown";
+    const fallbackLabel = formatUnknownStatus(status);
 
     return (
       <span
         role="status"
+        aria-label={`Report status: ${fallbackLabel}`}
         title={`Report status: ${fallbackLabel}`}
-        className={`
-          ${baseStyles}
-          border-white/10 bg-white/[0.04] text-slate-400
-          ${className}
-        `}
+        className={[
+          baseStyles,
+          "border-white/10 bg-white/[0.04] text-slate-400",
+          customClassName,
+        ]
+          .filter(Boolean)
+          .join(" ")}
       >
         <FiHelpCircle
           aria-hidden="true"
-          className={`shrink-0 ${compact ? "h-3 w-3" : "h-3.5 w-3.5"}`}
+          className={`shrink-0 ${iconSize}`}
         />
 
-        {fallbackLabel}
+        <span className="truncate">{fallbackLabel}</span>
       </span>
     );
   }
@@ -128,42 +149,43 @@ function ReportStatusBadge({
   return (
     <span
       role="status"
-      title={`Report status: ${label}`}
       aria-label={`Report status: ${label}`}
-      className={`
-        ${baseStyles}
-        ${styles}
-        ${className}
-      `}
+      title={`Report status: ${label}`}
+      className={[
+        baseStyles,
+        styles,
+        customClassName,
+      ]
+        .filter(Boolean)
+        .join(" ")}
     >
       {showIndicator && (
         <span
           aria-hidden="true"
-          className={`
-            shrink-0 rounded-full
-            ${compact ? "h-1 w-1" : "h-1.5 w-1.5"}
-            ${indicator}
-            ${
-              animated && normalizedStatus === "PROCESSING"
-                ? "animate-pulse"
-                : ""
-            }
-          `}
+          className={[
+            "shrink-0 rounded-full",
+            compact ? "h-1 w-1" : "h-1.5 w-1.5",
+            indicator,
+            shouldAnimate ? "animate-pulse" : "",
+            "motion-reduce:animate-none",
+          ]
+            .filter(Boolean)
+            .join(" ")}
         />
       )}
 
       {showIcon && (
         <Icon
           aria-hidden="true"
-          className={`
-            shrink-0 ${iconStyles}
-            ${compact ? "h-3 w-3" : "h-3.5 w-3.5"}
-            ${
-              animated && normalizedStatus === "PROCESSING"
-                ? "animate-spin"
-                : ""
-            }
-          `}
+          className={[
+            "shrink-0",
+            iconSize,
+            iconStyles,
+            shouldAnimate ? "animate-spin" : "",
+            "motion-reduce:animate-none",
+          ]
+            .filter(Boolean)
+            .join(" ")}
         />
       )}
 

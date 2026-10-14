@@ -1,5 +1,4 @@
-
-import { useEffect, useId, useRef } from "react";
+import { useCallback, useEffect, useId, useRef } from "react";
 
 import {
   FiX,
@@ -21,6 +20,12 @@ import {
 } from "react-icons/fi";
 
 import ReportStatusBadge from "./ReportStatusBadge";
+
+/* ================================================================
+   REPORT TYPE CONFIGURATION
+
+   Keep values aligned with the existing backend ReportType enum.
+   ================================================================ */
 
 const REPORT_TYPE_CONFIG = {
   SATELLITE_ANALYSIS: {
@@ -49,12 +54,21 @@ const REPORT_TYPE_CONFIG = {
   },
 };
 
+/* ================================================================
+   HELPERS
+   ================================================================ */
+
 function formatReportType(type) {
-  return String(type ?? "Unknown")
+  const normalized = String(type ?? "")
     .trim()
     .replace(/_/g, " ")
-    .toLowerCase()
-    .replace(/\b\w/g, (character) => character.toUpperCase());
+    .toLowerCase();
+
+  if (!normalized) return "Unknown";
+
+  return normalized.replace(/\b\w/g, (character) =>
+    character.toUpperCase()
+  );
 }
 
 function formatDate(value) {
@@ -73,8 +87,8 @@ function formatDate(value) {
       year: "numeric",
       hour: "2-digit",
       minute: "2-digit",
-      second: "2-digit",
       hour12: false,
+      timeZone: "Asia/Kolkata",
     }).format(date);
   } catch {
     return "Not available";
@@ -82,10 +96,23 @@ function formatDate(value) {
 }
 
 function getReportCode(report) {
-  return report?.reportCode ?? report?.id ?? "Not available";
+  const code = report?.reportCode;
+
+  return typeof code === "string" && code.trim()
+    ? code.trim()
+    : null;
 }
 
-function MetadataItem({ icon: Icon, label, value, mono = false }) {
+/* ================================================================
+   METADATA ITEM
+   ================================================================ */
+
+function MetadataItem({
+  icon: Icon,
+  label,
+  value,
+  mono = false,
+}) {
   return (
     <div className="flex min-w-0 items-start gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3.5">
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-cyan-300/10 bg-cyan-400/[0.05]">
@@ -111,6 +138,10 @@ function MetadataItem({ icon: Icon, label, value, mono = false }) {
     </div>
   );
 }
+
+/* ================================================================
+   MODAL ACTION BUTTON
+   ================================================================ */
 
 function ModalActionButton({
   children,
@@ -148,7 +179,9 @@ function ModalActionButton({
         <Icon
           aria-hidden="true"
           className={`h-4 w-4 shrink-0 ${
-            disabled && Icon === FiRefreshCw ? "animate-spin" : ""
+            disabled && Icon === FiRefreshCw
+              ? "animate-spin"
+              : ""
           }`}
         />
       )}
@@ -157,6 +190,10 @@ function ModalActionButton({
     </button>
   );
 }
+
+/* ================================================================
+   REPORT DETAILS MODAL
+   ================================================================ */
 
 function ReportDetailsModal({
   open,
@@ -170,9 +207,20 @@ function ReportDetailsModal({
 }) {
   const dialogTitleId = useId();
   const dialogDescriptionId = useId();
+
   const dialogRef = useRef(null);
   const closeButtonRef = useRef(null);
   const previousFocusRef = useRef(null);
+
+  const busy = downloading || deleting;
+
+  const handleClose = useCallback(() => {
+    if (busy) return;
+
+    onClose?.();
+  }, [busy, onClose]);
+
+  /* Manage background scrolling and keyboard focus. */
 
   useEffect(() => {
     if (!open || !report) return undefined;
@@ -180,27 +228,35 @@ function ReportDetailsModal({
     previousFocusRef.current = document.activeElement;
 
     const previousOverflow = document.body.style.overflow;
+
     document.body.style.overflow = "hidden";
 
-    const focusFrame = requestAnimationFrame(() => {
+    const focusFrame = window.requestAnimationFrame(() => {
       closeButtonRef.current?.focus();
     });
 
     const handleKeyDown = (event) => {
-      if (event.key === "Escape" && !downloading && !deleting) {
-        onClose?.();
+      if (event.key === "Escape") {
+        if (!busy) {
+          handleClose();
+        }
+
+        return;
       }
 
       if (event.key !== "Tab") return;
 
       const dialog = dialogRef.current;
+
       if (!dialog) return;
 
       const focusable = Array.from(
         dialog.querySelectorAll(
-          'button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [href], [tabindex]:not([tabindex="-1"])'
+          'button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])'
         )
-      ).filter((element) => element.getClientRects().length > 0);
+      ).filter(
+        (element) => element.getClientRects().length > 0
+      );
 
       if (!focusable.length) {
         event.preventDefault();
@@ -210,12 +266,17 @@ function ReportDetailsModal({
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
 
-      if (event.shiftKey && document.activeElement === first) {
+      if (
+        event.shiftKey &&
+        (document.activeElement === first ||
+          !dialog.contains(document.activeElement))
+      ) {
         event.preventDefault();
         last.focus();
       } else if (
         !event.shiftKey &&
-        document.activeElement === last
+        (document.activeElement === last ||
+          !dialog.contains(document.activeElement))
       ) {
         event.preventDefault();
         first.focus();
@@ -225,31 +286,34 @@ function ReportDetailsModal({
     document.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      cancelAnimationFrame(focusFrame);
+      window.cancelAnimationFrame(focusFrame);
+
       document.body.style.overflow = previousOverflow;
+
       document.removeEventListener("keydown", handleKeyDown);
 
       const previousFocus = previousFocusRef.current;
 
-      if (previousFocus && typeof previousFocus.focus === "function") {
+      if (typeof previousFocus?.focus === "function") {
         previousFocus.focus();
       }
     };
-  }, [open, report, downloading, deleting, onClose]);
+  }, [open, report, busy, handleClose]);
 
   if (!open || !report) return null;
 
-  const reportTypeKey = String(report.reportType ?? "").toUpperCase();
+  const reportTypeKey = String(report.reportType ?? "")
+    .trim()
+    .toUpperCase();
+
   const reportType = REPORT_TYPE_CONFIG[reportTypeKey];
 
   const TypeIcon = reportType?.icon ?? FiFileText;
-  const typeLabel = reportType?.label ?? formatReportType(report.reportType);
-  const reportCode = getReportCode(report);
 
-  const handleClose = () => {
-    if (downloading || deleting) return;
-    onClose?.();
-  };
+  const typeLabel =
+    reportType?.label ?? formatReportType(report.reportType);
+
+  const reportCode = getReportCode(report);
 
   const handleBackdropClick = (event) => {
     if (event.target === event.currentTarget) {
@@ -258,12 +322,14 @@ function ReportDetailsModal({
   };
 
   const handleDownload = () => {
-    if (downloading || deleting) return;
+    if (busy || !reportCode) return;
+
     onDownload?.(report);
   };
 
   const handleDelete = () => {
-    if (deleting || downloading || !onDelete) return;
+    if (busy || !reportCode || !onDelete) return;
+
     onDelete(report);
   };
 
@@ -331,7 +397,7 @@ function ReportDetailsModal({
                 id={dialogDescriptionId}
                 className="mt-1 break-all font-mono text-xs text-slate-500"
               >
-                {reportCode}
+                {reportCode ?? "Report code unavailable"}
               </p>
             </div>
 
@@ -339,7 +405,7 @@ function ReportDetailsModal({
               ref={closeButtonRef}
               type="button"
               onClick={handleClose}
-              disabled={downloading || deleting}
+              disabled={busy}
               aria-label="Close report details"
               className="
                 flex h-9 w-9 shrink-0 items-center justify-center
@@ -349,12 +415,15 @@ function ReportDetailsModal({
                 hover:text-white disabled:opacity-40
               "
             >
-              <FiX aria-hidden="true" className="h-4 w-4" />
+              <FiX
+                aria-hidden="true"
+                className="h-4 w-4"
+              />
             </button>
           </div>
         </header>
 
-        {/* Only this content area scrolls */}
+        {/* Scrollable content */}
 
         <div
           className="
@@ -373,7 +442,10 @@ function ReportDetailsModal({
             </p>
 
             <div className="mt-3 flex flex-wrap items-center gap-3">
-              <ReportStatusBadge status={report.status} showIcon />
+              <ReportStatusBadge
+                status={report.status}
+                showIcon
+              />
 
               <span className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.025] px-3 py-1.5 text-xs text-slate-400">
                 <TypeIcon
@@ -392,8 +464,10 @@ function ReportDetailsModal({
 
             <div className="mt-3 rounded-xl border border-white/[0.07] bg-[#040C17]/80 p-4">
               <p className="whitespace-pre-wrap break-words text-sm leading-6 text-slate-400">
-                {report.description?.trim() ||
-                  "No description was provided for this report."}
+                {typeof report.description === "string" &&
+                report.description.trim()
+                  ? report.description.trim()
+                  : "No description was provided for this report."}
               </p>
             </div>
           </section>
@@ -446,8 +520,8 @@ function ReportDetailsModal({
                 </h3>
 
                 <p className="mt-1 text-xs leading-5 text-slate-500">
-                  Download the generated PDF document for this report.
-                  Availability depends on the backend response.
+                  Download the PDF document generated by the existing
+                  backend report endpoint.
                 </p>
               </div>
             </div>
@@ -461,7 +535,10 @@ function ReportDetailsModal({
                   aria-hidden="true"
                   className="mt-0.5 h-4 w-4 shrink-0"
                 />
-                <span className="break-words">{downloadError}</span>
+
+                <span className="break-words">
+                  {downloadError}
+                </span>
               </p>
             )}
 
@@ -469,12 +546,19 @@ function ReportDetailsModal({
               <ModalActionButton
                 icon={downloading ? FiRefreshCw : FiDownload}
                 onClick={handleDownload}
-                disabled={downloading || deleting}
+                disabled={busy || !reportCode}
                 variant="primary"
               >
                 {downloading ? "Preparing PDF..." : "Download PDF"}
               </ModalActionButton>
             </div>
+
+            {!reportCode && (
+              <p className="mt-2 text-xs text-amber-200">
+                PDF download is unavailable because this record has no
+                report code.
+              </p>
+            )}
           </section>
         </div>
 
@@ -490,7 +574,7 @@ function ReportDetailsModal({
               <ModalActionButton
                 icon={FiTrash2}
                 onClick={handleDelete}
-                disabled={deleting || downloading}
+                disabled={busy || !reportCode}
                 variant="danger"
               >
                 {deleting ? "Deleting..." : "Delete report"}
@@ -499,7 +583,7 @@ function ReportDetailsModal({
 
             <ModalActionButton
               onClick={handleClose}
-              disabled={downloading || deleting}
+              disabled={busy}
             >
               Close
             </ModalActionButton>

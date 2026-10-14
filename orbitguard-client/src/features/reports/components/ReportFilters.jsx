@@ -1,5 +1,4 @@
-
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import {
   FiSearch,
@@ -12,7 +11,9 @@ import {
 
 /* ================================================================
    REPORT FILTER CONFIGURATION
-   Values must match the existing backend enums.
+
+   These values must match the backend enum values.
+   Filtering is applied by the parent Reports.jsx component.
    ================================================================ */
 
 const REPORT_TYPES = [
@@ -73,7 +74,7 @@ function FilterSelect({
       >
         {options.map((option) => (
           <option
-            key={option.value}
+            key={option.value || option.label}
             value={option.value}
             className="bg-[#071321] text-slate-100"
           >
@@ -124,6 +125,8 @@ function ReportTypeButtons({
                       ? "border-cyan-400/50 bg-cyan-400/10 text-cyan-200"
                       : "border-white/[0.08] bg-white/[0.02] text-slate-400 hover:border-cyan-300/25 hover:text-white"
                   }
+                  focus-visible:outline-none
+                  focus-visible:ring-2 focus-visible:ring-cyan-300/60
                 `
                 : `
                   inline-flex min-h-10 shrink-0 items-center justify-center
@@ -134,6 +137,8 @@ function ReportTypeButtons({
                       ? "border-cyan-300/60 bg-gradient-to-r from-cyan-400 to-sky-500 text-[#04111D] shadow-[0_0_20px_rgba(34,211,238,0.16)]"
                       : "border-white/[0.08] bg-[#071321]/80 text-slate-400 hover:border-cyan-300/25 hover:bg-white/[0.04] hover:text-white"
                   }
+                  focus-visible:outline-none
+                  focus-visible:ring-2 focus-visible:ring-cyan-300/60
                 `
             }
           >
@@ -163,6 +168,8 @@ function ReportFilters({
   onReset,
 }) {
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const searchId = useId();
+  const mobileFiltersId = useId();
 
   const hasActiveFilters =
     search.trim() !== "" ||
@@ -175,10 +182,12 @@ function ReportFilters({
     "All Reports";
 
   const selectedStatusLabel =
-    REPORT_STATUSES.find((item) => item.value === status)?.label ?? status;
+    REPORT_STATUSES.find((item) => item.value === status)?.label ??
+    status;
 
   const selectedSortLabel =
-    SORT_OPTIONS.find((item) => item.value === sortBy)?.label ?? sortBy;
+    SORT_OPTIONS.find((item) => item.value === sortBy)?.label ??
+    sortBy;
 
   const resetFilters = () => {
     if (onReset) {
@@ -194,7 +203,10 @@ function ReportFilters({
   };
 
   return (
-    <section aria-label="Filter reports" className="w-full min-w-0 space-y-3">
+    <section
+      aria-label="Filter reports"
+      className="w-full min-w-0 space-y-3"
+    >
       {/* Desktop report type tabs */}
 
       <div className="hidden min-w-0 lg:block">
@@ -203,8 +215,7 @@ function ReportFilters({
           aria-label="Filter by report type"
           className="
             flex min-w-0 items-center gap-2
-            overflow-x-auto overscroll-x-contain
-            pb-1
+            overflow-x-auto overscroll-x-contain pb-1
           "
         >
           <ReportTypeButtons
@@ -226,9 +237,9 @@ function ReportFilters({
       >
         {/* Search */}
 
-        <label className="relative block min-w-0">
+        <label htmlFor={searchId} className="relative block min-w-0">
           <span className="sr-only">
-            Search reports by code, title, or description
+            Search reports by code, title, description, type, or status
           </span>
 
           <FiSearch
@@ -240,7 +251,10 @@ function ReportFilters({
           />
 
           <input
+            id={searchId}
             type="search"
+            name="reportSearch"
+            autoComplete="off"
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder="Search reports..."
@@ -266,6 +280,8 @@ function ReportFilters({
                 -translate-y-1/2 rounded-md p-1
                 text-slate-500 transition-colors
                 hover:bg-white/10 hover:text-white
+                focus-visible:outline-none
+                focus-visible:ring-2 focus-visible:ring-cyan-300/60
               "
             >
               <FiX aria-hidden="true" className="h-4 w-4" />
@@ -278,14 +294,18 @@ function ReportFilters({
         <button
           type="button"
           aria-expanded={mobileFiltersOpen}
-          aria-controls="mobile-report-filters"
-          onClick={() => setMobileFiltersOpen((open) => !open)}
+          aria-controls={mobileFiltersId}
+          onClick={() =>
+            setMobileFiltersOpen((current) => !current)
+          }
           className="
             inline-flex h-11 items-center justify-center gap-2
             rounded-xl border border-white/10
             bg-[#071321]/90 px-4
             text-sm text-slate-300 transition-colors
             hover:border-cyan-400/30 hover:text-white
+            focus-visible:outline-none
+            focus-visible:ring-2 focus-visible:ring-cyan-300/60
             lg:hidden
           "
         >
@@ -333,8 +353,7 @@ function ReportFilters({
           className="
             hidden h-11 shrink-0 items-center justify-center gap-1
             rounded-xl border border-white/10
-            bg-[#071321]/90 p-1 sm:flex
-            lg:col-start-4
+            bg-[#071321]/90 p-1 sm:flex lg:col-start-4
           "
         >
           <button
@@ -350,6 +369,8 @@ function ReportFilters({
                   ? "bg-cyan-400 text-[#04111D]"
                   : "text-slate-500 hover:bg-white/[0.06] hover:text-white"
               }
+              focus-visible:outline-none
+              focus-visible:ring-2 focus-visible:ring-cyan-300/60
             `}
           >
             <FiList aria-hidden="true" className="h-4 w-4" />
@@ -368,6 +389,8 @@ function ReportFilters({
                   ? "bg-cyan-400 text-[#04111D]"
                   : "text-slate-500 hover:bg-white/[0.06] hover:text-white"
               }
+              focus-visible:outline-none
+              focus-visible:ring-2 focus-visible:ring-cyan-300/60
             `}
           >
             <FiGrid aria-hidden="true" className="h-4 w-4" />
@@ -379,19 +402,18 @@ function ReportFilters({
 
       {mobileFiltersOpen && (
         <div
-          id="mobile-report-filters"
+          id={mobileFiltersId}
           className="
             min-w-0 rounded-2xl border border-white/[0.08]
             bg-[#071321]/95 p-3 sm:p-4 lg:hidden
           "
         >
-          {/* Panel heading and dedicated close button */}
-
           <div className="mb-4 flex items-center justify-between gap-3 border-b border-white/[0.07] pb-3">
             <div>
               <h3 className="text-sm font-semibold text-slate-100">
                 Report filters
               </h3>
+
               <p className="mt-1 text-xs text-slate-500">
                 Narrow down your report list
               </p>
@@ -431,13 +453,13 @@ function ReportFilters({
             </div>
           </div>
 
-          {/* Dropdowns: full width and spaced consistently */}
+          {/* Status and sorting */}
 
           <div className="mt-4 grid grid-cols-1 gap-4">
             <div className="min-w-0">
-              <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                 Status
-              </label>
+              </p>
 
               <FilterSelect
                 label="Filter by status"
@@ -448,9 +470,9 @@ function ReportFilters({
             </div>
 
             <div className="min-w-0">
-              <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                 Sort by
-              </label>
+              </p>
 
               <FilterSelect
                 label="Sort reports"
@@ -486,6 +508,8 @@ function ReportFilters({
                 min-h-10 rounded-lg bg-cyan-400 px-4 py-2
                 text-sm font-semibold text-[#04111D]
                 transition-colors hover:bg-cyan-300
+                focus-visible:outline-none
+                focus-visible:ring-2 focus-visible:ring-cyan-300/60
               "
             >
               Show results
@@ -501,13 +525,13 @@ function ReportFilters({
           <span>Active filters:</span>
 
           {search.trim() && (
-            <span className="max-w-full truncate rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-slate-300">
+            <span className="max-w-full break-words rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-slate-300">
               Search: {search.trim()}
             </span>
           )}
 
           {reportType && (
-            <span className="max-w-full truncate rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-slate-300">
+            <span className="max-w-full break-words rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-slate-300">
               {reportTypeLabel}
             </span>
           )}
@@ -527,7 +551,12 @@ function ReportFilters({
           <button
             type="button"
             onClick={resetFilters}
-            className="ml-1 font-medium text-cyan-300 transition-colors hover:text-cyan-200"
+            className="
+              ml-1 font-medium text-cyan-300
+              transition-colors hover:text-cyan-200
+              focus-visible:outline-none
+              focus-visible:ring-2 focus-visible:ring-cyan-300/60
+            "
           >
             Clear all
           </button>

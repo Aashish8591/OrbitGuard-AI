@@ -17,7 +17,8 @@ import {
 
 /* ================================================================
    REPORT TYPES
-   Keep these values aligned with the existing backend enum.
+
+   Values must match the existing backend ReportType enum.
    ================================================================ */
 
 const REPORT_TYPES = [
@@ -70,24 +71,33 @@ const DESCRIPTION_MAX_LENGTH = 500;
 function validateForm({ reportType, title, description }) {
   const errors = {};
 
-  if (!reportType) {
+  const safeReportType =
+    typeof reportType === "string" ? reportType.trim() : "";
+
+  const safeTitle = typeof title === "string" ? title.trim() : "";
+
+  const safeDescription =
+    typeof description === "string" ? description : "";
+
+  if (!safeReportType) {
     errors.reportType = "Select a report type.";
-  } else if (!REPORT_TYPES.some((type) => type.value === reportType)) {
+  } else if (
+    !REPORT_TYPES.some((type) => type.value === safeReportType)
+  ) {
     errors.reportType = "Select a valid report type.";
   }
 
-  const trimmedTitle = title.trim();
-
-  if (!trimmedTitle) {
+  if (!safeTitle) {
     errors.title = "Report title is required.";
-  } else if (trimmedTitle.length < TITLE_MIN_LENGTH) {
+  } else if (safeTitle.length < TITLE_MIN_LENGTH) {
     errors.title = `Enter at least ${TITLE_MIN_LENGTH} characters.`;
-  } else if (trimmedTitle.length > TITLE_MAX_LENGTH) {
+  } else if (safeTitle.length > TITLE_MAX_LENGTH) {
     errors.title = `Use no more than ${TITLE_MAX_LENGTH} characters.`;
   }
 
-  if (description.length > DESCRIPTION_MAX_LENGTH) {
-    errors.description = `Use no more than ${DESCRIPTION_MAX_LENGTH} characters.`;
+  if (safeDescription.length > DESCRIPTION_MAX_LENGTH) {
+    errors.description =
+      `Use no more than ${DESCRIPTION_MAX_LENGTH} characters.`;
   }
 
   return errors;
@@ -175,7 +185,9 @@ function ReportTypeCard({
           }
         `}
       >
-        {selected && <span className="h-1.5 w-1.5 rounded-full bg-[#04111D]" />}
+        {selected && (
+          <span className="h-1.5 w-1.5 rounded-full bg-[#04111D]" />
+        )}
       </span>
     </label>
   );
@@ -201,6 +213,7 @@ function GenerateReportModal({
   const firstTypeRef = useRef(null);
   const titleInputRef = useRef(null);
   const previousFocusRef = useRef(null);
+  const submittingRef = useRef(false);
 
   const [reportType, setReportType] = useState("");
   const [title, setTitle] = useState("");
@@ -208,7 +221,11 @@ function GenerateReportModal({
   const [errors, setErrors] = useState({});
   const [submitAttempted, setSubmitAttempted] = useState(false);
 
-  /* Reset fields each time the dialog opens. */
+  useEffect(() => {
+    submittingRef.current = submitting;
+  }, [submitting]);
+
+  /* Reset the form when the dialog opens. */
 
   useEffect(() => {
     if (!open) return;
@@ -220,7 +237,7 @@ function GenerateReportModal({
     setSubmitAttempted(false);
   }, [open]);
 
-  /* Lock background scrolling and handle modal keyboard controls. */
+  /* Manage focus, keyboard interaction and background scrolling. */
 
   useEffect(() => {
     if (!open) return undefined;
@@ -230,13 +247,15 @@ function GenerateReportModal({
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
-    const focusFrame = requestAnimationFrame(() => {
+    const focusFrame = window.requestAnimationFrame(() => {
       firstTypeRef.current?.focus();
     });
 
     const handleKeyDown = (event) => {
-      if (event.key === "Escape" && !submitting) {
-        onClose?.();
+      if (event.key === "Escape") {
+        if (!submittingRef.current) {
+          onClose?.();
+        }
         return;
       }
 
@@ -250,8 +269,8 @@ function GenerateReportModal({
 
       const focusable = Array.from(
         dialog.querySelectorAll(
-          'button:not(:disabled), input:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
-        ),
+          'button:not(:disabled), input:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+        )
       ).filter((element) => element.getClientRects().length > 0);
 
       if (!focusable.length) return;
@@ -262,7 +281,10 @@ function GenerateReportModal({
       if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
         last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
+      } else if (
+        !event.shiftKey &&
+        document.activeElement === last
+      ) {
         event.preventDefault();
         first.focus();
       }
@@ -271,7 +293,8 @@ function GenerateReportModal({
     document.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      cancelAnimationFrame(focusFrame);
+      window.cancelAnimationFrame(focusFrame);
+
       document.body.style.overflow = previousOverflow;
       document.removeEventListener("keydown", handleKeyDown);
 
@@ -281,7 +304,7 @@ function GenerateReportModal({
         previousFocus.focus();
       }
     };
-  }, [open, submitting, onClose, dialogTitleId]);
+  }, [open, onClose, dialogTitleId]);
 
   if (!open) return null;
 
@@ -300,14 +323,17 @@ function GenerateReportModal({
   const handleSubmit = async (event) => {
     event.preventDefault();
 
-    setSubmitAttempted(true);
-
     if (submitting) return;
+
+    setSubmitAttempted(true);
 
     if (!validateCurrentForm()) {
       if (!reportType) {
         firstTypeRef.current?.focus();
-      } else if (!title.trim() || title.trim().length < TITLE_MIN_LENGTH) {
+      } else if (
+        !title.trim() ||
+        title.trim().length < TITLE_MIN_LENGTH
+      ) {
         titleInputRef.current?.focus();
       }
 
@@ -321,6 +347,7 @@ function GenerateReportModal({
     };
 
     try {
+      // The parent handles the backend request and displays API errors.
       await onSubmit?.(payload);
     } catch {
       // The parent owns submission errors and their presentation.
@@ -339,17 +366,17 @@ function GenerateReportModal({
   };
 
   const updateField = (field, value) => {
+    const nextValues = {
+      reportType: field === "reportType" ? value : reportType,
+      title: field === "title" ? value : title,
+      description: field === "description" ? value : description,
+    };
+
     if (field === "reportType") setReportType(value);
     if (field === "title") setTitle(value);
     if (field === "description") setDescription(value);
 
     if (submitAttempted) {
-      const nextValues = {
-        reportType: field === "reportType" ? value : reportType,
-        title: field === "title" ? value : title,
-        description: field === "description" ? value : description,
-      };
-
       setErrors(validateForm(nextValues));
     } else if (errors[field]) {
       setErrors((previous) => {
@@ -363,14 +390,14 @@ function GenerateReportModal({
   return (
     <div
       className="
-    fixed inset-0 z-[100]
-    flex items-start justify-center
-    overflow-y-auto overscroll-contain
-    bg-[#020611]/85
-    px-3 pb-3 pt-[100px]
-    backdrop-blur-md
-    sm:px-3 sm:pb-2 sm:pt-[90px]
-  "
+        fixed inset-0 z-[100]
+        flex items-start justify-center
+        overflow-y-auto overscroll-contain
+        bg-[#020611]/85
+        px-3 pb-3 pt-[100px]
+        backdrop-blur-md
+        sm:px-3 sm:pb-2 sm:pt-[90px]
+      "
       onMouseDown={handleBackdropClick}
     >
       <section
@@ -391,7 +418,7 @@ function GenerateReportModal({
           minHeight: "340px",
         }}
       >
-        {/* Compact fixed header */}
+        {/* Header */}
 
         <header className="relative z-10 shrink-0 border-b border-white/[0.07] bg-[#07111F] px-4 py-3 sm:px-6 sm:py-3.5">
           <div
@@ -445,7 +472,7 @@ function GenerateReportModal({
           </div>
         </header>
 
-        {/* Only this section scrolls. */}
+        {/* Scrollable form content */}
 
         <form
           onSubmit={handleSubmit}
@@ -463,7 +490,7 @@ function GenerateReportModal({
               WebkitOverflowScrolling: "touch",
             }}
           >
-            <fieldset>
+            <fieldset disabled={submitting}>
               <legend className="text-sm font-semibold text-slate-100">
                 01. Choose report type
                 <span className="ml-1 text-red-300">*</span>
@@ -483,7 +510,9 @@ function GenerateReportModal({
                     disabled={submitting}
                     groupName={dialogTitleId}
                     inputRef={index === 0 ? firstTypeRef : undefined}
-                    errorId={errors.reportType ? reportTypeErrorId : undefined}
+                    errorId={
+                      errors.reportType ? reportTypeErrorId : undefined
+                    }
                   />
                 ))}
               </div>
@@ -547,11 +576,17 @@ function GenerateReportModal({
 
               <div className="mt-1.5 flex items-start justify-between gap-3">
                 {errors.title ? (
-                  <p id={`${titleId}-error`} className="text-xs text-red-300">
+                  <p
+                    id={`${titleId}-error`}
+                    className="text-xs text-red-300"
+                  >
                     {errors.title}
                   </p>
                 ) : (
-                  <p id={`${titleId}-hint`} className="text-xs text-slate-500">
+                  <p
+                    id={`${titleId}-hint`}
+                    className="text-xs text-slate-500"
+                  >
                     {TITLE_MIN_LENGTH}–{TITLE_MAX_LENGTH} characters
                   </p>
                 )}
@@ -647,6 +682,7 @@ function GenerateReportModal({
                   <p className="text-sm font-medium text-red-200">
                     Report generation request failed
                   </p>
+
                   <p className="mt-1 break-words text-xs leading-5 text-red-200/70">
                     {error}
                   </p>
@@ -662,13 +698,13 @@ function GenerateReportModal({
 
               <p className="text-xs leading-5 text-slate-400">
                 Your report will be registered in the archive. Its initial
-                status is managed by the backend; creating a report does not by
-                itself guarantee that its full analysis or PDF is ready.
+                status is managed by the backend; creating a report does not
+                guarantee that its analysis or PDF is ready immediately.
               </p>
             </div>
           </div>
 
-          {/* Compact footer stays visible. */}
+          {/* Persistent footer */}
 
           <footer
             className="
@@ -728,7 +764,10 @@ function GenerateReportModal({
                 ) : (
                   <>
                     Generate report
-                    <FiArrowRight aria-hidden="true" className="h-4 w-4" />
+                    <FiArrowRight
+                      aria-hidden="true"
+                      className="h-4 w-4"
+                    />
                   </>
                 )}
               </button>

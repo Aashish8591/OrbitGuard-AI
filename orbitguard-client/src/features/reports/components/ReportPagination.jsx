@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+
 import {
   FiChevronLeft,
   FiChevronRight,
@@ -9,6 +10,8 @@ import {
 const DEFAULT_PAGE_SIZES = [10, 20, 50, 100];
 
 function getPageItems(currentPage, totalPages) {
+  if (totalPages <= 0) return [];
+
   if (totalPages <= 7) {
     return Array.from({ length: totalPages }, (_, index) => index + 1);
   }
@@ -38,6 +41,14 @@ function getPageItems(currentPage, totalPages) {
     "ellipsis-right",
     totalPages,
   ];
+}
+
+function normalizePositiveInteger(value, fallback) {
+  const parsed = Number(value);
+
+  return Number.isFinite(parsed) && parsed > 0
+    ? Math.floor(parsed)
+    : fallback;
 }
 
 function PaginationButton({
@@ -88,28 +99,30 @@ function ReportPagination({
   showItemCount = true,
   className = "",
 }) {
-  const normalizedPageSize = Math.max(1, Number(pageSize) || 10);
-  const normalizedTotalItems = Math.max(0, Number(totalItems) || 0);
+  const normalizedPageSize = normalizePositiveInteger(pageSize, 10);
+  const normalizedTotalItems = Math.max(
+    0,
+    Math.floor(Number(totalItems) || 0),
+  );
 
   const calculatedTotalPages = Math.ceil(
     normalizedTotalItems / normalizedPageSize,
   );
 
-  const resolvedTotalPages =
+  const suppliedTotalPages =
     totalPages == null
       ? calculatedTotalPages
-      : Math.max(0, Number(totalPages) || 0);
+      : Math.max(0, Math.floor(Number(totalPages) || 0));
 
+  // Empty results always have zero pages.
   const safeTotalPages =
-    normalizedTotalItems === 0 && totalPages == null
-      ? 0
-      : resolvedTotalPages;
+    normalizedTotalItems === 0 ? 0 : suppliedTotalPages;
 
   const currentPage =
     safeTotalPages === 0
       ? 1
       : Math.min(
-          Math.max(1, Number(page) || 1),
+          Math.max(1, normalizePositiveInteger(page, 1)),
           safeTotalPages,
         );
 
@@ -132,10 +145,23 @@ function ReportPagination({
   const canGoNext =
     safeTotalPages > 0 && currentPage < safeTotalPages;
 
+  const normalizedPageSizes = useMemo(() => {
+    const values = Array.isArray(pageSizes)
+      ? pageSizes
+          .map((size) => Number(size))
+          .filter(
+            (size) => Number.isFinite(size) && size > 0 && Number.isInteger(size),
+          )
+      : DEFAULT_PAGE_SIZES;
+
+    return [...new Set(values)].sort((a, b) => a - b);
+  }, [pageSizes]);
+
   const handlePageChange = (nextPage) => {
     if (
       loading ||
       typeof onPageChange !== "function" ||
+      !Number.isInteger(nextPage) ||
       nextPage < 1 ||
       nextPage > safeTotalPages ||
       nextPage === currentPage
@@ -150,8 +176,8 @@ function ReportPagination({
     const nextSize = Number(event.target.value);
 
     if (
-      !Number.isFinite(nextSize) ||
-      nextSize <= 0 ||
+      loading ||
+      !normalizedPageSizes.includes(nextSize) ||
       nextSize === normalizedPageSize ||
       typeof onPageSizeChange !== "function"
     ) {
@@ -168,20 +194,22 @@ function ReportPagination({
   return (
     <nav
       aria-label="Report pagination"
+      aria-busy={loading}
       className={[
         "flex min-w-0 flex-col gap-4 border-t border-slate-800",
         "px-4 py-4 sm:px-5",
         "lg:flex-row lg:items-center lg:justify-between",
         className,
       ].join(" ")}
-      aria-busy={loading}
     >
       {/* Item range and page size */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between lg:justify-start">
+
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between lg:justify-start">
         {showItemCount && (
           <p
             className="text-xs leading-5 text-slate-400"
             aria-live="polite"
+            aria-atomic="true"
           >
             {normalizedTotalItems === 0 ? (
               "No reports to display"
@@ -206,9 +234,14 @@ function ReportPagination({
             <span className="shrink-0">Rows per page</span>
 
             <select
+              aria-label="Reports per page"
               value={normalizedPageSize}
               onChange={handlePageSizeChange}
-              disabled={loading || typeof onPageSizeChange !== "function"}
+              disabled={
+                loading ||
+                typeof onPageSizeChange !== "function" ||
+                normalizedPageSizes.length === 0
+              }
               className={[
                 "h-9 rounded-lg border border-slate-800",
                 "bg-slate-900 px-2 text-sm text-slate-200",
@@ -217,13 +250,13 @@ function ReportPagination({
                 "disabled:cursor-not-allowed disabled:opacity-50",
               ].join(" ")}
             >
-              {!pageSizes.includes(normalizedPageSize) && (
+              {!normalizedPageSizes.includes(normalizedPageSize) && (
                 <option value={normalizedPageSize}>
                   {normalizedPageSize}
                 </option>
               )}
 
-              {pageSizes.map((size) => (
+              {normalizedPageSizes.map((size) => (
                 <option key={size} value={size}>
                   {size}
                 </option>
@@ -234,9 +267,10 @@ function ReportPagination({
       </div>
 
       {/* Page controls */}
+
       {safeTotalPages > 1 && (
         <div className="flex min-w-0 items-center justify-between gap-2 sm:justify-end">
-          <div className="flex items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1">
             <PaginationButton
               label="Go to first page"
               disabled={!canGoPrevious || loading}
@@ -256,14 +290,17 @@ function ReportPagination({
             </PaginationButton>
           </div>
 
-          <div className="flex min-w-0 items-center gap-1">
+          <div
+            className="flex min-w-0 items-center justify-center gap-1"
+            aria-label={`Page ${currentPage} of ${safeTotalPages}`}
+          >
             {pageItems.map((item, index) => {
               if (typeof item === "string") {
                 return (
                   <span
                     key={`${item}-${index}`}
                     aria-hidden="true"
-                    className="flex h-9 min-w-5 items-center justify-center text-sm text-slate-500"
+                    className="hidden h-9 min-w-5 items-center justify-center text-sm text-slate-500 sm:flex"
                   >
                     …
                   </span>
@@ -289,7 +326,7 @@ function ReportPagination({
             })}
           </div>
 
-          <div className="flex items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1">
             <PaginationButton
               label="Go to next page"
               disabled={!canGoNext || loading}

@@ -1,19 +1,19 @@
 import {
-  FiFileText,
-  FiGlobe,
-  FiGitBranch,
-  FiShield,
+  FiAlertCircle,
   FiBarChart2,
   FiBell,
-  FiCpu,
-  FiEye,
-  FiDownload,
-  FiMoreVertical,
   FiCalendar,
   FiClock,
-  FiAlertCircle,
-  FiRefreshCw,
+  FiCpu,
+  FiDownload,
+  FiEye,
+  FiFileText,
+  FiGitBranch,
+  FiGlobe,
   FiInbox,
+  FiMoreVertical,
+  FiRefreshCw,
+  FiShield,
 } from "react-icons/fi";
 
 /* ================================================================
@@ -99,33 +99,50 @@ function normalizeReportType(type) {
 }
 
 function getReportKey(report) {
-  return (
+  const key =
     report?.id ??
     report?._id ??
     report?.reportCode ??
-    report?.reportId ??
-    null
-  );
+    report?.reportId;
+
+  return key == null || String(key).trim() === ""
+    ? null
+    : String(key);
 }
 
 function getReportCode(report) {
-  return report?.reportCode ?? report?.id ?? report?._id ?? "—";
+  const code =
+    report?.reportCode ??
+    report?.id ??
+    report?._id ??
+    report?.reportId;
+
+  return code == null || String(code).trim() === ""
+    ? "—"
+    : String(code);
 }
 
 function getReportType(report) {
   const normalizedType = normalizeReportType(report?.reportType);
+  const configuredType = REPORT_TYPE_CONFIG[normalizedType];
 
-  return (
-    REPORT_TYPE_CONFIG[normalizedType] ?? {
-      label: String(report?.reportType ?? "Unknown type")
-        .replaceAll("_", " ")
-        .toLowerCase()
-        .replace(/\b\w/g, (character) => character.toUpperCase()),
-      icon: FiFileText,
-      accent: "text-slate-300",
-      surface: "border-slate-700 bg-slate-800/60",
-    }
-  );
+  if (configuredType) {
+    return configuredType;
+  }
+
+  const readableType = String(
+    report?.reportType || "Unknown type",
+  )
+    .replace(/_/g, " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+
+  return {
+    label: readableType,
+    icon: FiFileText,
+    accent: "text-slate-300",
+    surface: "border-slate-700 bg-slate-800/60",
+  };
 }
 
 function formatDate(value) {
@@ -133,25 +150,54 @@ function formatDate(value) {
 
   const date = new Date(value);
 
-  if (Number.isNaN(date.getTime())) return "—";
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
 
-  return new Intl.DateTimeFormat("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(date);
+  try {
+    return new Intl.DateTimeFormat("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(date);
+  } catch {
+    return "—";
+  }
 }
 
 function isDownloadingReport(report, downloadingReportCode) {
-  if (downloadingReportCode == null) return false;
+  if (
+    downloadingReportCode == null ||
+    String(downloadingReportCode).trim() === ""
+  ) {
+    return false;
+  }
+
+  const downloadingKey = String(downloadingReportCode);
 
   return (
-    String(downloadingReportCode) === String(getReportCode(report)) ||
-    String(downloadingReportCode) === String(getReportKey(report))
+    downloadingKey === getReportCode(report) ||
+    downloadingKey === getReportKey(report)
   );
+}
+
+function normalizeErrorMessage(error) {
+  if (typeof error === "string") {
+    return error.trim() || "Please try again.";
+  }
+
+  if (error instanceof Error) {
+    return error.message || "Please try again.";
+  }
+
+  if (error && typeof error.message === "string") {
+    return error.message || "Please try again.";
+  }
+
+  return "Something went wrong while loading reports. Please try again.";
 }
 
 /* ================================================================
@@ -163,9 +209,11 @@ function ReportStatusBadge({ status }) {
   const config = STATUS_CONFIG[normalizedStatus];
 
   if (!config) {
+    const label = String(status ?? "").trim() || "Unknown";
+
     return (
       <span className="inline-flex max-w-full items-center rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs text-slate-400">
-        {status || "Unknown"}
+        <span className="truncate">{label}</span>
       </span>
     );
   }
@@ -178,6 +226,7 @@ function ReportStatusBadge({ status }) {
         aria-hidden="true"
         className={`h-1.5 w-1.5 shrink-0 rounded-full ${config.dot}`}
       />
+
       {config.label}
     </span>
   );
@@ -202,7 +251,12 @@ function ActionButton({
       onClick={onClick}
       className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.02] text-slate-400 transition-colors hover:border-cyan-400/30 hover:bg-cyan-400/[0.07] hover:text-cyan-200 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
     >
-      <Icon aria-hidden="true" className="h-4 w-4" />
+      <Icon
+        aria-hidden="true"
+        className={`h-4 w-4 ${
+          disabled && Icon === FiRefreshCw ? "animate-spin" : ""
+        }`}
+      />
     </button>
   );
 }
@@ -238,7 +292,7 @@ function EmptyState({ hasFilters, onReset }) {
           : "Generate your first space intelligence report to see it here."}
       </p>
 
-      {hasFilters && onReset && (
+      {hasFilters && typeof onReset === "function" && (
         <button
           type="button"
           onClick={onReset}
@@ -274,7 +328,7 @@ function ReportRow({
       </td>
 
       <td className="px-4 py-4">
-        <span className="font-mono text-xs font-semibold tracking-wide text-slate-200">
+        <span className="break-all font-mono text-xs font-semibold tracking-wide text-slate-200">
           {reportCode}
         </span>
       </td>
@@ -330,16 +384,23 @@ function ReportRow({
             label={`View report ${reportCode}`}
             icon={FiEye}
             onClick={() => onView?.(report)}
+            disabled={typeof onView !== "function"}
           />
 
           <ActionButton
-            label={`Download PDF for ${reportCode}`}
+            label={
+              downloading
+                ? `Downloading PDF for ${reportCode}`
+                : `Download PDF for ${reportCode}`
+            }
             icon={downloading ? FiRefreshCw : FiDownload}
-            disabled={downloading}
             onClick={() => onDownload?.(report)}
+            disabled={
+              downloading || typeof onDownload !== "function"
+            }
           />
 
-          {onMore && (
+          {typeof onMore === "function" && (
             <ActionButton
               label={`More actions for ${reportCode}`}
               icon={FiMoreVertical}
@@ -443,8 +504,9 @@ function MobileReportCard({
       <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-white/[0.06] pt-3">
         <button
           type="button"
+          disabled={typeof onView !== "function"}
           onClick={() => onView?.(report)}
-          className="inline-flex min-h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-xl border border-cyan-400/20 bg-cyan-400/[0.06] px-3 py-2 text-xs font-medium text-cyan-200 transition-colors hover:bg-cyan-400/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
+          className="inline-flex min-h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-xl border border-cyan-400/20 bg-cyan-400/[0.06] px-3 py-2 text-xs font-medium text-cyan-200 transition-colors hover:bg-cyan-400/[0.12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60 disabled:cursor-not-allowed disabled:opacity-40"
         >
           <FiEye aria-hidden="true" className="h-4 w-4" />
           View details
@@ -452,9 +514,11 @@ function MobileReportCard({
 
         <button
           type="button"
-          disabled={downloading}
+          disabled={
+            downloading || typeof onDownload !== "function"
+          }
           onClick={() => onDownload?.(report)}
-          className="inline-flex min-h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-xs font-medium text-slate-300 transition-colors hover:border-white/20 hover:text-white disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
+          className="inline-flex min-h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-xs font-medium text-slate-300 transition-colors hover:border-white/20 hover:text-white disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
         >
           {downloading ? (
             <FiRefreshCw
@@ -464,10 +528,11 @@ function MobileReportCard({
           ) : (
             <FiDownload aria-hidden="true" className="h-4 w-4" />
           )}
-          Download PDF
+
+          {downloading ? "Downloading..." : "Download PDF"}
         </button>
 
-        {onMore && (
+        {typeof onMore === "function" && (
           <ActionButton
             label={`More actions for ${reportCode}`}
             icon={FiMoreVertical}
@@ -480,16 +545,55 @@ function MobileReportCard({
 }
 
 /* ================================================================
+   LOADING STATE
+================================================================ */
+
+function ReportsLoadingState() {
+  return (
+    <section
+      aria-label="Loading reports"
+      aria-busy="true"
+      className="min-w-0 w-full"
+    >
+      <div className="hidden overflow-hidden rounded-2xl border border-white/[0.08] bg-[#050D18]/90 lg:block">
+        {Array.from({ length: 5 }, (_, rowIndex) => (
+          <div
+            key={`desktop-loading-${rowIndex}`}
+            className="grid grid-cols-8 gap-4 border-b border-white/[0.05] px-4 py-5 last:border-b-0"
+          >
+            {Array.from({ length: 8 }, (_, cellIndex) => (
+              <div
+                key={`desktop-loading-${rowIndex}-${cellIndex}`}
+                className="h-4 animate-pulse rounded bg-white/[0.06]"
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 lg:hidden">
+        {Array.from({ length: 3 }, (_, index) => (
+          <div
+            key={`mobile-loading-${index}`}
+            className="h-44 animate-pulse rounded-2xl border border-white/[0.07] bg-white/[0.025]"
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/* ================================================================
    REPORTS TABLE
 ================================================================ */
 
 /**
- * Displays reports supplied by the parent.
+ * Displays reports supplied by the parent component.
  *
  * Props:
  * reports: ReportResponse[]
  * loading: boolean
- * error: string | null
+ * error: string | Error | null
  * search: string
  * reportType: string
  * status: string
@@ -526,13 +630,21 @@ function ReportsTable({
       )
     : [];
 
+  const normalizedSearch =
+    typeof search === "string" ? search.trim() : "";
+
   const hasFilters = Boolean(
-    search.trim() || reportType || status,
+    normalizedSearch ||
+      (typeof reportType === "string" && reportType.trim()) ||
+      (typeof status === "string" && status.trim()),
   );
 
   if (error) {
     return (
-      <section className="rounded-2xl border border-red-400/20 bg-[#071321]/90 p-6 sm:p-8">
+      <section
+        role="alert"
+        className="rounded-2xl border border-red-400/20 bg-[#071321]/90 p-6 sm:p-8"
+      >
         <div className="mx-auto flex max-w-md flex-col items-center text-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-red-400/20 bg-red-400/[0.07]">
             <FiAlertCircle
@@ -546,18 +658,19 @@ function ReportsTable({
           </h3>
 
           <p className="mt-2 break-words text-sm leading-6 text-slate-400">
-            {typeof error === "string"
-              ? error
-              : error?.message ?? "Please try again."}
+            {normalizeErrorMessage(error)}
           </p>
 
-          {onRetry && (
+          {typeof onRetry === "function" && (
             <button
               type="button"
               onClick={onRetry}
               className="mt-5 inline-flex min-h-10 items-center gap-2 rounded-xl bg-cyan-400 px-4 py-2 text-sm font-semibold text-[#04111D] transition-colors hover:bg-cyan-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
             >
-              <FiRefreshCw aria-hidden="true" className="h-4 w-4" />
+              <FiRefreshCw
+                aria-hidden="true"
+                className="h-4 w-4"
+              />
               Try again
             </button>
           )}
@@ -567,40 +680,7 @@ function ReportsTable({
   }
 
   if (loading) {
-    return (
-      <section
-        aria-label="Loading reports"
-        aria-busy="true"
-        className="min-w-0 w-full"
-      >
-        <div className="hidden overflow-hidden rounded-2xl border border-white/[0.08] bg-[#050D18]/90 lg:block">
-          <div className="space-y-0">
-            {Array.from({ length: 5 }).map((_, index) => (
-              <div
-                key={`desktop-loading-${index}`}
-                className="grid grid-cols-8 gap-4 border-b border-white/[0.05] px-4 py-5 last:border-b-0"
-              >
-                {Array.from({ length: 8 }).map((__, cellIndex) => (
-                  <div
-                    key={`desktop-loading-${index}-${cellIndex}`}
-                    className="h-4 animate-pulse rounded bg-white/[0.06]"
-                  />
-                ))}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-3 lg:hidden">
-          {Array.from({ length: 3 }).map((_, index) => (
-            <div
-              key={`mobile-loading-${index}`}
-              className="h-44 animate-pulse rounded-2xl border border-white/[0.07] bg-white/[0.025]"
-            />
-          ))}
-        </div>
-      </section>
-    );
+    return <ReportsLoadingState />;
   }
 
   if (validReports.length === 0) {
@@ -622,14 +702,16 @@ function ReportsTable({
   return (
     <section
       aria-label="Reports archive"
-      aria-busy={false}
       className="min-w-0 w-full"
     >
       {isGridView ? (
         <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
-          {validReports.map((report) => (
+          {validReports.map((report, index) => (
             <MobileReportCard
-              key={getReportKey(report)}
+              key={
+                getReportKey(report) ??
+                `report-card-${index}`
+              }
               report={report}
               onView={onView}
               onDownload={onDownload}
@@ -652,25 +734,35 @@ function ReportsTable({
                     <th scope="col" className="w-12 px-4 py-4">
                       #
                     </th>
+
                     <th scope="col" className="px-4 py-4">
                       Report Code
                     </th>
+
                     <th scope="col" className="px-4 py-4">
                       Title
                     </th>
+
                     <th scope="col" className="px-4 py-4">
                       Type
                     </th>
+
                     <th scope="col" className="px-4 py-4">
                       Status
                     </th>
+
                     <th scope="col" className="px-4 py-4">
                       Created At
                     </th>
+
                     <th scope="col" className="px-4 py-4">
                       Updated At
                     </th>
-                    <th scope="col" className="px-4 py-4 text-right">
+
+                    <th
+                      scope="col"
+                      className="px-4 py-4 text-right"
+                    >
                       Actions
                     </th>
                   </tr>
@@ -679,7 +771,10 @@ function ReportsTable({
                 <tbody>
                   {validReports.map((report, index) => (
                     <ReportRow
-                      key={getReportKey(report) ?? `report-${index}`}
+                      key={
+                        getReportKey(report) ??
+                        `report-row-${index}`
+                      }
                       report={report}
                       index={index}
                       onView={onView}
@@ -700,7 +795,10 @@ function ReportsTable({
           <div className="grid grid-cols-1 gap-3 lg:hidden">
             {validReports.map((report, index) => (
               <MobileReportCard
-                key={getReportKey(report) ?? `report-${index}`}
+                key={
+                  getReportKey(report) ??
+                  `report-mobile-${index}`
+                }
                 report={report}
                 onView={onView}
                 onDownload={onDownload}

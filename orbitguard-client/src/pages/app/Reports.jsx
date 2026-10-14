@@ -1,5 +1,10 @@
-
-import { useCallback, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   FiActivity,
@@ -10,6 +15,8 @@ import {
   FiShield,
 } from "react-icons/fi";
 
+import reportService from "../../services/reportService";
+
 import ReportSummaryCards from "../../features/reports/components/ReportSummaryCards";
 import ReportFilters from "../../features/reports/components/ReportFilters";
 import ReportsTable from "../../features/reports/components/ReportsTable";
@@ -17,71 +24,6 @@ import GenerateReportModal from "../../features/reports/components/GenerateRepor
 import ReportDetailsModal from "../../features/reports/components/ReportDetailsModal";
 import ReportPagination from "../../features/reports/components/ReportPagination";
 import ReportsEmptyState from "../../features/reports/components/ReportsEmptyState";
-
-/* ================================================================
-   UI-ONLY DEVELOPMENT DATA
-
-   These records are demonstrations, not live backend records.
-   Connect the existing Reports API when reportService.js is ready.
-   ================================================================ */
-
-const INITIAL_REPORTS = [
-  {
-    id: "demo-1",
-    reportCode: "RPT-DEMO-001",
-    reportType: "SATELLITE_ANALYSIS",
-    status: "COMPLETED",
-    title: "Satellite Operations Overview",
-    description:
-      "Demonstration record for the satellite analysis report workflow.",
-    createdAt: "2026-10-14T09:30:00Z",
-    updatedAt: "2026-10-14T09:45:00Z",
-  },
-  {
-    id: "demo-2",
-    reportCode: "RPT-DEMO-002",
-    reportType: "RISK_ASSESSMENT",
-    status: "PROCESSING",
-    title: "Orbital Risk Assessment",
-    description:
-      "Demonstration record for the risk assessment report workflow.",
-    createdAt: "2026-10-14T08:20:00Z",
-    updatedAt: "2026-10-14T08:35:00Z",
-  },
-  {
-    id: "demo-3",
-    reportCode: "RPT-DEMO-003",
-    reportType: "DEBRIS_ANALYSIS",
-    status: "PENDING",
-    title: "Orbital Debris Review",
-    description:
-      "Demonstration record for the debris analysis report workflow.",
-    createdAt: "2026-10-13T15:10:00Z",
-    updatedAt: "2026-10-13T15:10:00Z",
-  },
-  {
-    id: "demo-4",
-    reportCode: "RPT-DEMO-004",
-    reportType: "ALERT_SUMMARY",
-    status: "FAILED",
-    title: "Alert Summary Report",
-    description:
-      "Demonstration record for the alert summary report workflow.",
-    createdAt: "2026-10-13T11:40:00Z",
-    updatedAt: "2026-10-13T12:00:00Z",
-  },
-  {
-    id: "demo-5",
-    reportCode: "RPT-DEMO-005",
-    reportType: "DASHBOARD_ANALYTICS",
-    status: "COMPLETED",
-    title: "Dashboard Analytics Summary",
-    description:
-      "Demonstration record for the dashboard analytics workflow.",
-    createdAt: "2026-10-12T13:15:00Z",
-    updatedAt: "2026-10-12T13:25:00Z",
-  },
-];
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 
@@ -95,7 +37,7 @@ const DEFAULT_FILTERS = {
 const REPORT_BACKGROUND = "/images/Report/reports-space-bg.png";
 
 /* ================================================================
-   HELPERS
+   RESPONSE HELPERS
    ================================================================ */
 
 function normalizeText(value) {
@@ -110,12 +52,73 @@ function normalizeReportType(value) {
   return String(value ?? "").trim().toUpperCase();
 }
 
+function getReportCode(report) {
+  return report?.reportCode ?? null;
+}
+
 function getReportKey(report) {
   return report?.id ?? report?._id ?? report?.reportCode ?? null;
 }
 
-function getReportCode(report) {
-  return report?.reportCode ?? null;
+/**
+ * Supports a direct array and common ApiResponse wrappers.
+ * This does not change the backend or reportService contract.
+ */
+function extractReports(response) {
+  if (Array.isArray(response)) {
+    return response;
+  }
+
+  if (Array.isArray(response?.data)) {
+    return response.data;
+  }
+
+  if (Array.isArray(response?.content)) {
+    return response.content;
+  }
+
+  if (Array.isArray(response?.data?.data)) {
+    return response.data.data;
+  }
+
+  if (Array.isArray(response?.data?.content)) {
+    return response.data.content;
+  }
+
+  return null;
+}
+
+function extractReport(response) {
+  if (!response || typeof response !== "object") {
+    return null;
+  }
+
+  // The service may already unwrap the ApiResponse.
+  if (response.reportCode || response.id || response._id) {
+    return response;
+  }
+
+  const nested = response.data;
+
+  if (nested && typeof nested === "object") {
+    if (nested.reportCode || nested.id || nested._id) {
+      return nested;
+    }
+
+    const deeplyNested = nested.data;
+
+    if (
+      deeplyNested &&
+      typeof deeplyNested === "object" &&
+      (deeplyNested.reportCode ||
+        deeplyNested.id ||
+        deeplyNested._id)
+    ) {
+      return deeplyNested;
+    }
+  }
+
+  return null;
 }
 
 function matchesReportSearch(report, search) {
@@ -144,8 +147,9 @@ function sortReports(reports, sortBy) {
   return [...reports].sort((a, b) => {
     if (field === "title") {
       return (
-        String(a?.title ?? "").localeCompare(String(b?.title ?? "")) *
-        multiplier
+        String(a?.title ?? "").localeCompare(
+          String(b?.title ?? ""),
+        ) * multiplier
       );
     }
 
@@ -159,50 +163,126 @@ function sortReports(reports, sortBy) {
   });
 }
 
-function getErrorMessage(error) {
-  return (
-    error?.response?.data?.message ??
-    error?.response?.data?.error ??
-    error?.message ??
-    "Something went wrong. Please try again."
-  );
+function getErrorMessage(
+  error,
+  fallback = "Something went wrong. Please try again.",
+) {
+  const data = error?.response?.data;
+
+  if (typeof data === "string" && data.trim()) {
+    return data.trim();
+  }
+
+  if (typeof data?.message === "string" && data.message.trim()) {
+    return data.message.trim();
+  }
+
+  if (typeof data?.error === "string" && data.error.trim()) {
+    return data.error.trim();
+  }
+
+  if (Array.isArray(data?.errors) && data.errors.length > 0) {
+    const first = data.errors[0];
+
+    if (typeof first === "string") return first;
+    if (typeof first?.message === "string") return first.message;
+  }
+
+  if (
+    error?.code === "ECONNABORTED" ||
+    error?.code === "ETIMEDOUT"
+  ) {
+    return "The request timed out. Check the server before retrying.";
+  }
+
+  return error?.message || fallback;
 }
 
-/*
- * UI-only download.
- * This creates a metadata text file, not a generated PDF.
+function formatReportFilename(reportCode) {
+  const safeCode = String(
+    reportCode || "orbitguard-report",
+  ).replace(/[^a-zA-Z0-9._-]/g, "-");
+
+  return `${safeCode}.pdf`;
+}
+
+/**
+ * Supports the existing service returning a Blob directly or an
+ * Axios-style response containing the Blob in its data property.
  */
-function downloadDemoReport(report) {
-  const content = [
-    "ORBITGUARD AI",
-    "REPORT METADATA PREVIEW",
-    "",
-    `Report code: ${report?.reportCode ?? "Not available"}`,
-    `Title: ${report?.title ?? "Untitled report"}`,
-    `Type: ${report?.reportType ?? "Not available"}`,
-    `Status: ${report?.status ?? "Not available"}`,
-    `Created: ${report?.createdAt ?? "Not available"}`,
-    "",
-    report?.description ?? "No description provided.",
-    "",
-    "UI DEVELOPMENT FILE — NOT AN OPERATIONAL ANALYSIS REPORT.",
-  ].join("\n");
+function extractPdfBlob(response) {
+  if (response instanceof Blob) {
+    return response;
+  }
 
-  const blob = new Blob([content], {
-    type: "text/plain;charset=utf-8",
-  });
+  if (response?.data instanceof Blob) {
+    return response.data;
+  }
 
-  const url = URL.createObjectURL(blob);
+  throw new Error("The server did not return a valid PDF file.");
+}
+
+async function downloadPdf(response, filename) {
+  const blob = extractPdfBlob(response);
+
+  if (blob.size === 0) {
+    throw new Error("The downloaded PDF is empty.");
+  }
+
+  // Some HTTP clients return JSON error responses as Blobs.
+  const contentType = String(blob.type || "").toLowerCase();
+
+  if (
+    contentType.includes("application/json") ||
+    contentType.includes("text/plain")
+  ) {
+    const message = await blob.text();
+
+    try {
+      const parsed = JSON.parse(message);
+      throw new Error(
+        parsed?.message ||
+          parsed?.error ||
+          "The server returned an error instead of a PDF.",
+      );
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        throw new Error(
+          message.trim() ||
+            "The server returned an error instead of a PDF.",
+        );
+      }
+
+      throw error;
+    }
+  }
+
+  if (
+    contentType &&
+    !contentType.includes("application/pdf") &&
+    !contentType.includes("application/octet-stream")
+  ) {
+    throw new Error("The server response is not a PDF document.");
+  }
+
+  const objectUrl = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
 
-  anchor.href = url;
-  anchor.download = `${report?.reportCode ?? "report"}-demo.txt`;
+  try {
+    anchor.href = objectUrl;
+    anchor.download = filename;
+    anchor.style.display = "none";
 
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
+    document.body.appendChild(anchor);
+    anchor.click();
+  } finally {
+    anchor.remove();
 
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    // Give the browser time to start the download.
+    window.setTimeout(() => {
+      URL.revokeObjectURL(objectUrl);
+    }, 1000);
+  }
 }
 
 function SummaryIcon({ icon: Icon, color }) {
@@ -220,12 +300,19 @@ function SummaryIcon({ icon: Icon, color }) {
    PAGE HEADER
    ================================================================ */
 
-function ReportsPageHeader({ onGenerate, onRefresh, refreshing }) {
+function ReportsPageHeader({
+  onGenerate,
+  onRefresh,
+  refreshing,
+}) {
   return (
     <header className="flex flex-col gap-5 border-b border-white/[0.10] pb-5 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
         <div className="flex items-center gap-2">
-          <span className="h-1.5 w-1.5 rounded-full bg-cyan-300 shadow-[0_0_10px_rgba(103,232,249,0.6)]" />
+          <span
+            className="h-1.5 w-1.5 rounded-full bg-cyan-300 shadow-[0_0_10px_rgba(103,232,249,0.6)]"
+            aria-hidden="true"
+          />
 
           <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-200">
             Orbital intelligence / reports
@@ -247,11 +334,12 @@ function ReportsPageHeader({ onGenerate, onRefresh, refreshing }) {
           type="button"
           onClick={onRefresh}
           disabled={refreshing}
-          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/15 bg-slate-950/65 px-4 py-2.5 text-sm font-medium text-slate-200 backdrop-blur-sm transition hover:border-cyan-300/30 hover:bg-slate-900/90 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/15 bg-slate-950/65 px-4 py-2.5 text-sm font-medium text-slate-200 backdrop-blur-sm transition hover:border-cyan-300/30 hover:bg-slate-900/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <FiRefreshCw
             size={15}
             className={refreshing ? "animate-spin" : ""}
+            aria-hidden="true"
           />
           Refresh
         </button>
@@ -261,7 +349,7 @@ function ReportsPageHeader({ onGenerate, onRefresh, refreshing }) {
           onClick={onGenerate}
           className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-sky-400 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-cyan-950/30 transition hover:from-cyan-300 hover:to-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
         >
-          <FiPlus size={17} />
+          <FiPlus size={17} aria-hidden="true" />
           Generate report
         </button>
       </div>
@@ -274,21 +362,21 @@ function ReportsPageHeader({ onGenerate, onRefresh, refreshing }) {
    ================================================================ */
 
 export default function Reports() {
-  // Demo data only. No backend requests are made by this page yet.
-  const [reports, setReports] = useState(INITIAL_REPORTS);
-
+  const [reports, setReports] = useState([]);
   const [filters, setFilters] = useState({ ...DEFAULT_FILTERS });
+
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-
   const [viewMode, setViewMode] = useState("list");
 
   const [generateModalOpen, setGenerateModalOpen] = useState(false);
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [selectedReport, setSelectedReport] = useState(null);
 
+  const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
   const [downloadingReportCode, setDownloadingReportCode] = useState(null);
   const [deletingReportCode, setDeletingReportCode] = useState(null);
 
@@ -296,11 +384,99 @@ export default function Reports() {
   const [formError, setFormError] = useState(null);
   const [downloadError, setDownloadError] = useState(null);
 
-  /* Filter and sort records. */
+  // Prevent older asynchronous requests from overwriting newer state.
+  const listRequestIdRef = useRef(0);
+  const detailsRequestIdRef = useRef(0);
+  const mountedRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+      listRequestIdRef.current += 1;
+      detailsRequestIdRef.current += 1;
+    };
+  }, []);
+
+  /* ---------------------------------------------------------------
+     LOAD REPORTS
+     --------------------------------------------------------------- */
+
+  const loadReports = useCallback(async ({ showRefresh = false } = {}) => {
+    const requestId = ++listRequestIdRef.current;
+
+    if (showRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+
+    setPageError(null);
+
+    try {
+      const response = await reportService.getAllReports();
+
+      // Ignore responses from older overlapping requests.
+      if (
+        !mountedRef.current ||
+        requestId !== listRequestIdRef.current
+      ) {
+        return false;
+      }
+
+      const reportList = extractReports(response);
+
+      if (!reportList) {
+        throw new Error(
+          "The server returned an unsupported reports response.",
+        );
+      }
+
+      setReports(
+        reportList.filter(
+          (report) => report && typeof report === "object",
+        ),
+      );
+
+      return true;
+    } catch (error) {
+      if (
+        !mountedRef.current ||
+        requestId !== listRequestIdRef.current
+      ) {
+        return false;
+      }
+
+      setPageError(
+        getErrorMessage(error, "Unable to load reports from the server."),
+      );
+
+      return false;
+    } finally {
+      if (
+        mountedRef.current &&
+        requestId === listRequestIdRef.current
+      ) {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    loadReports();
+  }, [loadReports]);
+
+  /* ---------------------------------------------------------------
+     FILTER, SORT AND PAGINATE
+     --------------------------------------------------------------- */
 
   const filteredReports = useMemo(() => {
     const result = reports.filter((report) => {
-      if (!report || typeof report !== "object") return false;
+      if (!report || typeof report !== "object") {
+        return false;
+      }
 
       if (
         filters.reportType &&
@@ -322,19 +498,28 @@ export default function Reports() {
     return sortReports(result, filters.sortBy);
   }, [reports, filters]);
 
-  /* Keep pagination valid after filtering or deleting records. */
-
   const totalPages = Math.ceil(filteredReports.length / pageSize);
 
   const safeCurrentPage =
-    totalPages === 0 ? 1 : Math.min(currentPage, totalPages);
+    totalPages === 0
+      ? 1
+      : Math.min(Math.max(currentPage, 1), totalPages);
 
   const paginatedReports = useMemo(() => {
     const start = (safeCurrentPage - 1) * pageSize;
+
     return filteredReports.slice(start, start + pageSize);
   }, [filteredReports, safeCurrentPage, pageSize]);
 
-  /* Calculate summary cards from all local records. */
+  useEffect(() => {
+    if (currentPage !== safeCurrentPage) {
+      setCurrentPage(safeCurrentPage);
+    }
+  }, [currentPage, safeCurrentPage]);
+
+  /* ---------------------------------------------------------------
+     SUMMARY COUNTS
+     --------------------------------------------------------------- */
 
   const summary = useMemo(() => {
     const result = {
@@ -350,15 +535,19 @@ export default function Reports() {
         case "PENDING":
           result.pending += 1;
           break;
+
         case "PROCESSING":
           result.processing += 1;
           break;
+
         case "COMPLETED":
           result.completed += 1;
           break;
+
         case "FAILED":
           result.failed += 1;
           break;
+
         default:
           break;
       }
@@ -367,7 +556,9 @@ export default function Reports() {
     return result;
   }, [reports]);
 
-  /* Filter handlers. */
+  /* ---------------------------------------------------------------
+     FILTER HANDLERS
+     --------------------------------------------------------------- */
 
   const updateFilter = useCallback((name, value) => {
     setFilters((current) => ({
@@ -384,125 +575,224 @@ export default function Reports() {
   }, []);
 
   const handleReportTypeFilter = useCallback(
-    (reportType) => updateFilter("reportType", reportType),
+    (value) => updateFilter("reportType", value),
     [updateFilter],
   );
 
   const handleStatusFilter = useCallback(
-    (status) => updateFilter("status", status),
+    (value) => updateFilter("status", value),
     [updateFilter],
   );
 
   const handleSearchChange = useCallback(
-    (search) => updateFilter("search", search),
+    (value) => updateFilter("search", value),
     [updateFilter],
   );
 
   const handleSortChange = useCallback(
-    (sortBy) => updateFilter("sortBy", sortBy),
+    (value) => updateFilter("sortBy", value),
     [updateFilter],
   );
 
   const handlePageSizeChange = useCallback((nextSize) => {
-    const parsedSize = Number(nextSize);
+    const size = Number(nextSize);
 
-    if (!PAGE_SIZE_OPTIONS.includes(parsedSize)) return;
+    if (!PAGE_SIZE_OPTIONS.includes(size)) {
+      return;
+    }
 
-    setPageSize(parsedSize);
+    setPageSize(size);
     setCurrentPage(1);
   }, []);
 
-  /* UI-only refresh placeholder. */
-
   const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    setPageError(null);
+    await loadReports({ showRefresh: true });
+  }, [loadReports]);
 
-    try {
-      await new Promise((resolve) => {
-        if (typeof requestAnimationFrame === "function") {
-          requestAnimationFrame(() => resolve());
-        } else {
-          resolve();
-        }
-      });
-    } catch (error) {
-      setPageError(getErrorMessage(error));
-    } finally {
-      setRefreshing(false);
-    }
-  }, []);
+  /* ---------------------------------------------------------------
+     VIEW REPORT DETAILS
+     --------------------------------------------------------------- */
 
-  /* Open report details. */
+  const handleViewReport = useCallback(async (report) => {
+    const requestId = ++detailsRequestIdRef.current;
+    const reportCode = getReportCode(report);
 
-  const handleViewReport = useCallback((report) => {
     setSelectedReport(report);
     setDownloadError(null);
     setDetailsModalOpen(true);
+
+    if (!reportCode) {
+      setDownloadError(
+        "This report does not have a report code to retrieve its details.",
+      );
+      return;
+    }
+
+    try {
+      const response = await reportService.getReportByCode(reportCode);
+
+      if (
+        !mountedRef.current ||
+        requestId !== detailsRequestIdRef.current
+      ) {
+        return;
+      }
+
+      const details = extractReport(response);
+
+      if (!details) {
+        throw new Error(
+          "The server returned an invalid report details response.",
+        );
+      }
+
+      setSelectedReport((current) => {
+        if (getReportCode(current) !== reportCode) {
+          return current;
+        }
+
+        return details;
+      });
+    } catch (error) {
+      if (
+        !mountedRef.current ||
+        requestId !== detailsRequestIdRef.current
+      ) {
+        return;
+      }
+
+      setDownloadError(
+        getErrorMessage(error, "Unable to load full report details."),
+      );
+    }
   }, []);
 
-  /* UI-only metadata download. */
+  /* ---------------------------------------------------------------
+     DOWNLOAD PDF
+     --------------------------------------------------------------- */
 
   const handleDownloadReport = useCallback(async (report) => {
     const reportCode = getReportCode(report);
 
-    if (normalizeStatus(report?.status) !== "COMPLETED") {
-      setDownloadError("Only completed reports can be downloaded.");
+    if (!reportCode) {
+      setDownloadError("This report does not have a report code.");
       return;
     }
 
-    setDownloadingReportCode(reportCode ?? getReportKey(report));
+    if (downloadingReportCode !== null) {
+      return;
+    }
+
+    setDownloadingReportCode(reportCode);
     setDownloadError(null);
 
     try {
-      downloadDemoReport(report);
-    } catch (error) {
-      setDownloadError(getErrorMessage(error));
-    } finally {
-      setDownloadingReportCode(null);
-    }
-  }, []);
+      const response = await reportService.downloadReportPdf(reportCode);
 
-  /* UI-only report creation. */
+      if (!mountedRef.current) {
+        return;
+      }
+
+      await downloadPdf(response, formatReportFilename(reportCode));
+    } catch (error) {
+      if (!mountedRef.current) {
+        return;
+      }
+
+      setDownloadError(
+        getErrorMessage(error, "Unable to download the report PDF."),
+      );
+    } finally {
+      if (mountedRef.current) {
+        setDownloadingReportCode(null);
+      }
+    }
+  }, [downloadingReportCode]);
+
+  /* ---------------------------------------------------------------
+     GENERATE REPORT
+     --------------------------------------------------------------- */
 
   const handleGenerateReport = useCallback(async (payload) => {
-    if (!payload?.reportType || !payload?.title?.trim()) {
+    const reportType = String(payload?.reportType ?? "").trim();
+    const title = String(payload?.title ?? "").trim();
+    const description = String(payload?.description ?? "").trim();
+
+    if (!reportType || !title) {
       setFormError("Report type and title are required.");
+      return;
+    }
+
+    if (title.length < 3 || title.length > 150) {
+      setFormError("The report title must contain 3–150 characters.");
+      return;
+    }
+
+    if (description.length > 500) {
+      setFormError("The description cannot exceed 500 characters.");
       return;
     }
 
     setSubmitting(true);
     setFormError(null);
+    setPageError(null);
 
     try {
-      const now = new Date().toISOString();
-      const uniqueId = Date.now();
+      const response = await reportService.generateReport({
+        reportType,
+        title,
+        description,
+      });
 
-      const newReport = {
-        id: `demo-${uniqueId}`,
-        reportCode: `RPT-DEMO-${String(uniqueId).slice(-6)}`,
-        reportType: payload.reportType,
-        status: "PENDING",
-        title: payload.title.trim(),
-        description: payload.description?.trim() ?? "",
-        createdAt: now,
-        updatedAt: now,
-      };
+      const createdReport = extractReport(response);
 
-      setReports((current) => [newReport, ...current]);
+      if (!createdReport?.reportCode) {
+        throw new Error(
+          "The server response did not contain a report code.",
+        );
+      }
+
+      // Close the form once creation has actually succeeded.
+      setGenerateModalOpen(false);
+      setFormError(null);
       setFilters({ ...DEFAULT_FILTERS });
       setCurrentPage(1);
-      setGenerateModalOpen(false);
-      setSelectedReport(newReport);
+      setSelectedReport(createdReport);
+      setDownloadError(null);
       setDetailsModalOpen(true);
-    } catch (error) {
-      setFormError(getErrorMessage(error));
-    } finally {
-      setSubmitting(false);
-    }
-  }, []);
 
-  /* UI-only deletion. */
+      // Keep the newly created report visible even if refreshing the
+      // collection fails after the creation request succeeded.
+      setReports((current) => {
+        const withoutCreatedReport = current.filter(
+          (item) =>
+            getReportCode(item) !== getReportCode(createdReport),
+        );
+
+        return [createdReport, ...withoutCreatedReport];
+      });
+
+      const refreshed = await loadReports({ showRefresh: true });
+
+      if (!refreshed && mountedRef.current) {
+        setPageError(
+          "The report was created successfully, but the report list could not be refreshed. Use Refresh to synchronize it.",
+        );
+      }
+    } catch (error) {
+      setFormError(
+        getErrorMessage(error, "Unable to generate the report."),
+      );
+    } finally {
+      if (mountedRef.current) {
+        setSubmitting(false);
+      }
+    }
+  }, [loadReports]);
+
+  /* ---------------------------------------------------------------
+     DELETE REPORT
+     --------------------------------------------------------------- */
 
   const handleDeleteReport = useCallback(async (report) => {
     const reportCode = getReportCode(report);
@@ -512,49 +802,70 @@ export default function Reports() {
       return;
     }
 
+    if (deletingReportCode !== null) {
+      return;
+    }
+
     const confirmed = window.confirm(
-      `Delete "${report.title || reportCode}" from this UI demo?`,
+      `Delete "${report.title || reportCode}" (${reportCode}) from the server?`,
     );
 
-    if (!confirmed) return;
+    if (!confirmed) {
+      return;
+    }
 
     setDeletingReportCode(reportCode);
     setPageError(null);
 
     try {
+      await reportService.deleteReport(reportCode);
+
+      if (!mountedRef.current) {
+        return;
+      }
+
       setReports((current) =>
         current.filter(
-          (item) => getReportKey(item) !== getReportKey(report),
+          (item) => getReportCode(item) !== reportCode,
         ),
       );
 
+      detailsRequestIdRef.current += 1;
       setDetailsModalOpen(false);
       setSelectedReport(null);
+      setDownloadError(null);
     } catch (error) {
-      setPageError(getErrorMessage(error));
+      if (!mountedRef.current) {
+        return;
+      }
+
+      setPageError(
+        getErrorMessage(error, "Unable to delete the report."),
+      );
     } finally {
-      setDeletingReportCode(null);
+      if (mountedRef.current) {
+        setDeletingReportCode(null);
+      }
     }
-  }, []);
+  }, [deletingReportCode]);
 
   const handleCloseDetails = useCallback(() => {
+    detailsRequestIdRef.current += 1;
     setDetailsModalOpen(false);
     setDownloadError(null);
   }, []);
 
-  const handleMore = useCallback(
-    (report) => handleViewReport(report),
-    [handleViewReport],
-  );
+  const openGenerateModal = useCallback(() => {
+    setFormError(null);
+    setGenerateModalOpen(true);
+  }, []);
 
-  /* ================================================================
-     PAGE UI
-     ================================================================ */
+  /* ---------------------------------------------------------------
+     RENDER
+     --------------------------------------------------------------- */
 
   return (
     <main className="relative isolate flex h-full min-h-0 w-full min-w-0 flex-col overflow-x-hidden overflow-y-auto font-['Inter'] text-slate-100">
-      {/* Full-page space background. */}
-
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 -z-10 overflow-hidden"
@@ -566,48 +877,18 @@ export default function Reports() {
           }}
         />
 
-        {/* Adjust opacity to reveal more or less of the image. */}
         <div className="absolute inset-0 bg-[#020914]/55" />
-
-        {/* Atmospheric color accents. */}
         <div className="absolute -top-36 left-[20%] h-96 w-96 rounded-full bg-cyan-500/[0.07] blur-[110px]" />
-
         <div className="absolute right-0 top-40 h-80 w-80 rounded-full bg-blue-600/[0.08] blur-[100px]" />
-
         <div className="absolute bottom-0 left-1/3 h-64 w-64 rounded-full bg-violet-500/[0.05] blur-[100px]" />
       </div>
 
-      {/* Main content stays above the background image. */}
-
       <div className="relative z-10 mx-auto flex w-full max-w-[1800px] min-w-0 flex-1 flex-col gap-5 p-3 sm:gap-6 sm:p-5 lg:p-6 2xl:p-8">
         <ReportsPageHeader
-          onGenerate={() => {
-            setFormError(null);
-            setGenerateModalOpen(true);
-          }}
+          onGenerate={openGenerateModal}
           onRefresh={handleRefresh}
-          refreshing={refreshing}
+          refreshing={refreshing || loading}
         />
-
-        {/* UI development notice. */}
-
-        <div className="flex flex-wrap items-start gap-3 rounded-xl border border-amber-300/20 bg-[#07111F]/65 px-4 py-3 shadow-lg shadow-black/10 backdrop-blur-sm">
-          <FiActivity
-            size={17}
-            className="mt-0.5 shrink-0 text-amber-300"
-            aria-hidden="true"
-          />
-
-          <p className="min-w-0 flex-1 text-xs leading-5 text-slate-300/80">
-            <span className="font-semibold text-amber-200">
-              UI preview mode.
-            </span>{" "}
-            The displayed records and generation workflow use local demo
-            data. They are not synchronized with your backend.
-          </p>
-        </div>
-
-        {/* Summary cards. */}
 
         <section aria-label="Report summary" className="min-w-0">
           <div className="mb-3 flex items-center justify-between gap-3">
@@ -617,12 +898,12 @@ export default function Reports() {
               </h2>
 
               <p className="mt-1 text-xs text-slate-300/70">
-                Status breakdown of the current demo records
+                Status breakdown of reports returned by the backend
               </p>
             </div>
 
             <span className="hidden items-center gap-1.5 text-[10px] uppercase tracking-wider text-slate-300/70 sm:flex">
-              <FiShield size={13} />
+              <FiShield size={13} aria-hidden="true" />
               Workspace
             </span>
           </div>
@@ -630,17 +911,12 @@ export default function Reports() {
           <ReportSummaryCards
             reports={reports}
             summary={summary}
-            loading={false}
-            error={null}
+            loading={loading}
+            error={pageError}
           />
         </section>
 
-        {/* Generated reports workspace.
-            Background image remains visible through this panel. */}
-
         <section className="relative isolate min-w-0 overflow-hidden rounded-2xl border border-cyan-300/20 bg-[#040D1B]/55 shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-[3px]">
-          {/* Panel-level overlay for contrast. */}
-
           <div
             aria-hidden="true"
             className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-br from-[#06111F]/45 via-transparent to-[#020914]/35"
@@ -651,8 +927,6 @@ export default function Reports() {
             className="pointer-events-none absolute inset-x-0 top-0 z-10 h-px bg-gradient-to-r from-transparent via-cyan-300/35 to-transparent"
           />
 
-          {/* Search and filter header. */}
-
           <div className="relative border-b border-white/[0.08] bg-[#06111F]/35 p-4 sm:p-5">
             <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -661,12 +935,17 @@ export default function Reports() {
                 </h2>
 
                 <p className="mt-1 text-xs leading-5 text-slate-300/75">
-                  Search, filter, inspect, and manage report records.
+                  Search, filter, inspect, download, and manage report
+                  records.
                 </p>
               </div>
 
               <span className="inline-flex w-fit items-center gap-2 rounded-lg border border-white/10 bg-[#07111F]/70 px-3 py-2 text-xs text-slate-200/85 backdrop-blur-sm">
-                <FiFileText size={14} className="text-cyan-300" />
+                <FiFileText
+                  size={14}
+                  className="text-cyan-300"
+                  aria-hidden="true"
+                />
                 {filteredReports.length} matching records
               </span>
             </div>
@@ -686,8 +965,6 @@ export default function Reports() {
             />
           </div>
 
-          {/* Page-level error. */}
-
           {pageError && (
             <div
               role="alert"
@@ -700,17 +977,65 @@ export default function Reports() {
               <button
                 type="button"
                 onClick={() => setPageError(null)}
-                className="text-xs font-medium text-rose-200 hover:text-white"
+                className="text-xs font-medium text-rose-200 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
               >
                 Dismiss
               </button>
             </div>
           )}
 
-          {/* Report records. */}
-
           <div className="relative min-w-0 bg-transparent p-3 sm:p-5">
-            {filteredReports.length === 0 ? (
+            {loading ? (
+              <div
+                role="status"
+                className="flex min-h-48 flex-col items-center justify-center gap-3 text-center"
+              >
+                <FiRefreshCw
+                  size={24}
+                  className="animate-spin text-cyan-300"
+                  aria-hidden="true"
+                />
+
+                <p className="text-sm font-medium text-white">
+                  Loading reports
+                </p>
+
+                <p className="text-xs text-slate-400">
+                  Retrieving report records from OrbitGuard.
+                </p>
+              </div>
+            ) : pageError && reports.length === 0 ? (
+              <div className="flex min-h-48 flex-col items-center justify-center gap-3 text-center">
+                <FiActivity
+                  size={24}
+                  className="text-rose-300"
+                  aria-hidden="true"
+                />
+
+                <p className="text-sm font-medium text-white">
+                  Reports could not be loaded
+                </p>
+
+                <p className="max-w-md text-xs leading-5 text-slate-400">
+                  Check your backend availability, API base URL, and
+                  authentication, then try again.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={handleRefresh}
+                  disabled={refreshing}
+                  className="mt-1 inline-flex min-h-10 items-center gap-2 rounded-lg border border-cyan-300/25 bg-cyan-400/10 px-4 py-2 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-400/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 disabled:opacity-50"
+                >
+                  <FiRefreshCw
+                    size={14}
+                    className={refreshing ? "animate-spin" : ""}
+                    aria-hidden="true"
+                  />
+                  Retry request
+                </button>
+              </div>
+            ) : filteredReports.length === 0 ? (
               <ReportsEmptyState
                 variant={
                   reports.length === 0
@@ -720,10 +1045,7 @@ export default function Reports() {
                       : "filters"
                 }
                 searchTerm={filters.search}
-                onCreateReport={() => {
-                  setFormError(null);
-                  setGenerateModalOpen(true);
-                }}
+                onCreateReport={openGenerateModal}
                 onResetFilters={handleResetFilters}
                 onClearSearch={() => handleSearchChange("")}
               />
@@ -738,15 +1060,13 @@ export default function Reports() {
                 viewMode={viewMode}
                 onView={handleViewReport}
                 onDownload={handleDownloadReport}
-                onMore={handleMore}
+                onMore={handleViewReport}
                 onRetry={handleRefresh}
                 onResetFilters={handleResetFilters}
                 downloadingReportCode={downloadingReportCode}
               />
             )}
           </div>
-
-          {/* Pagination. */}
 
           {filteredReports.length > 0 && (
             <div className="relative border-t border-white/[0.08] bg-[#06111F]/35">
@@ -764,8 +1084,6 @@ export default function Reports() {
           )}
         </section>
 
-        {/* Operational guidance. */}
-
         <section className="grid gap-3 sm:grid-cols-2">
           <div className="flex min-w-0 items-start gap-3 rounded-xl border border-white/10 bg-[#07111F]/65 p-4 shadow-lg shadow-black/10 backdrop-blur-sm">
             <SummaryIcon icon={FiShield} color="text-cyan-300" />
@@ -776,8 +1094,8 @@ export default function Reports() {
               </h3>
 
               <p className="mt-1 text-xs leading-5 text-slate-300/75">
-                Reports can be pending, processing, completed, or failed.
-                The actual lifecycle will be supplied by the backend.
+                Report status is supplied by the backend. Newly created
+                reports may initially be pending.
               </p>
             </div>
           </div>
@@ -787,19 +1105,17 @@ export default function Reports() {
 
             <div className="min-w-0">
               <h3 className="text-sm font-medium text-white">
-                Document access
+                PDF document access
               </h3>
 
               <p className="mt-1 text-xs leading-5 text-slate-300/75">
-                PDF preview and authenticated downloads will connect to
-                your existing report endpoints during integration.
+                PDF downloads use the existing report endpoint and
+                reflect the content generated by the backend.
               </p>
             </div>
           </div>
         </section>
       </div>
-
-      {/* Generate report modal. */}
 
       <GenerateReportModal
         open={generateModalOpen}
@@ -814,8 +1130,6 @@ export default function Reports() {
         error={formError}
       />
 
-      {/* Report details modal. */}
-
       <ReportDetailsModal
         open={detailsModalOpen}
         report={selectedReport}
@@ -824,10 +1138,7 @@ export default function Reports() {
         downloading={
           downloadingReportCode != null &&
           String(downloadingReportCode) ===
-            String(
-              getReportCode(selectedReport) ??
-                getReportKey(selectedReport),
-            )
+            String(getReportCode(selectedReport))
         }
         downloadError={downloadError}
         onDelete={handleDeleteReport}

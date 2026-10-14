@@ -95,6 +95,23 @@ const ACCENT_STYLES = {
   },
 };
 
+const GRID_COLUMNS = {
+  1: "grid-cols-1",
+  2: "grid-cols-1 sm:grid-cols-2",
+  3: "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3",
+};
+
+const FIELDSET_CLASS =
+  "min-w-0";
+
+const CARD_BASE_CLASS = [
+  "group relative flex min-h-[142px] min-w-0 flex-col",
+  "rounded-xl border p-4 transition-all duration-200",
+  "focus-within:ring-2 focus-within:ring-cyan-400/70",
+  "focus-within:ring-offset-2 focus-within:ring-offset-slate-950",
+  "motion-reduce:transition-none",
+].join(" ");
+
 function ReportTypeSelector({
   value = "",
   onChange,
@@ -106,42 +123,58 @@ function ReportTypeSelector({
 }) {
   const generatedId = useId();
   const errorId = `${generatedId}-error`;
+  const legendId = `${generatedId}-legend`;
+  const descriptionId = `${generatedId}-description`;
+
   const hasError = Boolean(error);
-
-  const gridColumns = {
-    1: "grid-cols-1",
-    2: "grid-cols-1 sm:grid-cols-2",
-    3: "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3",
-  };
-
   const selectedType = REPORT_TYPES.find(
     (reportType) => reportType.value === value,
   );
 
+  const safeColumns = GRID_COLUMNS[columns] || GRID_COLUMNS[3];
+
+  const describedBy = [
+    descriptionId,
+    hasError ? errorId : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
     <fieldset
-      className={`min-w-0 ${className}`}
+      className={`${FIELDSET_CLASS} ${className}`.trim()}
       disabled={disabled}
-      aria-describedby={hasError ? errorId : undefined}
-      aria-invalid={hasError}
+      aria-labelledby={legendId}
+      aria-describedby={describedBy}
+      aria-invalid={hasError || undefined}
     >
-      <legend className="mb-3 block text-sm font-semibold text-slate-100">
+      <legend
+        id={legendId}
+        className="mb-3 block text-sm font-semibold text-slate-100"
+      >
         Report type
         {required && (
-          <span className="ml-1 text-rose-400" aria-hidden="true">
+          <span
+            className="ml-1 text-rose-400"
+            aria-hidden="true"
+          >
             *
           </span>
         )}
       </legend>
 
-      <p className="mb-4 text-xs leading-5 text-slate-400">
+      <p
+        id={descriptionId}
+        className="mb-4 text-xs leading-5 text-slate-400"
+      >
         Choose the report category you want to generate.
       </p>
 
       <div
-        className={`grid gap-3 ${gridColumns[columns] || gridColumns[3]}`}
+        className={`grid gap-3 ${safeColumns}`}
         role="radiogroup"
-        aria-label="Report type"
+        aria-labelledby={legendId}
+        aria-describedby={hasError ? errorId : descriptionId}
       >
         {REPORT_TYPES.map((reportType) => {
           const Icon = reportType.icon;
@@ -149,22 +182,26 @@ function ReportTypeSelector({
           const styles = ACCENT_STYLES[reportType.accent];
           const optionId = `${generatedId}-${reportType.value}`;
 
+          const cardClassName = [
+            CARD_BASE_CLASS,
+            disabled
+              ? "cursor-not-allowed opacity-50"
+              : "cursor-pointer hover:border-slate-600 hover:bg-slate-800/70",
+            isSelected
+              ? styles.selected
+              : "border-slate-800 bg-slate-900/60",
+            hasError && !isSelected
+              ? "border-rose-400/50"
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" ");
+
           return (
             <label
               key={reportType.value}
               htmlFor={optionId}
-              className={[
-                "group relative flex min-h-[142px] min-w-0 cursor-pointer",
-                "flex-col rounded-xl border p-4 transition-all duration-200",
-                "focus-within:ring-2 focus-within:ring-cyan-400/70",
-                disabled
-                  ? "cursor-not-allowed opacity-50"
-                  : "hover:border-slate-600 hover:bg-slate-800/70",
-                isSelected
-                  ? styles.selected
-                  : "border-slate-800 bg-slate-900/60",
-                hasError && !isSelected ? "border-rose-400/50" : "",
-              ].join(" ")}
+              className={cardClassName}
             >
               <input
                 id={optionId}
@@ -175,9 +212,9 @@ function ReportTypeSelector({
                 onChange={() => onChange?.(reportType.value)}
                 disabled={disabled}
                 required={required}
-                aria-invalid={hasError}
-                aria-describedby={hasError ? errorId : undefined}
-                className="sr-only"
+                aria-invalid={hasError || undefined}
+                aria-describedby={hasError ? errorId : descriptionId}
+                className="peer sr-only"
               />
 
               <div className="mb-3 flex items-start justify-between gap-3">
@@ -196,6 +233,7 @@ function ReportTypeSelector({
                   className={[
                     "flex h-5 w-5 shrink-0 items-center justify-center",
                     "rounded-full border transition-colors",
+                    "motion-reduce:transition-none",
                     isSelected
                       ? `${styles.indicator} border-transparent`
                       : "border-slate-600 bg-slate-950/50",
@@ -228,9 +266,14 @@ function ReportTypeSelector({
         <p
           id={errorId}
           role="alert"
+          aria-live="polite"
           className="mt-3 flex items-start gap-2 text-xs leading-5 text-rose-300"
         >
-          <FiFileText className="mt-0.5 shrink-0" size={14} />
+          <FiFileText
+            className="mt-0.5 shrink-0"
+            size={14}
+            aria-hidden="true"
+          />
           <span>{error}</span>
         </p>
       )}

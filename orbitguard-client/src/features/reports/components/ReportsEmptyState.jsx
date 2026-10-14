@@ -1,3 +1,5 @@
+import { useId } from "react";
+
 import {
   FiAlertCircle,
   FiArrowRight,
@@ -74,6 +76,22 @@ const EMPTY_STATE_CONFIG = {
   },
 };
 
+function getErrorMessage(error) {
+  if (typeof error === "string") {
+    return error.trim() || null;
+  }
+
+  if (error instanceof Error) {
+    return error.message || null;
+  }
+
+  if (error && typeof error.message === "string") {
+    return error.message.trim() || null;
+  }
+
+  return null;
+}
+
 function ReportsEmptyState({
   variant = "empty",
   title,
@@ -87,43 +105,61 @@ function ReportsEmptyState({
   onClearSearch,
   className = "",
 }) {
+  const generatedId = useId();
+  const headingId = `reports-empty-state-${generatedId}`;
+
   const config =
     EMPTY_STATE_CONFIG[variant] || EMPTY_STATE_CONFIG.empty;
 
   const Icon = config.icon;
 
+  const normalizedSearchTerm =
+    typeof searchTerm === "string" ? searchTerm.trim() : "";
+
   const resolvedTitle = title || config.title;
+
   const resolvedDescription =
     description ||
-    (variant === "search" && searchTerm.trim()
-      ? `No reports were found for "${searchTerm.trim()}". Try another search term or clear your search.`
+    (variant === "search" && normalizedSearchTerm
+      ? `No reports were found for "${normalizedSearchTerm}". Try another search term or clear your search.`
       : config.description);
 
-  const errorMessage =
-    typeof error === "string"
-      ? error
-      : error?.message || null;
+  const errorMessage = getErrorMessage(error);
+
+  const hasCreateAction =
+    config.showCreate && typeof onCreateReport === "function";
+
+  const hasResetAction =
+    config.showReset && typeof onResetFilters === "function";
+
+  const hasClearSearchAction =
+    variant === "search" &&
+    Boolean(normalizedSearchTerm) &&
+    typeof onClearSearch === "function";
+
+  const hasRetryAction =
+    config.showRetry && typeof onRetry === "function";
 
   const handleCreate = () => {
-    if (!loading && typeof onCreateReport === "function") {
+    if (!loading && hasCreateAction) {
       onCreateReport();
     }
   };
 
   const handleReset = () => {
-    if (!loading && typeof onResetFilters === "function") {
+    if (!loading && hasResetAction) {
       onResetFilters();
     }
   };
 
   const handleRetry = () => {
-    if (!loading && typeof onRetry === "function") {
+    if (!loading && hasRetryAction) {
       onRetry();
     }
   };
 
   const handleClearSearch = () => {
-    if (!loading && typeof onClearSearch === "function") {
+    if (!loading && hasClearSearchAction) {
       onClearSearch();
     }
   };
@@ -135,11 +171,13 @@ function ReportsEmptyState({
         "overflow-hidden rounded-2xl border border-slate-800",
         "bg-slate-950/70 px-5 py-12 text-center sm:px-8 sm:py-16",
         className,
-      ].join(" ")}
-      aria-labelledby="reports-empty-state-title"
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      aria-labelledby={headingId}
       aria-busy={loading}
     >
-      {/* Subtle background decoration */}
+      {/* Decorative background */}
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 overflow-hidden"
@@ -183,39 +221,26 @@ function ReportsEmptyState({
         </p>
 
         <h2
-          id="reports-empty-state-title"
-          className="mt-3 text-xl font-semibold tracking-tight text-white sm:text-2xl"
+          id={headingId}
+          className="mt-3 break-words text-xl font-semibold tracking-tight text-white sm:text-2xl"
         >
           {resolvedTitle}
         </h2>
 
-        <p className="mt-3 max-w-md text-sm leading-6 text-slate-400">
+        <p className="mt-3 max-w-md break-words text-sm leading-6 text-slate-400">
           {resolvedDescription}
         </p>
 
-        {/* Optional error detail */}
-        {errorMessage && variant !== "error" && (
+        {/* Error details */}
+        {errorMessage && (
           <div
             role="alert"
             className="mt-4 w-full rounded-xl border border-rose-500/20 bg-rose-500/[0.06] px-4 py-3 text-left"
           >
             <p className="text-xs font-medium text-rose-200">
-              Additional details
-            </p>
-
-            <p className="mt-1 break-words text-xs leading-5 text-rose-200/70">
-              {errorMessage}
-            </p>
-          </div>
-        )}
-
-        {errorMessage && variant === "error" && (
-          <div
-            role="alert"
-            className="mt-4 w-full rounded-xl border border-rose-500/20 bg-rose-500/[0.06] px-4 py-3 text-left"
-          >
-            <p className="text-xs font-medium text-rose-200">
-              Error details
+              {variant === "error"
+                ? "Error details"
+                : "Additional details"}
             </p>
 
             <p className="mt-1 break-words text-xs leading-5 text-rose-200/70">
@@ -225,67 +250,73 @@ function ReportsEmptyState({
         )}
 
         {/* Actions */}
-        <div className="mt-7 flex w-full flex-col items-stretch justify-center gap-3 sm:w-auto sm:flex-row sm:items-center">
-          {config.showCreate && onCreateReport && (
-            <button
-              type="button"
-              onClick={handleCreate}
-              disabled={loading}
-              className={[
-                "inline-flex min-h-11 items-center justify-center gap-2",
-                "rounded-xl bg-cyan-400 px-5 py-3 text-sm font-semibold",
-                "text-slate-950 transition-colors hover:bg-cyan-300",
-                "focus-visible:outline-none focus-visible:ring-2",
-                "focus-visible:ring-cyan-300 focus-visible:ring-offset-2",
-                "focus-visible:ring-offset-slate-950",
-                "disabled:cursor-not-allowed disabled:opacity-50",
-              ].join(" ")}
-            >
-              <FiPlus size={17} />
-              {config.createLabel}
-              <FiArrowRight size={15} />
-            </button>
-          )}
+        {(hasCreateAction ||
+          hasResetAction ||
+          hasClearSearchAction ||
+          hasRetryAction) && (
+          <div className="mt-7 flex w-full flex-col items-stretch justify-center gap-3 sm:w-auto sm:flex-row sm:items-center">
+            {hasCreateAction && (
+              <button
+                type="button"
+                onClick={handleCreate}
+                disabled={loading}
+                className={[
+                  "inline-flex min-h-11 items-center justify-center gap-2",
+                  "rounded-xl bg-cyan-400 px-5 py-3 text-sm font-semibold",
+                  "text-slate-950 transition-colors hover:bg-cyan-300",
+                  "focus-visible:outline-none focus-visible:ring-2",
+                  "focus-visible:ring-cyan-300 focus-visible:ring-offset-2",
+                  "focus-visible:ring-offset-slate-950",
+                  "disabled:cursor-not-allowed disabled:opacity-50",
+                ].join(" ")}
+              >
+                <FiPlus size={17} aria-hidden="true" />
+                {config.createLabel}
+                <FiArrowRight size={15} aria-hidden="true" />
+              </button>
+            )}
 
-          {config.showReset && onResetFilters && (
-            <button
-              type="button"
-              onClick={handleReset}
-              disabled={loading}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-5 py-3 text-sm font-medium text-slate-200 transition hover:border-slate-600 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <FiFilter size={15} />
-              Reset filters
-            </button>
-          )}
+            {hasResetAction && (
+              <button
+                type="button"
+                onClick={handleReset}
+                disabled={loading}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-5 py-3 text-sm font-medium text-slate-200 transition hover:border-slate-600 hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <FiFilter size={15} aria-hidden="true" />
+                Reset filters
+              </button>
+            )}
 
-          {variant === "search" && searchTerm && onClearSearch && (
-            <button
-              type="button"
-              onClick={handleClearSearch}
-              disabled={loading}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-5 py-3 text-sm font-medium text-slate-200 transition hover:border-slate-600 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <FiSearch size={15} />
-              Clear search
-            </button>
-          )}
+            {hasClearSearchAction && (
+              <button
+                type="button"
+                onClick={handleClearSearch}
+                disabled={loading}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-5 py-3 text-sm font-medium text-slate-200 transition hover:border-slate-600 hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <FiSearch size={15} aria-hidden="true" />
+                Clear search
+              </button>
+            )}
 
-          {config.showRetry && onRetry && (
-            <button
-              type="button"
-              onClick={handleRetry}
-              disabled={loading}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-5 py-3 text-sm font-medium text-slate-200 transition hover:border-slate-600 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <FiRefreshCw
-                size={15}
-                className={loading ? "animate-spin" : ""}
-              />
-              {loading ? "Retrying..." : "Try again"}
-            </button>
-          )}
-        </div>
+            {hasRetryAction && (
+              <button
+                type="button"
+                onClick={handleRetry}
+                disabled={loading}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-5 py-3 text-sm font-medium text-slate-200 transition hover:border-slate-600 hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <FiRefreshCw
+                  size={15}
+                  className={loading ? "animate-spin" : ""}
+                  aria-hidden="true"
+                />
+                {loading ? "Retrying..." : "Try again"}
+              </button>
+            )}
+          </div>
+        )}
 
         {variant === "empty" && (
           <p className="mt-5 text-xs leading-5 text-slate-600">

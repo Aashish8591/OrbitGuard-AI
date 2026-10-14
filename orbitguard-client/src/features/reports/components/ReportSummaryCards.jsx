@@ -1,4 +1,3 @@
-
 import { useMemo } from "react";
 
 import {
@@ -11,7 +10,7 @@ import {
 
 /* ================================================================
    REPORT SUMMARY CONFIGURATION
-   ================================================================ */
+================================================================ */
 
 const REPORT_CARD_BACKGROUND = "/images/Report/reportCardbg.jpg";
 
@@ -98,26 +97,58 @@ const ACCENT_STYLES = {
 
 /* ================================================================
    HELPERS
-   ================================================================ */
+================================================================ */
 
 function normalizeStatus(status) {
-  return String(status ?? "").trim().toUpperCase();
+  return String(status ?? "")
+    .trim()
+    .toUpperCase();
 }
 
 function getReportsArray(reports) {
-  if (Array.isArray(reports)) return reports;
-  if (Array.isArray(reports?.data)) return reports.data;
-  if (Array.isArray(reports?.data?.data)) return reports.data.data;
+  if (Array.isArray(reports)) {
+    return reports;
+  }
+
+  if (Array.isArray(reports?.data)) {
+    return reports.data;
+  }
+
+  if (Array.isArray(reports?.data?.data)) {
+    return reports.data.data;
+  }
+
+  if (Array.isArray(reports?.content)) {
+    return reports.content;
+  }
+
+  if (Array.isArray(reports?.data?.content)) {
+    return reports.data.content;
+  }
 
   return [];
+}
+
+function normalizeCount(value, fallback = 0) {
+  if (value === null || value === undefined || value === "") {
+    return fallback;
+  }
+
+  const number = Number(value);
+
+  return Number.isFinite(number) && number >= 0 ? Math.floor(number) : fallback;
 }
 
 function calculateSummary(reports) {
   return reports.reduce(
     (summary, report) => {
+      if (!report || typeof report !== "object" || Array.isArray(report)) {
+        return summary;
+      }
+
       summary.total += 1;
 
-      switch (normalizeStatus(report?.status)) {
+      switch (normalizeStatus(report.status)) {
         case "PENDING":
           summary.pending += 1;
           break;
@@ -135,6 +166,8 @@ function calculateSummary(reports) {
           break;
 
         default:
+          // The report is included in total but not in a known
+          // status category.
           break;
       }
 
@@ -146,13 +179,29 @@ function calculateSummary(reports) {
       processing: 0,
       completed: 0,
       failed: 0,
-    }
+    },
   );
+}
+
+function getErrorMessage(error) {
+  if (typeof error === "string") {
+    return error.trim() || "An unexpected error occurred.";
+  }
+
+  if (error instanceof Error) {
+    return error.message || "An unexpected error occurred.";
+  }
+
+  if (error && typeof error.message === "string") {
+    return error.message || "An unexpected error occurred.";
+  }
+
+  return "An unexpected error occurred while loading the report summary.";
 }
 
 /* ================================================================
    SUMMARY CARD
-   ================================================================ */
+================================================================ */
 
 function SummaryCard({ config, value }) {
   const Icon = config.icon;
@@ -160,53 +209,44 @@ function SummaryCard({ config, value }) {
 
   return (
     <article
-      aria-label={`${config.label}: ${value}`}
-      className={`
-        group relative isolate flex h-full min-w-0 flex-col
-        overflow-hidden rounded-xl border ${styles.border}
-        bg-[#071321]
-        p-3
-        transition-all duration-300
-        hover:border-white/25
-        hover:shadow-[0_10px_25px_rgba(0,0,0,0.25)]
-        sm:rounded-2xl sm:p-4
-        lg:p-5
-      `}
+      aria-label={`${config.label}: ${value.toLocaleString("en-IN")}`}
+      className={[
+        "group relative isolate flex h-full min-w-0 flex-col",
+        "overflow-hidden rounded-xl border",
+        styles.border,
+        "bg-[#071321] p-3",
+        "transition-[border-color,box-shadow] duration-300",
+        "hover:border-white/25",
+        "hover:shadow-[0_10px_25px_rgba(0,0,0,0.25)]",
+        "sm:rounded-2xl sm:p-4 lg:p-5",
+      ].join(" ")}
     >
       {/* Background image */}
       <div
         aria-hidden="true"
-        className="
-          pointer-events-none absolute inset-0 -z-20
-          bg-[#071321] bg-cover bg-center
-        "
+        className="pointer-events-none absolute inset-0 -z-20 bg-[#071321] bg-cover bg-center"
         style={{
           backgroundImage: `url("${REPORT_CARD_BACKGROUND}")`,
         }}
       />
 
-      {/* Dark overlay for readability */}
+      {/* Dark overlay */}
       <div
         aria-hidden="true"
-        className="
-          pointer-events-none absolute inset-0 -z-10
-          bg-gradient-to-br
-          from-[#06111F]/75
-          via-[#06111F]/85
-          to-[#020711]/95
-        "
+        className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-br from-[#06111F]/75 via-[#06111F]/85 to-[#020711]/95"
       />
 
       {/* Accent glow */}
       <div
         aria-hidden="true"
-        className={`
-          pointer-events-none absolute inset-0 -z-10
-          bg-gradient-to-br ${styles.glow}
-          via-transparent to-transparent opacity-70
-          transition-opacity duration-300
-          group-hover:opacity-100
-        `}
+        className={[
+          "pointer-events-none absolute inset-0 -z-10",
+          "bg-gradient-to-br",
+          styles.glow,
+          "via-transparent to-transparent opacity-70",
+          "transition-opacity duration-300 group-hover:opacity-100",
+          "motion-reduce:transition-none",
+        ].join(" ")}
       />
 
       {/* Card heading and icon */}
@@ -217,24 +257,24 @@ function SummaryCard({ config, value }) {
           </p>
 
           <p
-            className={`
-              mt-1.5 text-2xl font-semibold leading-none
-              tracking-tight tabular-nums ${styles.value}
-              sm:mt-2 sm:text-3xl
-              lg:text-[2rem]
-            `}
+            className={[
+              "mt-1.5 text-2xl font-semibold leading-none",
+              "tracking-tight tabular-nums",
+              styles.value,
+              "sm:mt-2 sm:text-3xl lg:text-[2rem]",
+            ].join(" ")}
           >
-            {value.toLocaleString()}
+            {value.toLocaleString("en-IN")}
           </p>
         </div>
 
         <div
-          className={`
-            flex h-8 w-8 shrink-0 items-center justify-center
-            rounded-lg border ${styles.iconSurface}
-            sm:h-10 sm:w-10 sm:rounded-xl
-            lg:h-12 lg:w-12
-          `}
+          className={[
+            "flex h-8 w-8 shrink-0 items-center justify-center",
+            "rounded-lg border",
+            styles.iconSurface,
+            "sm:h-10 sm:w-10 sm:rounded-xl lg:h-12 lg:w-12",
+          ].join(" ")}
         >
           <Icon
             aria-hidden="true"
@@ -260,38 +300,73 @@ function SummaryCard({ config, value }) {
 }
 
 /* ================================================================
+   LOADING CARD
+================================================================ */
+
+function SummaryCardSkeleton({ label }) {
+  return (
+    <div
+      role="status"
+      aria-label={`Loading ${label}`}
+      className={[
+        "relative h-[104px] overflow-hidden rounded-xl",
+        "border border-white/[0.07] bg-[#071321] p-3",
+        "sm:h-[120px] sm:rounded-2xl sm:p-4",
+        "lg:h-[132px] lg:p-5",
+      ].join(" ")}
+    >
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 bg-gradient-to-br from-white/[0.04] to-transparent"
+      />
+
+      <div className="relative">
+        <div className="h-3 w-20 max-w-full rounded bg-white/10" />
+
+        <div className="mt-3 h-7 w-12 rounded bg-white/10 sm:mt-4 sm:h-8" />
+
+        <div className="mt-3 h-2 w-24 max-w-full rounded bg-white/[0.06]" />
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================
    REPORT SUMMARY CARDS
-   ================================================================ */
+================================================================ */
 
 function ReportSummaryCards({
   reports = [],
-  summary,
+  summary = null,
   loading = false,
   error = null,
 }) {
-  const reportList = useMemo(
-    () => getReportsArray(reports),
-    [reports]
-  );
+  const reportList = useMemo(() => getReportsArray(reports), [reports]);
 
   const calculatedSummary = useMemo(
     () => calculateSummary(reportList),
-    [reportList]
+    [reportList],
   );
 
   const values = useMemo(() => {
-    if (!summary) return calculatedSummary;
+    const suppliedSummary =
+      summary && typeof summary === "object" ? summary : {};
 
     return {
-      total: Number(summary.total ?? calculatedSummary.total),
-      pending: Number(summary.pending ?? calculatedSummary.pending),
-      processing: Number(
-        summary.processing ?? calculatedSummary.processing
+      total: normalizeCount(suppliedSummary.total, calculatedSummary.total),
+      pending: normalizeCount(
+        suppliedSummary.pending,
+        calculatedSummary.pending,
       ),
-      completed: Number(
-        summary.completed ?? calculatedSummary.completed
+      processing: normalizeCount(
+        suppliedSummary.processing,
+        calculatedSummary.processing,
       ),
-      failed: Number(summary.failed ?? calculatedSummary.failed),
+      completed: normalizeCount(
+        suppliedSummary.completed,
+        calculatedSummary.completed,
+      ),
+      failed: normalizeCount(suppliedSummary.failed, calculatedSummary.failed),
     };
   }, [summary, calculatedSummary]);
 
@@ -313,7 +388,7 @@ function ReportSummaryCards({
             </h2>
 
             <p className="mt-1 break-words text-sm leading-6 text-slate-400">
-              {error}
+              {getErrorMessage(error)}
             </p>
           </div>
         </div>
@@ -322,55 +397,19 @@ function ReportSummaryCards({
   }
 
   return (
-    <section
-      aria-label="Report summary"
-      aria-busy={loading}
-      className="w-full"
-    >
-      <div
-        className="
-          grid grid-cols-2 gap-2
-          sm:gap-3
-          md:grid-cols-3
-          xl:grid-cols-5 xl:gap-4
-        "
-      >
+    <section aria-label="Report summary" aria-busy={loading} className="w-full">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-3 xl:grid-cols-5 xl:gap-4">
         {SUMMARY_CONFIG.map((config) => (
           <div
             key={config.key}
-            className={`
-              min-w-0
-              ${config.key === "failed" ? "hidden md:block" : ""}
-            `}
+            className={`min-w-0 ${
+              config.key === "failed" ? "hidden md:block" : ""
+            }`}
           >
             {loading ? (
-              <div
-                aria-label={`Loading ${config.label}`}
-                className="
-                  relative h-[104px] animate-pulse
-                  overflow-hidden rounded-xl
-                  border border-white/[0.07]
-                  bg-[#071321] p-3
-                  sm:h-[120px] sm:rounded-2xl sm:p-4
-                  lg:h-[132px] lg:p-5
-                "
-              >
-                <div
-                  aria-hidden="true"
-                  className="absolute inset-0 bg-gradient-to-br from-white/[0.04] to-transparent"
-                />
-
-                <div className="relative">
-                  <div className="h-3 w-20 max-w-full rounded bg-white/10" />
-                  <div className="mt-3 h-7 w-12 rounded bg-white/10 sm:mt-4 sm:h-8" />
-                  <div className="mt-3 h-2 w-24 max-w-full rounded bg-white/[0.06]" />
-                </div>
-              </div>
+              <SummaryCardSkeleton label={config.label} />
             ) : (
-              <SummaryCard
-                config={config}
-                value={values[config.key]}
-              />
+              <SummaryCard config={config} value={values[config.key]} />
             )}
           </div>
         ))}
