@@ -15,7 +15,6 @@ import DashboardStatCard from "./DashboardStatCard";
  * Presentation layer for dashboard overview KPIs.
  *
  * Data flow:
- *
  * Dashboard.jsx
  *      ↓
  * dashboardService.getDashboard()
@@ -26,13 +25,8 @@ import DashboardStatCard from "./DashboardStatCard";
  *      ↓
  * DashboardStatCard
  *
- * This component does not:
- * - call APIs
- * - calculate analytics
- * - create fallback business data
- * - modify backend values
- *
  * Backend remains the source of truth.
+ * This component does not call APIs or calculate analytics.
  * ================================================================
  */
 
@@ -70,7 +64,7 @@ const STAT_DEFINITIONS = [
 /**
  * DashboardStats
  *
- * Receives the complete DashboardResponse from Dashboard.jsx.
+ * Receives the existing DashboardResponse from Dashboard.jsx.
  */
 const DashboardStats = ({
   data = null,
@@ -81,7 +75,7 @@ const DashboardStats = ({
   return (
     <section
       aria-labelledby="dashboard-stats-title"
-      className="w-full"
+      className="w-full min-w-0"
     >
       <h2
         id="dashboard-stats-title"
@@ -92,11 +86,12 @@ const DashboardStats = ({
 
       <div
         className="
-          grid
-          grid-cols-1
-          gap-3
-          sm:grid-cols-2
-          sm:gap-4
+          grid w-full min-w-0
+          grid-cols-2
+          items-stretch
+          gap-2
+          sm:gap-3
+          lg:gap-4
           xl:grid-cols-4
         "
       >
@@ -108,15 +103,19 @@ const DashboardStats = ({
             icon,
             variant,
           }) => (
-            <DashboardStatCard
+            <div
               key={key}
-              label={label}
-              value={overview?.[key]}
-              description={description}
-              icon={icon}
-              variant={variant}
-              loading={loading}
-            />
+              className="min-w-0"
+            >
+              <DashboardStatCard
+                label={label}
+                value={overview?.[key]}
+                description={description}
+                icon={icon}
+                variant={variant}
+                loading={loading}
+              />
+            </div>
           ),
         )}
       </div>
