@@ -1,0 +1,26 @@
+
+# Git
+.git
+.gitignore
+
+# IntelliJ IDEA
+.idea
+*.iml
+
+# Maven build output
+target
+
+# Frontend dependencies, if present in the build context
+node_modules
+
+# Local environment and secret files
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# Operating system files
+.DS_Store
+Thumbs.db
