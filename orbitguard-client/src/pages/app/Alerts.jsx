@@ -1,3 +1,4 @@
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { FiAlertCircle, FiRefreshCw, FiShield } from "react-icons/fi";
@@ -20,6 +21,7 @@ import AlertEmptyState from "../../features/alerts/components/AlertEmptyState";
 import ProtectedBackground from "../../components/common/ProtectedBackground";
 
 const PAGE_SIZE = 8;
+const ALERT_FETCH_SIZE = 100;
 
 const INITIAL_FILTERS = {
   search: "",
@@ -33,20 +35,10 @@ const INITIAL_FILTERS = {
   sortDirection: "desc",
 };
 
-/**
- * Unwrap the existing API response without assuming a specific
- * common-wrapper implementation.
- *
- * Supported examples:
- * { data: [...] }
- * { data: { content: [...] } }
- * { content: [...] }
- * [...]
- */
 function unwrapResponse(response) {
   let payload = response?.data ?? response;
 
-  // Support the project's ApiResponse-style wrapper.
+  // Support an additional ApiResponse-style wrapper.
   if (
     payload &&
     !Array.isArray(payload) &&
@@ -70,7 +62,10 @@ function normalizeAlertsResponse(response) {
   }
 
   const content =
-    payload?.content ?? payload?.items ?? payload?.alerts ?? payload?.records;
+    payload?.content ??
+    payload?.items ??
+    payload?.alerts ??
+    payload?.records;
 
   if (Array.isArray(content)) {
     return {
@@ -113,13 +108,12 @@ function getAlertId(alert) {
 }
 
 function normalizeText(value) {
-  return String(value ?? "")
-    .trim()
-    .toLowerCase();
+  return String(value ?? "").trim().toLowerCase();
 }
 
 function getAlertDate(alert) {
-  const value = alert?.generatedAt ?? alert?.createdAt ?? alert?.updatedAt;
+  const value =
+    alert?.generatedAt ?? alert?.createdAt ?? alert?.updatedAt;
 
   if (!value) return null;
 
@@ -210,8 +204,8 @@ function getSeverityRank(severity) {
 function getSortTimestamp(alert, sortBy) {
   const value =
     sortBy === "updatedAt"
-      ? (alert?.updatedAt ?? alert?.generatedAt ?? alert?.createdAt)
-      : (alert?.generatedAt ?? alert?.createdAt ?? alert?.updatedAt);
+      ? alert?.updatedAt ?? alert?.generatedAt ?? alert?.createdAt
+      : alert?.generatedAt ?? alert?.createdAt ?? alert?.updatedAt;
 
   if (!value) return 0;
 
@@ -232,7 +226,8 @@ function sortAlerts(alerts, sortBy, sortDirection) {
     }
 
     return (
-      (getSortTimestamp(a, sortBy) - getSortTimestamp(b, sortBy)) * direction
+      (getSortTimestamp(a, sortBy) - getSortTimestamp(b, sortBy)) *
+      direction
     );
   });
 }
@@ -241,24 +236,16 @@ function normalizeSummary(alerts) {
   return alerts.reduce(
     (summary, alert) => {
       const status = String(alert?.status ?? "").toUpperCase();
-
       const severity = String(alert?.severity ?? "").toUpperCase();
 
-      if (status === "PENDING") {
-        summary.pending += 1;
-      }
-
-      if (status === "ACKNOWLEDGED") {
-        summary.acknowledged += 1;
-      }
+      if (status === "PENDING") summary.pending += 1;
+      if (status === "ACKNOWLEDGED") summary.acknowledged += 1;
 
       if (status === "RESOLVED" || status === "CLOSED") {
         summary.resolved += 1;
       }
 
-      if (severity === "CRITICAL") {
-        summary.critical += 1;
-      }
+      if (severity === "CRITICAL") summary.critical += 1;
 
       return summary;
     },
@@ -290,7 +277,6 @@ function AlertsPage() {
   const [currentPage, setCurrentPage] = useState(0);
   const [lastUpdated, setLastUpdated] = useState(null);
 
-  // Request sequence prevents older responses overwriting newer ones.
   const alertsRequestId = useRef(0);
   const detailRequestId = useRef(0);
   const statusRequestId = useRef(0);
@@ -298,13 +284,8 @@ function AlertsPage() {
   const selectedAlertIdRef = useRef(null);
   const modalRef = useRef(null);
   const closeButtonRef = useRef(null);
+  const previousFocusRef = useRef(null);
 
-  /**
-   * Fetch alerts through alertService.
-   *
-   * This deliberately preserves the existing client-side
-   * filtering, sorting and pagination behavior.
-   */
   const fetchAlerts = useCallback(async ({ refresh = false } = {}) => {
     const requestId = ++alertsRequestId.current;
 
@@ -317,25 +298,31 @@ function AlertsPage() {
     setError("");
 
     try {
-      const response = await getAlerts();
+      // Fetch a bounded batch so local pagination has more than
+      // the service's default page size available.
+      const response = await getAlerts({
+        page: 0,
+        size: ALERT_FETCH_SIZE,
+        sortBy: "generatedAt",
+        sortDirection: "desc",
+      });
+
       const result = normalizeAlertsResponse(response);
 
-      // Ignore an outdated list response.
-      if (requestId !== alertsRequestId.current) {
-        return;
-      }
+      if (requestId !== alertsRequestId.current) return;
 
       setAlerts(result.alerts);
       setLastUpdated(new Date());
 
-      // Keep the selected alert synchronized with the list.
+      // Synchronize the selected item when it exists in this batch.
       setSelectedAlert((currentSelected) => {
         if (!currentSelected) return currentSelected;
 
         const selectedId = getAlertId(currentSelected);
 
         const latest = result.alerts.find(
-          (item) => String(getAlertId(item)) === String(selectedId),
+          (item) =>
+            String(getAlertId(item)) === String(selectedId),
         );
 
         return latest ?? currentSelected;
@@ -352,9 +339,6 @@ function AlertsPage() {
     }
   }, []);
 
-  /**
-   * Fetch a single alert using the dedicated service.
-   */
   const fetchAlertDetails = useCallback(async (alertId) => {
     if (alertId === null || alertId === undefined || alertId === "") {
       return;
@@ -369,7 +353,6 @@ function AlertsPage() {
       const response = await getAlertById(alertId);
       const detail = normalizeAlertDetails(response);
 
-      // Only apply the response to the still-selected alert.
       if (
         requestId === detailRequestId.current &&
         String(selectedAlertIdRef.current) === String(alertId)
@@ -391,7 +374,12 @@ function AlertsPage() {
   }, []);
 
   useEffect(() => {
-    fetchAlerts();
+    void fetchAlerts();
+
+    return () => {
+      // Invalidate outstanding list requests when unmounted.
+      alertsRequestId.current += 1;
+    };
   }, [fetchAlerts]);
 
   useEffect(() => {
@@ -406,23 +394,35 @@ function AlertsPage() {
       return;
     }
 
-    fetchAlertDetails(selectedAlertId);
+    void fetchAlertDetails(selectedAlertId);
+
+    return () => {
+      detailRequestId.current += 1;
+    };
   }, [selectedAlertId, fetchAlertDetails]);
 
-  // Lock background scrolling while the modal is open.
+  // Lock background scrolling and restore focus after closing.
   useEffect(() => {
     if (selectedAlertId === null) return undefined;
+
+    previousFocusRef.current = document.activeElement;
 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
-    const frame = requestAnimationFrame(() => {
+    const frame = window.requestAnimationFrame(() => {
       closeButtonRef.current?.focus();
     });
 
     return () => {
       document.body.style.overflow = previousOverflow;
-      cancelAnimationFrame(frame);
+      window.cancelAnimationFrame(frame);
+
+      const previousElement = previousFocusRef.current;
+
+      if (previousElement && typeof previousElement.focus === "function") {
+        previousElement.focus();
+      }
     };
   }, [selectedAlertId]);
 
@@ -441,7 +441,7 @@ function AlertsPage() {
       if (!modal) return;
 
       const focusable = modal.querySelectorAll(
-        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
       );
 
       const items = Array.from(focusable).filter(
@@ -450,7 +450,11 @@ function AlertsPage() {
           element.getAttribute("aria-disabled") !== "true",
       );
 
-      if (!items.length) return;
+      if (!items.length) {
+        event.preventDefault();
+        modal.focus();
+        return;
+      }
 
       const first = items[0];
       const last = items[items.length - 1];
@@ -458,7 +462,10 @@ function AlertsPage() {
       if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
         last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
+      } else if (
+        !event.shiftKey &&
+        document.activeElement === last
+      ) {
         event.preventDefault();
         first.focus();
       }
@@ -472,12 +479,17 @@ function AlertsPage() {
   }, [selectedAlertId, isUpdatingStatus]);
 
   const filteredAlerts = useMemo(() => {
-    const matching = alerts.filter((alert) => matchesAlert(alert, filters));
+    const matching = alerts.filter((alert) =>
+      matchesAlert(alert, filters),
+    );
 
     return sortAlerts(matching, filters.sortBy, filters.sortDirection);
   }, [alerts, filters]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredAlerts.length / PAGE_SIZE));
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredAlerts.length / PAGE_SIZE),
+  );
 
   const safeCurrentPage = Math.min(currentPage, totalPages - 1);
 
@@ -491,12 +503,12 @@ function AlertsPage() {
 
   const hasActiveFilters = Boolean(
     filters.search ||
-    filters.fromDate ||
-    filters.toDate ||
-    filters.severity ||
-    filters.status ||
-    filters.source ||
-    filters.type,
+      filters.fromDate ||
+      filters.toDate ||
+      filters.severity ||
+      filters.status ||
+      filters.source ||
+      filters.type,
   );
 
   const handleFiltersChange = useCallback((nextFilters) => {
@@ -539,7 +551,6 @@ function AlertsPage() {
   const handleCloseDetails = useCallback(() => {
     if (isUpdatingStatus) return;
 
-    // Invalidate any outstanding detail request.
     detailRequestId.current += 1;
     selectedAlertIdRef.current = null;
 
@@ -550,15 +561,15 @@ function AlertsPage() {
     setIsDetailLoading(false);
   }, [isUpdatingStatus]);
 
-  /**
-   * Backend transition validation remains authoritative.
-   * The service sends { status, remarks } to the existing endpoint.
-   */
   const handleStatusChange = useCallback(
     async (nextStatus, remarks) => {
       const alertId = getAlertId(selectedAlert);
 
-      if (alertId === null || alertId === undefined || alertId === "") {
+      if (
+        alertId === null ||
+        alertId === undefined ||
+        alertId === ""
+      ) {
         throw new Error("Unable to identify the selected alert.");
       }
 
@@ -575,7 +586,6 @@ function AlertsPage() {
           remarks: remarks || "",
         });
 
-        // Refresh the list and selected details after a successful update.
         await fetchAlerts({ refresh: true });
 
         if (String(selectedAlertIdRef.current) === String(alertId)) {
@@ -592,7 +602,12 @@ function AlertsPage() {
         }
       }
     },
-    [selectedAlert, isUpdatingStatus, fetchAlerts, fetchAlertDetails],
+    [
+      selectedAlert,
+      isUpdatingStatus,
+      fetchAlerts,
+      fetchAlertDetails,
+    ],
   );
 
   const handlePageChange = useCallback(
@@ -601,13 +616,15 @@ function AlertsPage() {
 
       if (!Number.isFinite(page)) return;
 
-      setCurrentPage(Math.max(0, Math.min(Math.floor(page), totalPages - 1)));
+      setCurrentPage(
+        Math.max(0, Math.min(Math.floor(page), totalPages - 1)),
+      );
     },
     [totalPages],
   );
 
-  // Keep these callbacks until the real application route paths
-  // are confirmed. No routes are invented here.
+  // Preserve these handlers until actual application route paths
+  // are confirmed.
   const handleViewRisk = useCallback((riskId) => {
     if (!riskId) return;
   }, []);
@@ -622,12 +639,9 @@ function AlertsPage() {
 
   return (
     <main className="relative isolate min-h-full min-w-0 overflow-x-clip bg-transparent text-slate-100">
-      {/* Application background — added without changing alert logic */}
       <ProtectedBackground />
 
-      {/* Existing Alerts page content */}
       <div className="relative z-10 mx-auto w-full max-w-[1800px] min-w-0 space-y-5 px-4 py-5 sm:space-y-6 sm:px-6 sm:py-6 xl:px-8 xl:py-7">
-        {/* Page header */}
         <section className="min-w-0">
           <AlertsHeader
             onRefresh={() => fetchAlerts({ refresh: true })}
@@ -637,7 +651,6 @@ function AlertsPage() {
           />
         </section>
 
-        {/* Summary cards */}
         <section className="min-w-0" aria-label="Alert summary">
           <AlertSummary
             alerts={alerts}
@@ -653,8 +666,10 @@ function AlertsPage() {
           />
         </section>
 
-        {/* Search and filters */}
-        <section className="min-w-0" aria-label="Search and filter alerts">
+        <section
+          className="min-w-0"
+          aria-label="Search and filter alerts"
+        >
           <AlertToolbar
             filters={filters}
             onFiltersChange={handleFiltersChange}
@@ -665,8 +680,11 @@ function AlertsPage() {
           />
         </section>
 
-        {/* Alert feed */}
-        <section className="min-w-0" aria-label="Alert feed" aria-live="polite">
+        <section
+          className="min-w-0"
+          aria-label="Alert feed"
+          aria-live="polite"
+        >
           <div className="mb-3 flex flex-col gap-2 border-b border-white/[0.06] pb-4 sm:flex-row sm:items-end sm:justify-between">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
@@ -690,7 +708,8 @@ function AlertsPage() {
                 <span className="font-semibold text-slate-200">
                   {filteredAlerts.length}
                 </span>{" "}
-                matching {filteredAlerts.length === 1 ? "alert" : "alerts"}
+                matching{" "}
+                {filteredAlerts.length === 1 ? "alert" : "alerts"}
               </p>
             )}
           </div>
@@ -709,7 +728,9 @@ function AlertsPage() {
             <AlertEmptyState
               variant={hasActiveFilters ? "filtered" : "default"}
               title={
-                hasActiveFilters ? "No matching alerts" : "No alerts available"
+                hasActiveFilters
+                  ? "No matching alerts"
+                  : "No alerts available"
               }
               description={
                 hasActiveFilters
@@ -737,7 +758,6 @@ function AlertsPage() {
           )}
         </section>
 
-        {/* Refresh feedback */}
         {isRefreshing && (
           <div
             className="flex items-center gap-2 text-xs text-slate-500"
@@ -750,7 +770,6 @@ function AlertsPage() {
         )}
       </div>
 
-      {/* Existing incident modal — unchanged */}
       {selectedAlertId !== null && (
         <div className="fixed inset-0 z-[100] flex items-start justify-center bg-black/80 pt-[84px] backdrop-blur-md sm:items-center sm:p-40 lg:p-20">
           <button
@@ -766,6 +785,7 @@ function AlertsPage() {
             role="dialog"
             aria-modal="true"
             aria-label="Alert investigation console"
+            tabIndex={-1}
             className="relative z-10 flex h-[calc(100dvh-84px)] w-full min-h-0 flex-col overflow-hidden border border-white/[0.08] bg-[#030b16] shadow-2xl shadow-black/60 sm:h-[92dvh] sm:max-h-[550px] sm:max-w-5xl sm:rounded-2xl lg:max-w-6xl"
           >
             <header className="flex shrink-0 items-center justify-between gap-3 border-b border-white/[0.08] bg-[#06101e] px-4 py-3 sm:px-6">

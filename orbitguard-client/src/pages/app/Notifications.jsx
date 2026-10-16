@@ -1,5 +1,5 @@
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FiBell, FiChevronLeft, FiX } from "react-icons/fi";
 
 import NotificationSidebar from "../../features/notifications/components/NotificationSidebar";
@@ -20,6 +20,8 @@ import {
 
 const DEFAULT_FILTER = "all";
 const DEFAULT_DATE_RANGE = "7_DAYS";
+const FETCH_SIZE = 100;
+
 const PRIORITY_OPTIONS = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
 
 const CATEGORY_FILTERS = new Set([
@@ -133,7 +135,7 @@ function filterNotifications(
   searchQuery,
   priorities,
   dateRange,
-  readStatus
+  readStatus,
 ) {
   const query = normalizeText(searchQuery);
 
@@ -180,7 +182,12 @@ function getNotificationPage(response) {
 
   if (Array.isArray(page)) {
     return {
-      items: page.filter(Boolean),
+      items: page.filter(
+        (item) =>
+          item &&
+          typeof item === "object" &&
+          !Array.isArray(item),
+      ),
       totalElements: page.length,
     };
   }
@@ -192,18 +199,21 @@ function getNotificationPage(response) {
     page?.records ??
     [];
 
-  const parsedTotal = Number(
-    page?.totalElements ?? page?.totalItems ?? page?.total ?? items.length
-  );
-
   const validItems = Array.isArray(items)
     ? items.filter(
         (item) =>
           item &&
           typeof item === "object" &&
-          !Array.isArray(item)
+          !Array.isArray(item),
       )
     : [];
+
+  const parsedTotal = Number(
+    page?.totalElements ??
+      page?.totalItems ??
+      page?.total ??
+      validItems.length,
+  );
 
   return {
     items: validItems,
@@ -275,6 +285,11 @@ export default function Notifications({
 
   const isControlled = Array.isArray(suppliedNotifications);
 
+  // Prevent older requests from overwriting newer responses.
+  const requestSequenceRef = useRef(0);
+  const countRequestSequenceRef = useRef(0);
+  const mountedRef = useRef(false);
+
   const notificationList = useMemo(() => {
     const source = isControlled
       ? suppliedNotifications
@@ -285,7 +300,7 @@ export default function Notifications({
           (item) =>
             item &&
             typeof item === "object" &&
-            !Array.isArray(item)
+            !Array.isArray(item),
         )
       : [];
   }, [isControlled, suppliedNotifications, remoteNotifications]);
@@ -303,6 +318,8 @@ export default function Notifications({
         return;
       }
 
+      const requestId = ++requestSequenceRef.current;
+
       if (refresh) {
         setRemoteRefreshing(true);
       } else {
@@ -314,44 +331,76 @@ export default function Notifications({
       try {
         const response = await getNotifications({
           page: 0,
-          size: 100,
+          size: FETCH_SIZE,
           sortBy: "createdAt",
           direction: "DESC",
         });
 
         const page = getNotificationPage(response);
 
+        if (
+          !mountedRef.current ||
+          requestId !== requestSequenceRef.current
+        ) {
+          return;
+        }
+
         setRemoteNotifications(page.items);
         setRemoteTotal(page.totalElements);
 
+        // Only request the count when a recipient is known.
         if (recipientId != null && String(recipientId).trim()) {
+          const countRequestId = ++countRequestSequenceRef.current;
+
           try {
             const countResponse =
               await getUnreadNotificationCount(recipientId);
 
             const count = getUnreadCountFromResponse(countResponse);
 
-            if (count !== null) {
+            if (
+              mountedRef.current &&
+              countRequestId === countRequestSequenceRef.current &&
+              count !== null
+            ) {
               setRemoteUnreadCount(count);
             }
           } catch {
-            // Keep the inbox usable if the count request fails.
+            // The inbox remains usable if the count endpoint fails.
           }
         } else {
+          ++countRequestSequenceRef.current;
           setRemoteUnreadCount(null);
         }
       } catch (requestError) {
-        setRemoteError(getErrorMessage(requestError));
+        if (
+          mountedRef.current &&
+          requestId === requestSequenceRef.current
+        ) {
+          setRemoteError(getErrorMessage(requestError));
+        }
       } finally {
-        setRemoteLoading(false);
-        setRemoteRefreshing(false);
+        if (
+          mountedRef.current &&
+          requestId === requestSequenceRef.current
+        ) {
+          setRemoteLoading(false);
+          setRemoteRefreshing(false);
+        }
       }
     },
-    [isControlled, onRefresh, recipientId]
+    [isControlled, onRefresh, recipientId],
   );
 
   useEffect(() => {
+    mountedRef.current = true;
     void loadNotifications();
+
+    return () => {
+      mountedRef.current = false;
+      ++requestSequenceRef.current;
+      ++countRequestSequenceRef.current;
+    };
   }, [loadNotifications]);
 
   const filteredNotifications = useMemo(() => {
@@ -361,7 +410,7 @@ export default function Notifications({
       searchQuery,
       selectedPriorities,
       dateRange,
-      readStatus
+      readStatus,
     );
 
     return [...filtered].sort((a, b) => {
@@ -391,7 +440,7 @@ export default function Notifications({
     return (
       notificationList.find(
         (item) =>
-          String(getNotificationKey(item)) === String(selectedId)
+          String(getNotificationKey(item)) === String(selectedId),
       ) ?? null
     );
   }, [notificationList, selectedId]);
@@ -406,7 +455,9 @@ export default function Notifications({
 
   const categoryCounts = useMemo(() => {
     const counts = {
-      all: remoteTotal || notificationList.length,
+      all: isControlled
+        ? notificationList.length
+        : remoteTotal,
       unread: unreadCount,
       alert: 0,
       collision: 0,
@@ -428,7 +479,7 @@ export default function Notifications({
     }
 
     return counts;
-  }, [notificationList, remoteTotal, unreadCount]);
+  }, [notificationList, remoteTotal, unreadCount, isControlled]);
 
   const handleSelectNotification = useCallback((notification) => {
     const key = getNotificationKey(notification);
@@ -454,7 +505,7 @@ export default function Notifications({
     setSelectedPriorities((current) =>
       current.includes(normalized)
         ? current.filter((item) => item !== normalized)
-        : [...current, normalized]
+        : [...current, normalized],
     );
   }, []);
 
@@ -479,14 +530,17 @@ export default function Notifications({
         return;
       }
 
-      if (updatingNotificationId != null) return;
+      if (updatingNotificationId != null || markingAllRead) return;
 
       const previousStatus = isNotificationRead(notification)
         ? "READ"
         : "UNREAD";
 
       setUpdatingNotificationId(id);
-      setRemoteError(null);
+
+      if (!isControlled) {
+        setRemoteError(null);
+      }
 
       try {
         const callback = action === "READ" ? onMarkRead : onMarkUnread;
@@ -510,8 +564,8 @@ export default function Notifications({
                     status: action,
                     readAt: action === "READ" ? now : null,
                   }
-                : item
-            )
+                : item,
+            ),
           );
 
           setRemoteUnreadCount((current) => {
@@ -521,35 +575,38 @@ export default function Notifications({
 
             return Math.max(
               0,
-              current + (action === "READ" ? -1 : 1)
+              current + (action === "READ" ? -1 : 1),
             );
           });
         }
 
         await loadNotifications({ refresh: true });
       } catch (requestError) {
-        setRemoteError(getErrorMessage(requestError));
+        if (!isControlled) {
+          setRemoteError(getErrorMessage(requestError));
+        }
       } finally {
         setUpdatingNotificationId(null);
       }
     },
     [
       updatingNotificationId,
+      markingAllRead,
       onMarkRead,
       onMarkUnread,
       isControlled,
       loadNotifications,
-    ]
+    ],
   );
 
   const handleMarkRead = useCallback(
     (notification) => updateReadStatus(notification, "READ"),
-    [updateReadStatus]
+    [updateReadStatus],
   );
 
   const handleMarkUnread = useCallback(
     (notification) => updateReadStatus(notification, "UNREAD"),
-    [updateReadStatus]
+    [updateReadStatus],
   );
 
   const handleDelete = useCallback(
@@ -561,10 +618,13 @@ export default function Notifications({
         return;
       }
 
-      if (deletingNotificationId != null) return;
+      if (deletingNotificationId != null || markingAllRead) return;
 
       setDeletingNotificationId(id);
-      setRemoteError(null);
+
+      if (!isControlled) {
+        setRemoteError(null);
+      }
 
       try {
         if (typeof onDelete === "function") {
@@ -577,8 +637,8 @@ export default function Notifications({
           setRemoteNotifications((current) =>
             current.filter(
               (item) =>
-                String(getApiNotificationId(item)) !== String(id)
-            )
+                String(getApiNotificationId(item)) !== String(id),
+            ),
           );
         }
 
@@ -591,19 +651,22 @@ export default function Notifications({
 
         await loadNotifications({ refresh: true });
       } catch (requestError) {
-        setRemoteError(getErrorMessage(requestError));
+        if (!isControlled) {
+          setRemoteError(getErrorMessage(requestError));
+        }
       } finally {
         setDeletingNotificationId(null);
       }
     },
     [
       deletingNotificationId,
+      markingAllRead,
       onDelete,
       isControlled,
       selectedId,
       handleCloseDetail,
       loadNotifications,
-    ]
+    ],
   );
 
   const handleArchive = useCallback(
@@ -613,56 +676,103 @@ export default function Notifications({
           await onArchive(notification);
           await loadNotifications({ refresh: true });
         } catch (requestError) {
-          setRemoteError(getErrorMessage(requestError));
+          if (!isControlled) {
+            setRemoteError(getErrorMessage(requestError));
+          }
         }
+
         return;
       }
 
-      // The current backend contract uses soft-delete instead
-      // of a separate archive operation.
+      // Preserve the existing fallback: archive uses delete when
+      // the parent does not provide a dedicated archive callback.
       await handleDelete(notification);
     },
-    [onArchive, handleDelete, loadNotifications]
+    [onArchive, handleDelete, loadNotifications, isControlled],
   );
 
   const handleMarkAllRead = useCallback(async () => {
-    if (markingAllRead || unreadCount === 0) return;
+    if (
+      markingAllRead ||
+      updatingNotificationId != null ||
+      unreadCount === 0
+    ) {
+      return;
+    }
 
     setMarkingAllRead(true);
-    setRemoteError(null);
+
+    if (!isControlled) {
+      setRemoteError(null);
+    }
 
     try {
       if (typeof onMarkAllRead === "function") {
         await onMarkAllRead();
       } else {
         const unreadItems = notificationList.filter(isNotificationUnread);
+        const failures = [];
 
+        // Continue after individual failures so one failed item
+        // does not prevent the remaining unread items from updating.
         for (const notification of unreadItems) {
-          if (typeof onMarkRead === "function") {
-            await onMarkRead(notification);
-          } else {
-            const id = getApiNotificationId(notification);
+          try {
+            if (typeof onMarkRead === "function") {
+              await onMarkRead(notification);
+            } else {
+              const id = getApiNotificationId(notification);
 
-            if (id != null) {
-              await markNotificationAsRead(id);
+              if (id != null) {
+                await markNotificationAsRead(id);
+              }
             }
+          } catch {
+            failures.push(getNotificationKey(notification));
           }
         }
+
+        if (failures.length > 0) {
+          throw new Error(
+            `${failures.length} notification(s) could not be marked as read.`,
+          );
+        }
+      }
+
+      if (!isControlled) {
+        setRemoteNotifications((current) =>
+          current.map((item) =>
+            isNotificationUnread(item)
+              ? {
+                  ...item,
+                  status: "READ",
+                  readAt: new Date().toISOString(),
+                }
+              : item,
+          ),
+        );
+
+        setRemoteUnreadCount(0);
       }
 
       await loadNotifications({ refresh: true });
     } catch (requestError) {
-      setRemoteError(getErrorMessage(requestError));
+      if (!isControlled) {
+        setRemoteError(getErrorMessage(requestError));
+      }
+
+      // Reconcile local state with the server after partial failure.
       await loadNotifications({ refresh: true });
     } finally {
       setMarkingAllRead(false);
     }
   }, [
     markingAllRead,
+    updatingNotificationId,
     unreadCount,
     onMarkAllRead,
     notificationList,
     onMarkRead,
+    isControlled,
     loadNotifications,
   ]);
 
@@ -766,13 +876,6 @@ export default function Notifications({
         <div className="absolute right-0 top-24 h-80 w-80 rounded-full bg-blue-600/[0.04] blur-[100px]" />
       </div>
 
-      {/*
-        Important:
-        - Explicit minmax(0, 1fr) row prevents grid min-content sizing
-          from pushing the inbox outside its available height.
-        - At tablet widths, sidebar and inbox occupy separate columns.
-        - The notification stream below owns its own vertical scrolling.
-      */}
       <div className="grid h-full min-h-0 min-w-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)] gap-2 overflow-hidden p-2 sm:gap-3 sm:p-4 md:grid-cols-[minmax(180px,0.7fr)_minmax(0,1.8fr)] xl:grid-cols-[minmax(190px,0.75fr)_minmax(0,1.8fr)_minmax(300px,1.25fr)] 2xl:grid-cols-[225px_minmax(0,1fr)_365px]">
         <aside
           aria-label="Notification filters"
@@ -854,14 +957,6 @@ export default function Notifications({
             </div>
           </div>
 
-          {/*
-            Dedicated scroll viewport.
-
-            flex-1 + min-h-0 gives this element a bounded height.
-            overflow-y-auto enables wheel, trackpad, keyboard, and touch
-            scrolling when the rendered notification content exceeds it.
-            tabIndex=0 also allows keyboard users to focus the viewport.
-          */}
           <div
             role="region"
             aria-label="Notification stream"
@@ -879,7 +974,7 @@ export default function Notifications({
                 description={String(
                   typeof error === "string"
                     ? error
-                    : error?.message ?? "Please try again."
+                    : error?.message ?? "Please try again.",
                 )}
                 primaryLabel="Retry loading"
                 onPrimaryAction={handleRefresh}
@@ -929,7 +1024,8 @@ export default function Notifications({
               <span className="font-medium text-cyan-200">
                 {filteredNotifications.length}
               </span>{" "}
-              of {remoteTotal || notificationList.length} loaded notifications
+              of {isControlled ? notificationList.length : remoteTotal} loaded
+              notifications
             </p>
 
             <span className="flex items-center gap-2 text-[9px] uppercase tracking-[0.14em] text-slate-500">
