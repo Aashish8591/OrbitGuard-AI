@@ -1,3 +1,4 @@
+
 package com.orbitguard.common.config;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -23,6 +24,7 @@ public class CorsConfig {
         configuration.setAllowedOrigins(
                 Arrays.stream(allowedOrigins.split(","))
                         .map(String::trim)
+                        .filter(origin -> !origin.isEmpty())
                         .toList()
         );
 
@@ -41,9 +43,9 @@ public class CorsConfig {
                 "Accept"
         ));
 
-        configuration.setExposedHeaders(Arrays.asList(
-                "Authorization"
-        ));
+        configuration.setExposedHeaders(
+                Arrays.asList("Authorization")
+        );
 
         configuration.setAllowCredentials(true);
 
