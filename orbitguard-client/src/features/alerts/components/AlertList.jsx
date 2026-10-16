@@ -115,11 +115,15 @@ function getTimestamp(alert) {
 }
 
 function formatDateTime(value) {
-  if (!value) return "Time unavailable";
+  if (value === null || value === undefined || value === "") {
+    return "Time unavailable";
+  }
 
   const date = new Date(value);
 
-  if (Number.isNaN(date.getTime())) return "Time unavailable";
+  if (Number.isNaN(date.getTime())) {
+    return "Time unavailable";
+  }
 
   return new Intl.DateTimeFormat("en-IN", {
     day: "2-digit",
@@ -128,6 +132,8 @@ function formatDateTime(value) {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
+    timeZone: "Asia/Kolkata",
+    timeZoneName: "short",
   }).format(date);
 }
 

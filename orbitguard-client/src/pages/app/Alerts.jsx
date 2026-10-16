@@ -1,7 +1,17 @@
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
-import { FiAlertCircle, FiRefreshCw, FiShield } from "react-icons/fi";
+import {
+  FiAlertCircle,
+  FiRefreshCw,
+  FiShield,
+} from "react-icons/fi";
 
 import {
   getAlerts,
@@ -35,17 +45,32 @@ const INITIAL_FILTERS = {
   sortDirection: "desc",
 };
 
+/* -------------------------------------------------------------------------- */
+/* API response normalization                                                 */
+/* -------------------------------------------------------------------------- */
+
 function unwrapResponse(response) {
   let payload = response?.data ?? response;
 
-  // Support an additional ApiResponse-style wrapper.
-  if (
-    payload &&
-    !Array.isArray(payload) &&
-    typeof payload === "object" &&
-    Object.prototype.hasOwnProperty.call(payload, "data")
-  ) {
-    payload = payload.data;
+  // Unwrap recognized API response envelopes.
+  // Limit nesting to avoid accidentally unwrapping domain objects.
+  for (let depth = 0; depth < 3; depth += 1) {
+    if (
+      payload &&
+      !Array.isArray(payload) &&
+      typeof payload === "object" &&
+      Object.prototype.hasOwnProperty.call(payload, "data") &&
+      (
+        Object.prototype.hasOwnProperty.call(payload, "success") ||
+        Object.prototype.hasOwnProperty.call(payload, "message") ||
+        Object.prototype.hasOwnProperty.call(payload, "status")
+      )
+    ) {
+      payload = payload.data;
+      continue;
+    }
+
+    break;
   }
 
   return payload;
@@ -61,26 +86,39 @@ function normalizeAlertsResponse(response) {
     };
   }
 
-  const content =
-    payload?.content ??
-    payload?.items ??
-    payload?.alerts ??
-    payload?.records;
-
-  if (Array.isArray(content)) {
-    return {
-      alerts: content,
-      totalElements:
-        payload.totalElements ??
-        payload.total ??
-        payload.totalCount ??
-        content.length,
-    };
+  if (!payload || typeof payload !== "object") {
+    throw new Error(
+      "The Alert API returned an unsupported response format.",
+    );
   }
 
+  const content =
+    payload.content ??
+    payload.items ??
+    payload.alerts ??
+    payload.records;
+
+  if (!Array.isArray(content)) {
+    throw new Error(
+      "The Alert API response does not contain an alerts array. " +
+      "Check the response structure in the browser Network tab.",
+    );
+  }
+
+  const rawTotal =
+    payload.totalElements ??
+    payload.total ??
+    payload.totalCount ??
+    content.length;
+
+  const parsedTotal = Number(rawTotal);
+
   return {
-    alerts: [],
-    totalElements: 0,
+    alerts: content,
+    totalElements:
+      Number.isFinite(parsedTotal) && parsedTotal >= 0
+        ? parsedTotal
+        : content.length,
   };
 }
 
@@ -96,12 +134,22 @@ function normalizeAlertDetails(response) {
     payload = payload.alert;
   }
 
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw new Error("The server returned an invalid alert response.");
+  if (
+    !payload ||
+    typeof payload !== "object" ||
+    Array.isArray(payload)
+  ) {
+    throw new Error(
+      "The server returned an invalid alert response.",
+    );
   }
 
   return payload;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Alert utilities                                                             */
+/* -------------------------------------------------------------------------- */
 
 function getAlertId(alert) {
   return alert?.id ?? alert?.alertId ?? alert?._id ?? null;
@@ -113,7 +161,9 @@ function normalizeText(value) {
 
 function getAlertDate(alert) {
   const value =
-    alert?.generatedAt ?? alert?.createdAt ?? alert?.updatedAt;
+    alert?.generatedAt ??
+    alert?.createdAt ??
+    alert?.updatedAt;
 
   if (!value) return null;
 
@@ -123,11 +173,11 @@ function getAlertDate(alert) {
 }
 
 function matchesDateFilter(alert, filters) {
-  const date = getAlertDate(alert);
-
   if (!filters.fromDate && !filters.toDate) {
     return true;
   }
+
+  const date = getAlertDate(alert);
 
   if (!date) return false;
 
@@ -202,10 +252,14 @@ function getSeverityRank(severity) {
 }
 
 function getSortTimestamp(alert, sortBy) {
+  // Preserve the user's selected sorting semantics.
+  // generatedAt remains the default because the backend uses it.
   const value =
-    sortBy === "updatedAt"
-      ? alert?.updatedAt ?? alert?.generatedAt ?? alert?.createdAt
-      : alert?.generatedAt ?? alert?.createdAt ?? alert?.updatedAt;
+    sortBy === "createdAt"
+      ? alert?.createdAt ?? alert?.generatedAt ?? alert?.updatedAt
+      : sortBy === "updatedAt"
+        ? alert?.updatedAt ?? alert?.generatedAt ?? alert?.createdAt
+        : alert?.generatedAt ?? alert?.createdAt ?? alert?.updatedAt;
 
   if (!value) return 0;
 
@@ -215,19 +269,29 @@ function getSortTimestamp(alert, sortBy) {
 }
 
 function sortAlerts(alerts, sortBy, sortDirection) {
-  const direction = sortDirection === "asc" ? 1 : -1;
+  const direction =
+    String(sortDirection).toLowerCase() === "asc" ? 1 : -1;
 
   return [...alerts].sort((a, b) => {
     if (sortBy === "severity") {
       return (
-        (getSeverityRank(a?.severity) - getSeverityRank(b?.severity)) *
+        (getSeverityRank(a?.severity) -
+          getSeverityRank(b?.severity)) *
         direction
       );
     }
 
-    return (
-      (getSortTimestamp(a, sortBy) - getSortTimestamp(b, sortBy)) *
-      direction
+    const difference =
+      getSortTimestamp(a, sortBy) -
+      getSortTimestamp(b, sortBy);
+
+    if (difference !== 0) {
+      return difference * direction;
+    }
+
+    // Deterministic fallback for equal or missing timestamps.
+    return String(getAlertId(b) ?? "").localeCompare(
+      String(getAlertId(a) ?? ""),
     );
   });
 }
@@ -258,6 +322,10 @@ function normalizeSummary(alerts) {
   );
 }
 
+/* -------------------------------------------------------------------------- */
+/* Alerts page                                                                 */
+/* -------------------------------------------------------------------------- */
+
 function AlertsPage() {
   const [alerts, setAlerts] = useState([]);
   const [filters, setFilters] = useState(INITIAL_FILTERS);
@@ -280,67 +348,97 @@ function AlertsPage() {
   const alertsRequestId = useRef(0);
   const detailRequestId = useRef(0);
   const statusRequestId = useRef(0);
+  const mountedRef = useRef(false);
 
   const selectedAlertIdRef = useRef(null);
   const modalRef = useRef(null);
   const closeButtonRef = useRef(null);
   const previousFocusRef = useRef(null);
 
-  const fetchAlerts = useCallback(async ({ refresh = false } = {}) => {
-    const requestId = ++alertsRequestId.current;
+  useEffect(() => {
+    mountedRef.current = true;
 
-    if (refresh) {
-      setIsRefreshing(true);
-    } else {
-      setIsLoading(true);
-    }
-
-    setError("");
-
-    try {
-      // Fetch a bounded batch so local pagination has more than
-      // the service's default page size available.
-      const response = await getAlerts({
-        page: 0,
-        size: ALERT_FETCH_SIZE,
-        sortBy: "generatedAt",
-        sortDirection: "desc",
-      });
-
-      const result = normalizeAlertsResponse(response);
-
-      if (requestId !== alertsRequestId.current) return;
-
-      setAlerts(result.alerts);
-      setLastUpdated(new Date());
-
-      // Synchronize the selected item when it exists in this batch.
-      setSelectedAlert((currentSelected) => {
-        if (!currentSelected) return currentSelected;
-
-        const selectedId = getAlertId(currentSelected);
-
-        const latest = result.alerts.find(
-          (item) =>
-            String(getAlertId(item)) === String(selectedId),
-        );
-
-        return latest ?? currentSelected;
-      });
-    } catch (requestError) {
-      if (requestId === alertsRequestId.current) {
-        setError(getAlertErrorMessage(requestError));
-      }
-    } finally {
-      if (requestId === alertsRequestId.current) {
-        setIsLoading(false);
-        setIsRefreshing(false);
-      }
-    }
+    return () => {
+      mountedRef.current = false;
+      alertsRequestId.current += 1;
+      detailRequestId.current += 1;
+      statusRequestId.current += 1;
+    };
   }, []);
 
+  const fetchAlerts = useCallback(
+    async ({ refresh = false } = {}) => {
+      const requestId = ++alertsRequestId.current;
+
+      if (refresh) {
+        setCurrentPage(0);
+        setIsRefreshing(true);
+      } else {
+        setIsLoading(true);
+      }
+
+      setError("");
+
+      try {
+        const response = await getAlerts({
+          page: 0,
+          size: ALERT_FETCH_SIZE,
+          sortBy: filters.sortBy || "generatedAt",
+          sortDirection: filters.sortDirection || "desc",
+        });
+
+        const result = normalizeAlertsResponse(response);
+
+        if (
+          !mountedRef.current ||
+          requestId !== alertsRequestId.current
+        ) {
+          return;
+        }
+
+        setAlerts(result.alerts);
+        setLastUpdated(new Date());
+
+        // Keep the open detail panel synchronized when the selected
+        // alert is included in the newly fetched batch.
+        setSelectedAlert((currentSelected) => {
+          if (!currentSelected) return currentSelected;
+
+          const selectedId = getAlertId(currentSelected);
+
+          const latest = result.alerts.find(
+            (item) =>
+              String(getAlertId(item)) === String(selectedId),
+          );
+
+          return latest ?? currentSelected;
+        });
+      } catch (requestError) {
+        if (
+          mountedRef.current &&
+          requestId === alertsRequestId.current
+        ) {
+          setError(getAlertErrorMessage(requestError));
+        }
+      } finally {
+        if (
+          mountedRef.current &&
+          requestId === alertsRequestId.current
+        ) {
+          setIsLoading(false);
+          setIsRefreshing(false);
+        }
+      }
+    },
+    [filters.sortBy, filters.sortDirection],
+  );
+
   const fetchAlertDetails = useCallback(async (alertId) => {
-    if (alertId === null || alertId === undefined || alertId === "") {
+    if (
+      alertId === null ||
+      alertId === undefined ||
+      alertId === ""
+    ) {
       return;
     }
 
@@ -354,6 +452,7 @@ function AlertsPage() {
       const detail = normalizeAlertDetails(response);
 
       if (
+        mountedRef.current &&
         requestId === detailRequestId.current &&
         String(selectedAlertIdRef.current) === String(alertId)
       ) {
@@ -361,13 +460,17 @@ function AlertsPage() {
       }
     } catch (requestError) {
       if (
+        mountedRef.current &&
         requestId === detailRequestId.current &&
         String(selectedAlertIdRef.current) === String(alertId)
       ) {
         setDetailError(getAlertErrorMessage(requestError));
       }
     } finally {
-      if (requestId === detailRequestId.current) {
+      if (
+        mountedRef.current &&
+        requestId === detailRequestId.current
+      ) {
         setIsDetailLoading(false);
       }
     }
@@ -377,7 +480,6 @@ function AlertsPage() {
     void fetchAlerts();
 
     return () => {
-      // Invalidate outstanding list requests when unmounted.
       alertsRequestId.current += 1;
     };
   }, [fetchAlerts]);
@@ -391,7 +493,7 @@ function AlertsPage() {
       setDetailError("");
       setStatusError("");
       setIsDetailLoading(false);
-      return;
+      return undefined;
     }
 
     void fetchAlertDetails(selectedAlertId);
@@ -425,6 +527,19 @@ function AlertsPage() {
       }
     };
   }, [selectedAlertId]);
+
+  const handleCloseDetails = useCallback(() => {
+    if (isUpdatingStatus) return;
+
+    detailRequestId.current += 1;
+    selectedAlertIdRef.current = null;
+
+    setSelectedAlertId(null);
+    setSelectedAlert(null);
+    setDetailError("");
+    setStatusError("");
+    setIsDetailLoading(false);
+  }, [isUpdatingStatus]);
 
   // Escape closes the modal; Tab remains within the dialog.
   useEffect(() => {
@@ -476,14 +591,22 @@ function AlertsPage() {
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [selectedAlertId, isUpdatingStatus]);
+  }, [
+    selectedAlertId,
+    isUpdatingStatus,
+    handleCloseDetails,
+  ]);
 
   const filteredAlerts = useMemo(() => {
     const matching = alerts.filter((alert) =>
       matchesAlert(alert, filters),
     );
 
-    return sortAlerts(matching, filters.sortBy, filters.sortDirection);
+    return sortAlerts(
+      matching,
+      filters.sortBy,
+      filters.sortDirection,
+    );
   }, [alerts, filters]);
 
   const totalPages = Math.max(
@@ -493,13 +616,24 @@ function AlertsPage() {
 
   const safeCurrentPage = Math.min(currentPage, totalPages - 1);
 
+  // Keep the controlled page index valid if filters reduce the
+  // number of pages while the user is viewing a later page.
+  useEffect(() => {
+    if (currentPage !== safeCurrentPage) {
+      setCurrentPage(safeCurrentPage);
+    }
+  }, [currentPage, safeCurrentPage]);
+
   const visibleAlerts = useMemo(() => {
     const start = safeCurrentPage * PAGE_SIZE;
 
     return filteredAlerts.slice(start, start + PAGE_SIZE);
   }, [filteredAlerts, safeCurrentPage]);
 
-  const summary = useMemo(() => normalizeSummary(alerts), [alerts]);
+  const summary = useMemo(
+    () => normalizeSummary(alerts),
+    [alerts],
+  );
 
   const hasActiveFilters = Boolean(
     filters.search ||
@@ -538,7 +672,9 @@ function AlertsPage() {
     const id = getAlertId(alert);
 
     if (id === null || id === undefined || id === "") {
-      setDetailError("This alert does not contain a usable identifier.");
+      setDetailError(
+        "This alert does not contain a usable identifier.",
+      );
       return;
     }
 
@@ -547,19 +683,6 @@ function AlertsPage() {
     setSelectedAlert(alert);
     setSelectedAlertId(id);
   }, []);
-
-  const handleCloseDetails = useCallback(() => {
-    if (isUpdatingStatus) return;
-
-    detailRequestId.current += 1;
-    selectedAlertIdRef.current = null;
-
-    setSelectedAlertId(null);
-    setSelectedAlert(null);
-    setDetailError("");
-    setStatusError("");
-    setIsDetailLoading(false);
-  }, [isUpdatingStatus]);
 
   const handleStatusChange = useCallback(
     async (nextStatus, remarks) => {
@@ -586,18 +709,28 @@ function AlertsPage() {
           remarks: remarks || "",
         });
 
+        // Reload the list after the server confirms the status change.
         await fetchAlerts({ refresh: true });
 
-        if (String(selectedAlertIdRef.current) === String(alertId)) {
+        if (
+          mountedRef.current &&
+          String(selectedAlertIdRef.current) === String(alertId)
+        ) {
           await fetchAlertDetails(alertId);
         }
       } catch (requestError) {
         const message = getAlertErrorMessage(requestError);
 
-        setStatusError(message);
+        if (mountedRef.current) {
+          setStatusError(message);
+        }
+
         throw new Error(message);
       } finally {
-        if (requestId === statusRequestId.current) {
+        if (
+          mountedRef.current &&
+          requestId === statusRequestId.current
+        ) {
           setIsUpdatingStatus(false);
         }
       }
@@ -623,8 +756,8 @@ function AlertsPage() {
     [totalPages],
   );
 
-  // Preserve these handlers until actual application route paths
-  // are confirmed.
+  // Keep these callbacks until the actual application route paths
+  // for related risk, satellite and debris views are confirmed.
   const handleViewRisk = useCallback((riskId) => {
     if (!riskId) return;
   }, []);

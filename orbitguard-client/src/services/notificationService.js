@@ -127,7 +127,7 @@ function validateEnum(value, allowedValues, fieldName) {
  *   data: ...
  * }
  *
- * The original Axios response is retained by the individual methods.
+ * Accepts the original Axios response.
  */
 function unwrapResponse(response) {
   const body = response?.data;
@@ -226,14 +226,26 @@ function getNotificationErrorMessage(error) {
 }
 
 /**
- * Normalize the pagination and sorting parameters.
+ * Normalize pagination, sorting and filtering parameters.
  *
- * These names match NotificationSearchRequest and the controller's
- * Spring Pageable construction.
+ * Backend contract:
+ * - NotificationSearchRequest.keyword
+ * - NotificationSearchRequest.page
+ * - NotificationSearchRequest.size
+ * - NotificationSearchRequest.sortBy
+ * - NotificationSearchRequest.direction
+ * - NotificationFilterRequest.status
+ * - NotificationFilterRequest.priority
+ * - NotificationFilterRequest.type
+ * - NotificationFilterRequest.recipientId
+ *
+ * The frontend may supply `search`; this method translates it to
+ * the backend's `keyword` parameter.
  */
 function cleanSearchParams(filters = {}) {
   const {
     search = "",
+    keyword = "",
     status = "",
     priority = "",
     type = "",
@@ -269,9 +281,15 @@ function cleanSearchParams(filters = {}) {
   }
 
   const normalizedDirection =
-    String(direction).toLowerCase() === "asc"
-      ? "asc"
-      : "desc";
+    typeof direction === "string"
+      ? direction.trim().toLowerCase()
+      : "";
+
+  if (!["asc", "desc"].includes(normalizedDirection)) {
+    throw new TypeError(
+      "Notification sort direction must be 'asc' or 'desc'."
+    );
+  }
 
   const params = {
     page: normalizedPage,
@@ -280,8 +298,25 @@ function cleanSearchParams(filters = {}) {
     direction: normalizedDirection,
   };
 
+  /**
+   * Prefer an explicitly supplied keyword.
+   * Otherwise, retain compatibility with callers using `search`.
+   */
+  const normalizedKeyword =
+    typeof keyword === "string" && keyword.trim()
+      ? keyword.trim()
+      : typeof search === "string"
+        ? search.trim()
+        : "";
+
+  if (
+    normalizedKeyword &&
+    normalizedKeyword.toUpperCase() !== "ALL"
+  ) {
+    params.keyword = normalizedKeyword;
+  }
+
   const textFilters = {
-    search,
     status,
     priority,
     type,
@@ -333,8 +368,6 @@ function cleanSearchParams(filters = {}) {
 /**
  * GET /api/v1/notifications
  *
- * Uses the controller's @ModelAttribute search and filter DTOs.
- *
  * Returns the original Axios response so callers can inspect
  * the ApiResponse and PagedResponse wrappers.
  */
@@ -376,9 +409,6 @@ async function getNotificationById(id, config = {}) {
  * GET /api/v1/notifications/code/{notificationCode}
  *
  * Fetch a notification by its business code.
- *
- * Confirm the actual path in NotificationConstants.GET_BY_CODE
- * before relying on this method.
  */
 async function getNotificationByCode(notificationCode, config = {}) {
   const code = validateId(notificationCode, "Notification code");
@@ -394,15 +424,15 @@ async function getNotificationByCode(notificationCode, config = {}) {
 }
 
 /**
- * GET /api/v1/notifications/unread-count?recipientId={recipientId}
+ * GET /api/v1/notifications/unread/count?recipientId={recipientId}
  *
- * The backend currently requires recipientId as a request parameter.
+ * This path matches NotificationConstants.UNREAD_COUNT.
  */
 async function getUnreadNotificationCount(recipientId, config = {}) {
   const id = validateId(recipientId, "Recipient ID");
 
   const response = await api.get(
-    `${NOTIFICATIONS_ENDPOINT}/unread-count`,
+    `${NOTIFICATIONS_ENDPOINT}/unread/count`,
     {
       ...config,
       params: {
@@ -469,8 +499,6 @@ async function markNotificationAsUnread(id, config = {}) {
  * PUT /api/v1/notifications/{id}
  *
  * Update only the editable fields supported by UpdateNotificationRequest.
- *
- * Confirm that DTO's validation rules before using this method.
  */
 async function updateNotification(id, request, config = {}) {
   const notificationId = validateId(id);
@@ -482,10 +510,11 @@ async function updateNotification(id, request, config = {}) {
   const payload = {};
 
   if (request.title !== undefined) {
-    payload.title = validateText(request.title, "Notification title", {
-      min: 5,
-      max: 150,
-    });
+    payload.title = validateText(
+      request.title,
+      "Notification title",
+      { min: 5, max: 150 }
+    );
   }
 
   if (request.message !== undefined) {
@@ -541,10 +570,10 @@ async function deleteNotification(id, config = {}) {
 
 /**
  * Optional helper for pages that want the unwrapped data payload.
- * It still performs application-level success validation.
  */
 async function getNotificationsData(filters = {}, config = {}) {
   const response = await getNotifications(filters, config);
+
   return unwrapResponse(response);
 }
 

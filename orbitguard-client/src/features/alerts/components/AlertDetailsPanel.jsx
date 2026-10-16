@@ -20,12 +20,18 @@ import {
 import AlertSeverityBadge from "./AlertSeverityBadge";
 import AlertStatusBadge from "./AlertStatusBadge";
 
+const DISPLAY_TIME_ZONE = "Asia/Kolkata";
+
 function formatDateTime(value) {
-  if (!value) return "Not recorded";
+  if (value === null || value === undefined || value === "") {
+    return "Not recorded";
+  }
 
   const date = new Date(value);
 
-  if (Number.isNaN(date.getTime())) return "Invalid date";
+  if (Number.isNaN(date.getTime())) {
+    return "Invalid date";
+  }
 
   return new Intl.DateTimeFormat("en-IN", {
     day: "2-digit",
@@ -34,7 +40,7 @@ function formatDateTime(value) {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
-    timeZone: "UTC",
+    timeZone: DISPLAY_TIME_ZONE,
     timeZoneName: "short",
   }).format(date);
 }
@@ -261,7 +267,6 @@ export default function AlertDetailsPanel({
       aria-busy={isLoading}
       className="flex min-w-0 flex-col bg-[#030b16] text-slate-100"
     >
-      {/* Loading state */}
       {isLoading && (
         <div role="status" className="space-y-5 p-4 sm:p-6">
           <span className="sr-only">Loading alert details…</span>
@@ -288,7 +293,6 @@ export default function AlertDetailsPanel({
         </div>
       )}
 
-      {/* Error state */}
       {!isLoading && error && (
         <div role="alert" className="p-5 sm:p-6">
           <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-rose-400/15 bg-rose-400/[0.07] text-rose-300">
@@ -318,7 +322,6 @@ export default function AlertDetailsPanel({
         </div>
       )}
 
-      {/* No selection */}
       {!isLoading && !error && !details && (
         <div className="flex min-h-72 flex-col items-center justify-center px-6 py-12 text-center">
           <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.025] text-slate-500">
@@ -336,10 +339,8 @@ export default function AlertDetailsPanel({
         </div>
       )}
 
-      {/* Selected alert content */}
       {!isLoading && !error && details && (
         <div className="min-w-0 divide-y divide-white/[0.06]">
-          {/* Incident overview */}
           <section className="p-4 sm:p-6">
             <div className="flex flex-wrap items-center gap-2">
               <AlertSeverityBadge
@@ -382,40 +383,16 @@ export default function AlertDetailsPanel({
             </div>
           </section>
 
-          {/* Orbital references */}
           <section className="p-4 sm:p-6">
             <SectionHeading icon={FiActivity}>
               Orbital references
             </SectionHeading>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <DetailField
-                label="Risk ID"
-                value={details.riskId}
-                mono
-                copyable
-              />
-
-              <DetailField
-                label="Satellite ID"
-                value={details.satelliteId}
-                mono
-                copyable
-              />
-
-              <DetailField
-                label="Debris ID"
-                value={details.debrisId}
-                mono
-                copyable
-              />
-
-              <DetailField
-                label="Alert ID"
-                value={details.id}
-                mono
-                copyable
-              />
+              <DetailField label="Risk ID" value={details.riskId} mono copyable />
+              <DetailField label="Satellite ID" value={details.satelliteId} mono copyable />
+              <DetailField label="Debris ID" value={details.debrisId} mono copyable />
+              <DetailField label="Alert ID" value={details.id} mono copyable />
             </div>
 
             {(details.riskId ||
@@ -436,9 +413,7 @@ export default function AlertDetailsPanel({
                     <LinkedEntityButton
                       icon={FiRadio}
                       label="View satellite"
-                      onClick={() =>
-                        onViewSatellite(details.satelliteId)
-                      }
+                      onClick={() => onViewSatellite(details.satelliteId)}
                     />
                   )}
 
@@ -454,7 +429,6 @@ export default function AlertDetailsPanel({
             )}
           </section>
 
-          {/* Classification */}
           <section className="p-4 sm:p-6">
             <SectionHeading icon={FiShield}>
               Classification
@@ -466,7 +440,6 @@ export default function AlertDetailsPanel({
             </div>
           </section>
 
-          {/* Event timeline */}
           <section className="p-4 sm:p-6">
             <SectionHeading icon={FiCalendar}>
               Event timeline
@@ -510,13 +483,12 @@ export default function AlertDetailsPanel({
             </div>
 
             <p className="mt-3 text-[10px] leading-5 text-slate-500">
-              Event times are displayed in UTC. Missing timestamps mean
-              the corresponding event time was not recorded in the
-              available alert data.
+              Event times are displayed in India Standard Time (IST).
+              Missing timestamps mean the corresponding event time was
+              not recorded in the available alert data.
             </p>
           </section>
 
-          {/* Operator remarks */}
           <section className="p-4 sm:p-6">
             <SectionHeading icon={FiMessageSquare}>
               Operator remarks
@@ -544,7 +516,6 @@ export default function AlertDetailsPanel({
             )}
           </section>
 
-          {/* Workflow actions */}
           {actions && (
             <section className="bg-white/[0.015] p-4 sm:p-6">
               <SectionHeading icon={FiCheckCircle}>
@@ -555,7 +526,6 @@ export default function AlertDetailsPanel({
             </section>
           )}
 
-          {/* Footer */}
           <footer className="flex items-start gap-2 px-4 py-3.5 sm:px-6">
             <FiShield
               aria-hidden="true"
